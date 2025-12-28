@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
 blake3 = "8d9942032585ea8ee805937634238d9aee7b210069f4703c88fbe568e26fb78a"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
 blake3 = "8d9942032585ea8ee805937634238d9aee7b210069f4703c88fbe568e26fb78a"
 

@@ -1,4 +1,4 @@
-//! TOML Formula parsing
+//! TOML Package definition parsing
 //!
 //! Human-readable package definitions.
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum FormulaError {
+pub enum PackageError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -52,9 +52,9 @@ pub struct Source {
     pub strip_components: u32,
 }
 
-/// Bottle (precompiled binary)
+/// Binary artifact (precompiled)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Bottle {
+pub struct Binary {
     pub url: String,
     pub blake3: String,
     /// Target architecture: "arm64" or "x86_64"
@@ -84,13 +84,15 @@ pub struct Dependencies {
     pub optional: Vec<String>,
 }
 
-/// Complete package formula
+/// Complete package definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Formula {
+pub struct Package {
     pub package: PackageInfo,
     pub source: Source,
+    /// Pre-built binaries by architecture
     #[serde(default)]
-    pub bottle: HashMap<String, Bottle>,
+    #[serde(alias = "bottle")]  // Backwards compatibility
+    pub binary: HashMap<String, Binary>,
     #[serde(default)]
     pub dependencies: Dependencies,
     #[serde(default)]
@@ -127,15 +129,15 @@ pub struct Hints {
     pub post_install: String,
 }
 
-impl Formula {
-    /// Parse a formula from a TOML file
-    pub fn from_file(path: &Path) -> Result<Self, FormulaError> {
+impl Package {
+    /// Parse a package from a TOML file
+    pub fn from_file(path: &Path) -> Result<Self, PackageError> {
         let content = fs::read_to_string(path)?;
         Self::from_str(&content)
     }
 
-    /// Parse a formula from a TOML string
-    pub fn from_str(content: &str) -> Result<Self, FormulaError> {
+    /// Parse a package from a TOML string
+    pub fn from_str(content: &str) -> Result<Self, PackageError> {
         Ok(toml::from_str(content)?)
     }
 
@@ -144,18 +146,23 @@ impl Formula {
         toml::to_string_pretty(self)
     }
 
-    /// Get bottle for current architecture
-    pub fn bottle_for_current_arch(&self) -> Option<&Bottle> {
+    /// Get binary for current architecture
+    pub fn binary_for_current_arch(&self) -> Option<&Binary> {
         let arch = crate::arch::current();
-        self.bottle.get(arch)
+        self.binary.get(arch)
     }
 }
+
+// Type aliases for backwards compatibility during migration
+pub type Formula = Package;
+pub type Bottle = Binary;
+pub type FormulaError = PackageError;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const EXAMPLE_FORMULA: &str = r#"
+    const EXAMPLE_PACKAGE: &str = r#"
 [package]
 name = "neovim"
 version = "0.10.0"
@@ -167,14 +174,14 @@ license = "Apache-2.0"
 url = "https://github.com/neovim/neovim/archive/v0.10.0.tar.gz"
 blake3 = "abc123def456"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://cdn.example.com/neovim-0.10.0-arm64.tar.zst"
-blake3 = "bottle123"
+blake3 = "binary123"
 macos = "14.0"
 
-[bottle.x86_64]
+[binary.x86_64]
 url = "https://cdn.example.com/neovim-0.10.0-x86_64.tar.zst"
-blake3 = "bottle456"
+blake3 = "binary456"
 macos = "12.0"
 
 [dependencies]
@@ -186,20 +193,20 @@ bin = ["nvim"]
 "#;
 
     #[test]
-    fn test_parse_formula() {
-        let formula = Formula::from_str(EXAMPLE_FORMULA).unwrap();
+    fn test_parse_package() {
+        let pkg = Package::from_str(EXAMPLE_PACKAGE).unwrap();
 
-        assert_eq!(formula.package.name, "neovim");
-        assert_eq!(formula.package.version, "0.10.0");
-        assert_eq!(formula.source.blake3, "abc123def456");
-        assert_eq!(formula.dependencies.runtime.len(), 3);
-        assert_eq!(formula.bottle.len(), 2);
+        assert_eq!(pkg.package.name, "neovim");
+        assert_eq!(pkg.package.version, "0.10.0");
+        assert_eq!(pkg.source.blake3, "abc123def456");
+        assert_eq!(pkg.dependencies.runtime.len(), 3);
+        assert_eq!(pkg.binary.len(), 2);
     }
 
     #[test]
-    fn test_bottle_for_arch() {
-        let formula = Formula::from_str(EXAMPLE_FORMULA).unwrap();
-        let bottle = formula.bottle_for_current_arch();
-        assert!(bottle.is_some());
+    fn test_binary_for_arch() {
+        let pkg = Package::from_str(EXAMPLE_PACKAGE).unwrap();
+        let binary = pkg.binary_for_current_arch();
+        assert!(binary.is_some());
     }
 }

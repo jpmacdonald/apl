@@ -95,17 +95,17 @@ enum Commands {
         /// Specific packages to upgrade (or all if empty)
         packages: Vec<String>,
     },
-    /// Formula management commands
-    Formula {
+    /// Package management commands
+    Package {
         #[command(subcommand)]
-        command: FormulaCommands,
+        command: PackageCommands,
     },
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
         shell: clap_complete::Shell,
     },
-    /// Update dl itself to the latest version
+    /// Update apl itself to the latest version
     SelfUpdate,
     /// Run a package without installing it globally
     Run {
@@ -118,28 +118,28 @@ enum Commands {
 }
 
 #[derive(Subcommand, Debug)]
-pub enum FormulaCommands {
-    /// Create a new formula template
+pub enum PackageCommands {
+    /// Create a new package template
     New {
         /// Package name
         name: String,
-        /// Directory to save the formula in
-        #[arg(long, default_value = "formulas")]
+        /// Directory to save the package in
+        #[arg(long, default_value = "packages")]
         output_dir: PathBuf,
     },
-    /// Validate a formula file
+    /// Validate a package file
     Check {
-        /// Formula file to check
+        /// Package file to check
         path: PathBuf,
     },
-    /// Bump a formula version
+    /// Bump a package version
     Bump {
-        /// Formula file to bump
+        /// Package file to bump
         path: PathBuf,
         /// New version
         #[arg(long)]
         version: String,
-        /// New bottle URL for current arch
+        /// New binary URL for current arch
         #[arg(long)]
         url: String,
     },
@@ -198,16 +198,16 @@ async fn main() -> Result<()> {
         Commands::Upgrade { packages } => {
             cmd::upgrade::upgrade(&packages, dry_run).await
         }
-        Commands::Formula { command } => {
+        Commands::Package { command } => {
             match command {
-                FormulaCommands::New { name, output_dir } => {
-                    cmd::formula::new(&name, &output_dir)
+                PackageCommands::New { name, output_dir } => {
+                    cmd::package::new(&name, &output_dir)
                 }
-                FormulaCommands::Check { path } => {
-                    cmd::formula::check(&path)
+                PackageCommands::Check { path } => {
+                    cmd::package::check(&path)
                 }
-                FormulaCommands::Bump { path, version, url } => {
-                    cmd::formula::bump(&path, &version, &url).await
+                PackageCommands::Bump { path, version, url } => {
+                    cmd::package::bump(&path, &version, &url).await
                 }
             }
         }

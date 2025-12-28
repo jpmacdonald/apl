@@ -14,7 +14,7 @@ pub mod lock;
 pub mod hash;
 pub mod completions;
 pub mod self_update;
-pub mod formula;
+pub mod package;
 pub mod switch;
 pub mod history;
 pub mod rollback;

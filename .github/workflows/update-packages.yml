@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  update-formulas:
+  update-packages:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,23 +14,23 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Build dl
+      - name: Build apl
         run: cargo build --release
         
-      - name: Update Formulas
+      - name: Update Packages
         run: |
           # Example for bat
-          ./target/release/dl formula bump formulas/bat.toml --version $(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//') --url "https://github.com/sharkdp/bat/releases/download/v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')/bat-v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')-aarch64-apple-darwin.tar.gz"
+          ./target/release/apl package bump packages/bat.toml --version $(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//') --url "https://github.com/sharkdp/bat/releases/download/v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')/bat-v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')-aarch64-apple-darwin.tar.gz"
           
-          # Add more packages here or use a script to map repo -> formula
+          # Add more packages here
           
       - name: Regenerate Index
-        run: ./target/release/dl index-gen formulas index.msgpack
+        run: ./target/release/apl generate-index packages index.bin
         
       - name: Commit changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add formulas/*.toml index.msgpack
-          git commit -m "chore: automated package updates and index regeneration" || echo "No changes to commit"
+          git add packages/*.toml index.bin
+          git commit -m "chore: automated package updates" || echo "No changes to commit"
           git push

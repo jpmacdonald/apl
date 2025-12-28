@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'formulas/**'
+      - 'packages/**'
       - 'src/core/index.rs'
 
 permissions:
@@ -20,11 +20,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build dl
+      - name: Build apl
         run: cargo build --release
 
       - name: Generate Index
-        run: target/release/dl generate-index --output index.bin
+        run: target/release/apl generate-index packages index.bin
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3

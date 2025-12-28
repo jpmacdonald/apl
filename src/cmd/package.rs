@@ -1,16 +1,16 @@
-//! Formula management commands
+//! Package management commands
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use apl::formula::Formula;
+use apl::package::Package;
 
-/// Create a new formula template
+/// Create a new package template
 pub fn new(name: &str, output_dir: &Path) -> Result<()> {
     let filename = format!("{}.toml", name);
     let path = output_dir.join(&filename);
     
     if path.exists() {
-        anyhow::bail!("Formula already exists: {}", path.display());
+        anyhow::bail!("Package already exists: {}", path.display());
     }
     
     let template = format!(r#"[package]
@@ -23,11 +23,11 @@ homepage = ""
 url = "https://github.com/OWNER/{name}/archive/refs/tags/v0.1.0.tar.gz"
 blake3 = "PLACEHOLDER"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-arm64.tar.gz"
 blake3 = "PLACEHOLDER"
 
-[bottle.x86_64]
+[binary.x86_64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-x86_64.tar.gz"
 blake3 = "PLACEHOLDER"
 
@@ -40,36 +40,36 @@ bin = ["{name}"]
     std::fs::create_dir_all(output_dir)?;
     std::fs::write(&path, template)?;
     
-    println!("✓ Created formula template: {}", path.display());
-    println!("  Edit it and run 'dl formula check {}' to validate.", path.display());
+    println!("✓ Created package template: {}", path.display());
+    println!("  Edit it and run 'apl package check {}' to validate.", path.display());
     
     Ok(())
 }
 
-/// Validate a formula file
+/// Validate a package file
 pub fn check(path: &Path) -> Result<()> {
-    let formula = Formula::from_file(path)
-        .context("Failed to parse formula")?;
+    let pkg = Package::from_file(path)
+        .context("Failed to parse package")?;
     
-    println!("✓ Formula is valid");
-    println!("  Name: {}", formula.package.name);
-    println!("  Version: {}", formula.package.version);
+    println!("✓ Package is valid");
+    println!("  Name: {}", pkg.package.name);
+    println!("  Version: {}", pkg.package.version);
     
-    if let Some(bottle) = formula.bottle_for_current_arch() {
-        println!("  Bottle: {} ({})", bottle.url, bottle.arch);
+    if let Some(binary) = pkg.binary_for_current_arch() {
+        println!("  Binary: {} ({})", binary.url, binary.arch);
     } else {
-        println!("  ⚠ No bottle for current architecture");
+        println!("  ⚠ No binary for current architecture");
     }
     
     Ok(())
 }
 
-/// Bump a formula version and update hashes
+/// Bump a package version and update hashes
 pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     println!("🚀 Bumping {} to {}...", path.display(), version);
     
     // Download and compute hash
-    println!("📦 Downloading new bottle to compute hash...");
+    println!("📦 Downloading new binary to compute hash...");
     
     let temp_dir = tempfile::tempdir()?;
     let temp_file = temp_dir.path().join("download");
@@ -89,17 +89,17 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     let hash = compute_file_hash(&temp_file)?;
     println!("✓ Computed hash: {}", hash);
     
-    // Update formula file - simple approach: read TOML, update, write back
-    let mut formula = apl::formula::Formula::from_file(path)?;
-    formula.package.version = version.to_string();
+    // Update package file
+    let mut pkg = apl::package::Package::from_file(path)?;
+    pkg.package.version = version.to_string();
     
-    // Update the bottle URL and hash for current arch
+    // Update the binary URL and hash for current arch
     let arch = apl::arch::current();
-    if let Some(bottle) = formula.bottle.get_mut(arch) {
-        bottle.url = url.to_string();
-        bottle.blake3 = hash.clone();
+    if let Some(binary) = pkg.binary.get_mut(arch) {
+        binary.url = url.to_string();
+        binary.blake3 = hash.clone();
     } else {
-        formula.bottle.insert(arch.to_string(), apl::formula::Bottle {
+        pkg.binary.insert(arch.to_string(), apl::package::Binary {
             arch: arch.to_string(),
             url: url.to_string(),
             blake3: hash.clone(),
@@ -108,7 +108,7 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     }
     
     // Serialize back to TOML
-    let updated = toml::to_string_pretty(&formula)?;
+    let updated = toml::to_string_pretty(&pkg)?;
     
     std::fs::write(path, &updated)?;
     println!("✓ Successfully updated {}", path.display());

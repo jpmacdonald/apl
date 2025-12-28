@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/ClementTsang/bottom/releases/download/0.10.2/bottom_aarch64-apple-darwin.tar.gz"
 blake3 = "101532fa85f1da4bb3849b220782003f23fb28e321691e0adf623de569b3b201"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/ClementTsang/bottom/releases/download/0.10.2/bottom_aarch64-apple-darwin.tar.gz"
 blake3 = "101532fa85f1da4bb3849b220782003f23fb28e321691e0adf623de569b3b201"
 

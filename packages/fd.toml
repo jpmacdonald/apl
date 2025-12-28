@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0-aarch64-apple-darwin.tar.gz"
 blake3 = "40f4e51b406baca55370c1eb13e627c4bb0e55972d6e96a419470f19077c3459"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0-aarch64-apple-darwin.tar.gz"
 blake3 = "40f4e51b406baca55370c1eb13e627c4bb0e55972d6e96a419470f19077c3459"
 

@@ -7,7 +7,7 @@ pub mod io;
 pub mod store;
 
 // Re-exports for convenience
-pub use core::formula;
+pub use core::package;
 pub use core::index;
 pub use core::lockfile;
 pub use core::resolver;
@@ -15,6 +15,9 @@ pub use store::cas;
 pub use store::db;
 pub use io::download as downloader;
 pub use io::extract as extractor;
+
+// Backwards compatibility
+pub use core::package as formula;
 
 use std::path::PathBuf;
 use dirs::home_dir;

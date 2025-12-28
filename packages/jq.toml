@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
 blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
 blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
 

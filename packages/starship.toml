@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/starship/starship/releases/download/v1.22.1/starship-aarch64-apple-darwin.tar.gz"
 blake3 = "1bf16f26f5ae8914aec18e1b8b94d79c13186b1dc728b65c5dec3efa73997fd0"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/starship/starship/releases/download/v1.22.1/starship-aarch64-apple-darwin.tar.gz"
 blake3 = "1bf16f26f5ae8914aec18e1b8b94d79c13186b1dc728b65c5dec3efa73997fd0"
 

@@ -8,7 +8,7 @@ type = "app"
 url = "https://download.videolan.org/pub/videolan/vlc/3.0.21/macosx/vlc-3.0.21-arm64.dmg"
 blake3 = "81884ac7c1a8c4594616c5d8d8cc76d55486750163dc0ab1120545c7603a67d8"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://download.videolan.org/pub/videolan/vlc/3.0.21/macosx/vlc-3.0.21-arm64.dmg"
 blake3 = "81884ac7c1a8c4594616c5d8d8cc76d55486750163dc0ab1120545c7603a67d8"
 

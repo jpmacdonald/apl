@@ -8,7 +8,7 @@ type = "cli"
 url = "https://github.com/sharkdp/bat/releases/download/v0.25.0/bat-v0.25.0-aarch64-apple-darwin.tar.gz"
 blake3 = "0aaf86bdca05733ab2f75cf74456849448fa58e8e428f4cc02f48181e08cc8c2"
 
-[bottle.arm64]
+[binary.arm64]
 url = "https://github.com/sharkdp/bat/releases/download/v0.25.0/bat-v0.25.0-aarch64-apple-darwin.tar.gz"
 blake3 = "0aaf86bdca05733ab2f75cf74456849448fa58e8e428f4cc02f48181e08cc8c2"
 

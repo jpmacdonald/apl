@@ -9,7 +9,7 @@ use apl::core::version::PackageSpec;
 use apl::cas::Cas;
 use apl::db::StateDb;
 use apl::downloader::download_and_verify;
-use apl::formula::{Formula, PackageType};
+use apl::package::{Package as Formula, PackageType};
 use apl::lockfile::Lockfile;
 use apl::{bin_path, apl_home};
 use apl::io::dmg;
@@ -169,15 +169,15 @@ pub async fn prepare_download(
     lockfile: Option<&Lockfile>,
 ) -> Result<Option<PreparedPackage>> {
     use apl::index::PackageIndex;
-    use apl::formula::{PackageInfo, Source, Dependencies, InstallSpec, Hints, Bottle};
+    use apl::package::{PackageInfo, Source, Dependencies, InstallSpec, Hints, Binary};
 
     let formula_path = PathBuf::from(pkg_name);
     
     // Try loading as file first, then lockfile, then fallback to index
-    let (bottle_url, bottle_hash, formula) = if formula_path.exists() {
+    let (binary_url, binary_hash, formula) = if formula_path.exists() {
         let formula = Formula::from_file(&formula_path)?;
-        let bottle = formula.bottle_for_current_arch()
-             .context("No bottle for current architecture")?;
+        let bottle = formula.binary_for_current_arch()
+             .context("No binary for current architecture")?;
         (
             bottle.url.clone(),
             bottle.blake3.clone(),
@@ -230,7 +230,7 @@ pub async fn prepare_download(
                     blake3: String::new(),
                     strip_components: 0,
                 },
-                bottle: std::collections::HashMap::new(), // Not needed for install
+                binary: std::collections::HashMap::new(), // Not needed for install
                 dependencies: Dependencies {
                     runtime: vec![], // TODO: Lockfile needs to store deps to be perfect
                     build: vec![],
@@ -271,14 +271,14 @@ pub async fn prepare_download(
             };
             
             let current_arch = apl::arch::current();
-            let bottle = release.bottles.iter()
+            let bin_artifact = release.bottles.iter()
                 .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
-                .context(format!("No bottle for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
+                .context(format!("No binary for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
                 
-            let mut bottle_map = std::collections::HashMap::new();
-            bottle_map.insert(current_arch.to_string(), Bottle {
-                url: bottle.url.clone(),
-                blake3: bottle.blake3.clone(),
+            let mut binary_map = std::collections::HashMap::new();
+            binary_map.insert(current_arch.to_string(), Binary {
+                url: bin_artifact.url.clone(),
+                blake3: bin_artifact.blake3.clone(),
                 arch: current_arch.to_string(),
                 macos: "14.0".to_string(),
             });
@@ -302,7 +302,7 @@ pub async fn prepare_download(
                     blake3: String::new(),
                     strip_components: 0,
                 },
-                bottle: bottle_map,
+                binary: binary_map,
                 dependencies: Dependencies {
                     runtime: release.deps.clone(),
                     build: vec![],
@@ -318,7 +318,7 @@ pub async fn prepare_download(
                 hints: Hints { post_install: release.hints.clone() },
             };
             
-            (bottle.url.clone(), bottle.blake3.clone(), formula)
+            (bin_artifact.url.clone(), bin_artifact.blake3.clone(), formula)
         }
     };
 
@@ -332,15 +332,15 @@ pub async fn prepare_download(
 
     if dry_run {
         println!("Would install: {} {}", formula.package.name, formula.package.version);
-        println!("  Source: {}", bottle_url);
+        println!("  Source: {}", binary_url);
         return Ok(None);
     }
 
     let temp_dir = tempfile::tempdir()?;
-    let url_filename = bottle_url.split('/').last().unwrap_or("download");
+    let url_filename = binary_url.split('/').last().unwrap_or("download");
     let temp_file = temp_dir.path().join(url_filename);
 
-    download_and_verify(client, &bottle_url, &temp_file, &bottle_hash)
+    download_and_verify(client, &binary_url, &temp_file, &binary_hash)
         .await
         .context("Download failed")?;
 
@@ -350,7 +350,7 @@ pub async fn prepare_download(
         download_path: temp_file,
         bin_list: formula.install.bin.clone(),
         formula: Some(formula),
-        blake3: bottle_hash,
+        blake3: binary_hash.to_string(),
         _temp_dir: Some(temp_dir),
     }))
 }
