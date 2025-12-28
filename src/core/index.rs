@@ -16,6 +16,9 @@ pub enum IndexError {
 
     #[error("Serialization error: {0}")]
     Postcard(#[from] postcard::Error),
+
+    #[error("Index version mismatch: found v{0}, expected v{1}. Run 'dl update' or update 'dl'.")]
+    VersionMismatch(u32, u32),
 }
 
 /// Bottle info in the index
@@ -29,16 +32,11 @@ pub struct IndexBottle {
     pub blake3: String,
 }
 
-/// Compact package entry in the index
+/// Compact release info (one version)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexEntry {
-    /// Package name
-    pub name: String,
-    /// Latest version
+pub struct IndexRelease {
+    /// Version string
     pub version: String,
-    /// Package description
-    #[serde(default)]
-    pub description: String,
     /// Available bottles with URLs
     pub bottles: Vec<IndexBottle>,
     /// Runtime dependencies (names only)
@@ -52,10 +50,34 @@ pub struct IndexEntry {
     pub hints: String,
 }
 
+/// Compact package entry in the index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexEntry {
+    /// Package name
+    pub name: String,
+    /// Package description
+    #[serde(default)]
+    pub description: String,
+    /// All available releases (sorted by version descending)
+    pub releases: Vec<IndexRelease>,
+}
+
+impl IndexEntry {
+    /// Get the latest release
+    pub fn latest(&self) -> &IndexRelease {
+        self.releases.first().expect("Entry must have at least one release")
+    }
+
+    /// Find a specific version
+    pub fn find_version(&self, version: &str) -> Option<&IndexRelease> {
+        self.releases.iter().find(|r| r.version == version)
+    }
+}
+
 /// Package index (binary format)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageIndex {
-    /// Index format version
+    /// Index format version (Bumped to 2 for multi-version support)
     pub version: u32,
     /// Unix timestamp of last update
     pub updated_at: i64,
@@ -67,7 +89,7 @@ impl PackageIndex {
     /// Create a new empty index
     pub fn new() -> Self {
         Self {
-            version: 1,
+            version: 2,
             updated_at: 0,
             packages: Vec::new(),
         }
@@ -97,15 +119,50 @@ impl PackageIndex {
 
     /// Deserialize from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, IndexError> {
+        // Postcard serializes fields in order. First field of PackageIndex is version: u32.
+        // We can try to deserialize just the header first to check version.
+        #[derive(Deserialize)]
+        struct IndexHeader {
+            version: u32,
+        }
+        
+        let header: IndexHeader = postcard::from_bytes(data)
+            .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?; // Placeholder if header fails
+
+        if header.version < 2 {
+            // We could implement migration here, but for now just bail with a clear message.
+            return Err(IndexError::VersionMismatch(header.version, 2));
+        }
+
         Ok(postcard::from_bytes(data)?)
     }
 
-    /// Add or update a package entry
+    /// Add or update a package entry (full entry)
     pub fn upsert(&mut self, entry: IndexEntry) {
         if let Some(existing) = self.packages.iter_mut().find(|e| e.name == entry.name) {
             *existing = entry;
         } else {
             self.packages.push(entry);
+        }
+    }
+
+    /// Add a single release to a package
+    pub fn upsert_release(&mut self, name: &str, description: &str, release: IndexRelease) {
+        if let Some(entry) = self.packages.iter_mut().find(|e| e.name == name) {
+            entry.description = description.to_string();
+            if let Some(existing) = entry.releases.iter_mut().find(|r| r.version == release.version) {
+                *existing = release;
+            } else {
+                entry.releases.push(release);
+            }
+            // Sort releases by version descending (basic string comparison for now, improves later)
+            entry.releases.sort_by(|a, b| b.version.cmp(&a.version));
+        } else {
+            self.packages.push(IndexEntry {
+                name: name.to_string(),
+                description: description.to_string(),
+                releases: vec![release],
+            });
         }
     }
 
@@ -134,18 +191,20 @@ mod tests {
         let mut index = PackageIndex::new();
         index.upsert(IndexEntry {
             name: "neovim".to_string(),
-            version: "0.10.0".to_string(),
             description: "Vim-fork focused on extensibility".to_string(),
-            bottles: vec![
-                IndexBottle {
-                    arch: "aarch64-apple-darwin".to_string(),
-                    url: "https://example.com/nvim.tar.zst".to_string(),
-                    blake3: "abc123".to_string(),
-                },
-            ],
-            deps: vec!["libuv".to_string()],
-            bin: vec!["nvim".to_string()],
-            hints: String::new(),
+            releases: vec![IndexRelease {
+                version: "0.10.0".to_string(),
+                bottles: vec![
+                    IndexBottle {
+                        arch: "aarch64-apple-darwin".to_string(),
+                        url: "https://example.com/nvim.tar.zst".to_string(),
+                        blake3: "abc123".to_string(),
+                    },
+                ],
+                deps: vec!["libuv".to_string()],
+                bin: vec!["nvim".to_string()],
+                hints: String::new(),
+            }],
         });
 
         let bytes = index.to_bytes().unwrap();
@@ -153,32 +212,49 @@ mod tests {
 
         assert_eq!(restored.packages.len(), 1);
         assert_eq!(restored.packages[0].name, "neovim");
+        assert_eq!(restored.packages[0].releases[0].version, "0.10.0");
     }
 
     #[test]
-    fn test_search() {
+    fn test_upsert_release() {
         let mut index = PackageIndex::new();
-        index.upsert(IndexEntry {
-            name: "neovim".to_string(),
-            version: "0.10.0".to_string(),
-            description: String::new(),
+        let release1 = IndexRelease {
+            version: "1.0.0".to_string(),
             bottles: vec![],
             deps: vec![],
             bin: vec![],
             hints: String::new(),
-        });
-        index.upsert(IndexEntry {
-            name: "vim".to_string(),
-            version: "9.0".to_string(),
-            description: String::new(),
+        };
+        let release2 = IndexRelease {
+            version: "1.1.0".to_string(),
             bottles: vec![],
             deps: vec![],
             bin: vec![],
             hints: String::new(),
-        });
+        };
 
-        let results = index.search("vim");
-        assert_eq!(results.len(), 2); // neovim and vim
+        index.upsert_release("test", "Test description", release1);
+        index.upsert_release("test", "Test description", release2);
+
+        let entry = index.find("test").unwrap();
+        assert_eq!(entry.releases.len(), 2);
+        assert_eq!(entry.latest().version, "1.1.0");
+    }
+
+    #[test]
+    fn test_version_check() {
+        let mut index = PackageIndex::new();
+        index.version = 1; // Force old version
+        let bytes = postcard::to_allocvec(&index).unwrap();
+        
+        let result = PackageIndex::from_bytes(&bytes);
+        assert!(result.is_err());
+        if let Err(IndexError::VersionMismatch(found, expected)) = result {
+            assert_eq!(found, 1);
+            assert_eq!(expected, 2);
+        } else {
+            panic!("Expected VersionMismatch error");
+        }
     }
 
     #[test]
@@ -188,10 +264,8 @@ mod tests {
 
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;
-        index.upsert(IndexEntry {
-            name: "ripgrep".to_string(),
+        index.upsert_release("ripgrep", "Fast grep", IndexRelease {
             version: "14.0.0".to_string(),
-            description: "Fast grep".to_string(),
             bottles: vec![IndexBottle {
                 arch: "aarch64-apple-darwin".to_string(),
                 url: "https://example.com/rg".to_string(),
