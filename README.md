@@ -1,16 +1,13 @@
 # Distill (dl)
 
-**Distill** is a modern, blazingly fast package manager for macOS, written in Rust. It draws inspiration from `uv`, `pacman`, and `apt`, focusing on speed, atomicity, and a great developer experience.
+A package manager for macOS CLI tools. Written in Rust.
 
-## Features
+## What It Does
 
-- 🚀 **Extreme Speed**: Sub-10ms startup.
-- 📦 **CAS Storage**: Deduplicated content-addressable storage for binaries.
-- 🔗 **Smart Linking**: Automatic binary linking (e.g., `ripgrep` installs as `rg`).
-- 🔄 **Dependency Resolution**: Topological sorting for complex package trees.
-- 🏗️ **Modern Formulae**: TOML-based package specifications.
-- ✨ **Self-Updating**: Keep the tool up-to-date with a single command.
-- 🛠️ **Dev Tools**: Native shell completions and formula scaffolding.
+- Installs single-binary CLI tools (like `jq`, `ripgrep`, `fzf`)
+- Uses a content-addressable store for deduplication
+- Supports transient execution with `dl run` (no global install)
+- Never runs post-install scripts
 
 ## Installation
 
@@ -18,61 +15,61 @@
 curl -sL https://raw.githubusercontent.com/jpmacdonald/distill/main/install.sh | sh
 ```
 
-## Quick Start
+Then add `~/.dl/bin` to your PATH.
+
+## Usage
 
 ```bash
-# Update the index
+# Fetch the package index
 dl update
 
-# Search for packages
-dl search ripgrep
-
-# Install packages (parallel downloads!)
+# Install tools
 dl install ripgrep bat fd
 
-# Upgrade all
+# Run a tool without installing
+dl run jq -- '.key' file.json
+
+# List installed packages
+dl list
+
+# Remove a package
+dl remove ripgrep
+
+# Upgrade all packages
 dl upgrade
-
-# Self-update dl
-dl self-update
 ```
 
-## Maintenance
+## Formulas
 
-```bash
-# Create a new formula
-dl formula new my-pkg
+Packages are defined in TOML files. Example:
 
-# Bump version and re-hash automatically
-dl formula bump formulas/my-pkg.toml --version 2.0.0 --url https://...
+```toml
+[package]
+name = "jq"
+version = "1.7.1"
+
+[bottle.arm64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
+blake3 = "..."
+
+[install]
+bin = ["jq"]
 ```
+
+## Limitations
+
+- Only supports macOS (arm64 and x86_64)
+- Only handles single-binary tools
+- Tools needing shell init (like `zoxide`) require manual `.zshrc` setup
+- Does not support `nvm`, `pyenv`, or similar shell managers
 
 ## Architecture
 
-- **State**: SQLite database at `~/.dl/state.db`.
-- **Cache**: BLAKE3-hashed CAS at `~/.dl/cache/`.
-- **Binaries**: Linked to `~/.dl/bin/` (add this to your PATH).
-- **Index**: High-performance Msgpack registry.
-
-## Transient Execution (`dl run`)
-
-Run a tool without installing it globally:
-```bash
-dl run jq -- '.key' file.json
-```
-
-## Special Installs & Limitations
-
-`dl` is designed for **single-binary tools**. Some tools require extra steps:
-
-| Tool | Install Support | Notes |
-| :--- | :--- | :--- |
-| `jq`, `ripgrep`, `fzf` | ✅ Full | Direct binary. |
-| `zoxide` | 🟡 Partial | Binary works, but `zoxide init zsh` must be added to `.zshrc` manually. |
-| `neovim`, `starship` | 🟡 Partial | Binary installed; config files are user-managed. |
-| `nvm`, `pyenv` | ❌ Not Supported | These are shell-init managers, not binaries. Use their official installers. |
-
-**Philosophy**: `dl` will *never* run post-install scripts. If a tool requires shell configuration, the user handles it. This keeps `dl` safe and predictable.
+- **Index**: `~/.dl/index.bin` (postcard+zstd compressed)
+- **Database**: `~/.dl/state.db` (SQLite)
+- **Cache**: `~/.dl/cache/` (BLAKE3-hashed blobs)
+- **Binaries**: `~/.dl/bin/`
 
 ---
-Built with ❤️ in Rust for macOS.
+
+MIT License
