@@ -37,6 +37,21 @@ enum Commands {
         #[arg(required = true)]
         packages: Vec<String>,
     },
+    /// Switch active version of a package
+    Switch {
+        /// Package spec (e.g. jq@1.6)
+        spec: String,
+    },
+    /// View package history
+    History {
+        /// Package name
+        package: String,
+    },
+    /// Rollback package to previous state
+    Rollback {
+        /// Package name
+        package: String,
+    },
     /// List installed packages
     List,
     /// Show package info
@@ -146,6 +161,15 @@ async fn main() -> Result<()> {
         }
         Commands::Remove { packages } => {
             cmd::remove::remove(&packages, dry_run)
+        }
+        Commands::Switch { spec } => {
+            cmd::switch::switch(&spec, dry_run)
+        }
+        Commands::History { package } => {
+            cmd::history::history(&package)
+        }
+        Commands::Rollback { package } => {
+            cmd::rollback::rollback(&package, dry_run)
         }
         Commands::List => {
             cmd::list::list()

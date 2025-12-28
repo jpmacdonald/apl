@@ -20,12 +20,17 @@ pub struct PreparedPackage {
     pub download_path: PathBuf,
     pub formula: Option<Formula>,
     pub bin_list: Vec<String>,
+    pub blake3: String, 
     pub _temp_dir: Option<tempfile::TempDir>,
+}
+
+enum InstallTask {
+    Download(String, Option<String>), // name, requested_version
+    Switch(String, String),           // name, target_version
 }
 
 /// Install one or more packages (parallel downloads, sequential install)
 pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result<()> {
-    use dl::lockfile::Lockfile;
     use dl::index::PackageIndex;
 
     let db = StateDb::open().context("Failed to open state database")?;
@@ -63,71 +68,97 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         dl::resolver::resolve_dependencies(&names, index_ref)?
     };
 
-    // Filter out already-installed packages
-    let mut to_install = Vec::new();
+    let mut tasks = Vec::new();
+
+    // Determine what to do for each resolved package
     for name in &resolved_names {
         // Find if any spec explicitly requested this package (to get version)
         let requested_version = specs.iter()
             .find(|s| &s.name == name)
             .and_then(|s| s.version.clone());
 
-        if let Ok(Some(installed)) = db.get_package(name) {
-            if let Some(index_ref) = &index {
-                if let Some(entry) = index_ref.find(name) {
-                    let target_version = match &requested_version {
-                        Some(v) if v == "latest" => entry.latest().version.clone(),
-                        Some(v) => v.clone(),
-                        None => entry.latest().version.clone(),
-                    };
-                    
-                    if installed.version == target_version {
-                        println!("✓ {} {} already installed", name, installed.version);
-                        continue;
-                    }
+        // Determine target version from index (or latest)
+        let target_version = if let Some(index_ref) = &index {
+            if let Some(entry) = index_ref.find(name) {
+                 match &requested_version {
+                    Some(v) if v == "latest" => entry.latest().version.clone(),
+                    Some(v) => v.clone(),
+                    None => entry.latest().version.clone(),
                 }
+            } else {
+                 requested_version.clone().unwrap_or_else(|| "latest".to_string())
+            }
+        } else {
+            requested_version.clone().unwrap_or_else(|| "latest".to_string())
+        };
+        
+        // Check DB for this specific version
+        if let Ok(Some(installed)) = db.get_package_version(name, &target_version) {
+            if installed.active {
+                println!("✓ {} {} already installed and active", name, target_version);
+                continue; 
+            } else {
+                // It's installed (inactive), so we Switch
+                tasks.push(InstallTask::Switch(name.clone(), target_version));
+                continue;
             }
         }
-        to_install.push((name.clone(), requested_version));
+        
+        // Not installed (or version mismatch), so Download
+        tasks.push(InstallTask::Download(name.clone(), requested_version));
     }
 
-    if to_install.is_empty() {
+    if tasks.is_empty() {
         return Ok(());
     }
 
-    println!("📦 Downloading {} packages...", to_install.len());
-
-    // Phase 1: Download in parallel
-    let client = Client::new();
-    let download_futures: Vec<_> = to_install.iter()
-        .map(|(name, version)| prepare_download(&client, name, version.as_deref(), dry_run, lockfile.as_ref()))
-        .collect();
-
-    let results = join_all(download_futures).await;
-
-    // Collect successful downloads
-    let mut prepared = Vec::new();
-    for result in results {
-        match result {
-            Ok(Some(pkg)) => prepared.push(pkg),
-            Ok(None) => {} // Dry run or already installed
-            Err(e) => return Err(e),
+    // Process Switches first (fast)
+    let cas = Cas::new()?;
+    for task in &tasks {
+        if let InstallTask::Switch(name, version) = task {
+            finalize_switch(&cas, &db, name, version, dry_run)?;
         }
     }
 
-    if dry_run {
-        return Ok(());
-    }
+    // Process Downloads (parallel)
+    let to_download: Vec<_> = tasks.iter().filter_map(|t| match t {
+        InstallTask::Download(n, v) => Some((n, v)),
+        _ => None,
+    }).collect();
 
-    // Phase 2: Install sequentially (DB writes)
-    let cas = Cas::new()?;
-    for pkg in &prepared {
-        finalize_package(&cas, &db, pkg, dry_run)?;
+    if !to_download.is_empty() {
+        println!("📦 Downloading {} packages...", to_download.len());
+        
+        let client = Client::new();
+        let download_futures: Vec<_> = to_download.iter()
+            .map(|(name, version)| prepare_download(&client, name, version.as_deref(), dry_run, lockfile.as_ref()))
+            .collect();
+
+        let results = join_all(download_futures).await;
+
+        let mut prepared = Vec::new();
+        for result in results {
+            match result {
+                Ok(Some(pkg)) => prepared.push(pkg),
+                Ok(None) => {} 
+                Err(e) => return Err(e),
+            }
+        }
+
+        if dry_run {
+            return Ok(());
+        }
+
+        // Finalize downloads
+        for pkg in &prepared {
+            finalize_package(&cas, &db, pkg, dry_run)?;
+        }
     }
 
     Ok(())
 }
 
-/// Prepare a package download (parallel-safe, no DB access)
+/// Prepare a package download
 pub async fn prepare_download(
     client: &Client,
     pkg_name: &str,
@@ -141,7 +172,6 @@ pub async fn prepare_download(
     
     // Try loading as file first, then fall back to index lookup
     let (name, version, bottle_url, bottle_hash, bin_list, hints_str, formula_opt) = if formula_path.exists() {
-        // Load from formula file
         let formula = Formula::from_file(&formula_path)?;
         let bottle = formula.bottle_for_current_arch()
             .context("No bottle for current architecture")?;
@@ -155,7 +185,6 @@ pub async fn prepare_download(
             Some(formula),
         )
     } else {
-        // Try to find in index
         let index_path = dl_home().join("index.bin");
         if !index_path.exists() {
             bail!("Package '{}' not found. Run 'dl update' to fetch package index.", pkg_name);
@@ -167,7 +196,6 @@ pub async fn prepare_download(
         let entry = index.find(pkg_name)
             .context(format!("Package '{}' not found in index", pkg_name))?;
         
-        // Find specific release
         let release = if let Some(v) = requested_version {
             if v == "latest" {
                 entry.latest()
@@ -179,7 +207,6 @@ pub async fn prepare_download(
             entry.latest()
         };
         
-        // Find bottle for current arch
         let current_arch = dl::arch::current();
         let bottle = release.bottles.iter()
             .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
@@ -192,11 +219,10 @@ pub async fn prepare_download(
             bottle.blake3.clone(),
             release.bin.clone(),
             release.hints.clone(),
-            None, // No formula file
+            None,
         )
     };
 
-    // Check lockfile for pinned version
     if let Some(lf) = lockfile {
         if let Some(locked) = lf.find(&name) {
             if locked.version != version {
@@ -211,7 +237,6 @@ pub async fn prepare_download(
         return Ok(None);
     }
 
-    // Download to temp
     let temp_dir = tempfile::tempdir()?;
     let url_filename = bottle_url.split('/').last().unwrap_or("download");
     let temp_file = temp_dir.path().join(url_filename);
@@ -220,7 +245,6 @@ pub async fn prepare_download(
         .await
         .context("Download failed")?;
 
-    // Create a minimal formula if we don't have one (for install.bin detection)
     let formula = formula_opt.unwrap_or_else(|| {
         Formula {
             package: dl::formula::PackageInfo {
@@ -253,6 +277,7 @@ pub async fn prepare_download(
         download_path: temp_file,
         formula: Some(formula),
         bin_list,
+        blake3: bottle_hash,
         _temp_dir: Some(temp_dir),
     }))
 }
@@ -266,24 +291,26 @@ pub fn finalize_package(
 ) -> Result<()> {
     println!("📦 Installing {} {}...", pkg.name, pkg.version);
 
-    // Check if EXACT version already installed
-    if let Some(installed) = db.get_package(&pkg.name)? {
-        if installed.version == pkg.version {
-            println!("  {} {} already installed, skipping", pkg.name, pkg.version);
-            return Ok(());
+    let version_from = db.get_package(&pkg.name)?.map(|p| p.version);
+    
+    if let Some(ref v) = version_from {
+        if v != &pkg.version {
+             println!("  (Updating {} from {} to {})", pkg.name, v, pkg.version);
         }
-        // If different version, we'll overwrite the symlink later
-        println!("  (Updating {} from {} to {})", pkg.name, installed.version, pkg.version);
     }
 
-    // Extract
+    // Cleanup active file links
+    if let Ok(files) = db.get_package_files(&pkg.name) {
+        for f in files {
+            std::fs::remove_file(&f.path).ok();
+        }
+    }
+    
     let extract_dir = pkg.download_path.parent().unwrap().join("extracted");
     let extracted = dl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
 
     println!("  📂 Extracted {} files", extracted.len());
 
-    // Store in CAS + link binaries
-    let mut package_hash = String::new();
     let mut files_to_record = Vec::new();
 
     let is_raw = extracted.len() == 1 && 
@@ -291,7 +318,6 @@ pub fn finalize_package(
 
     for file in &extracted {
         let hash = cas.store_file(&file.absolute_path)?;
-        if package_hash.is_empty() { package_hash = hash.clone(); }
 
         let file_name = file.relative_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         
@@ -309,25 +335,27 @@ pub fn finalize_package(
         for bin in bins {
             let target = bin_path().join(bin);
             if target.exists() { std::fs::remove_file(&target).ok(); }
+            
             cas.link_to(&hash, &target)?;
             #[cfg(unix)] {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))?;
             }
             println!("  → {}", bin);
-            files_to_record.push((target.to_string_lossy().to_string(), hash.clone()));
+            
+            let abs_path = target.to_string_lossy().to_string();
+            files_to_record.push((abs_path, hash.clone()));
         }
     }
 
-    // Record in DB
-    db.install_package(&pkg.name, &pkg.version, &package_hash)?;
-    for (path, hash) in &files_to_record {
-        db.add_file(path, &pkg.name, hash)?;
-    }
+    // Record in DB: Track version, active=true, artifacts and files atomically
+    db.install_complete_package(&pkg.name, &pkg.version, &pkg.blake3, &files_to_record, &files_to_record)?;
+    
+    // Record history
+    db.add_history(&pkg.name, "install", version_from.as_deref(), Some(&pkg.version), true)?;
 
     println!("✓ {} installed", pkg.name);
 
-    // Print hints if available
     if let Some(formula) = &pkg.formula {
         if !formula.hints.post_install.is_empty() {
             println!();
@@ -338,7 +366,6 @@ pub fn finalize_package(
         }
     }
 
-    // Check if there's a shadowing binary in PATH
     let bin_name = pkg.formula.as_ref()
         .and_then(|f| f.install.bin.first())
         .unwrap_or(&pkg.name);
@@ -351,5 +378,68 @@ pub fn finalize_package(
         }
     }
 
+    Ok(())
+}
+
+/// Finalize a Switch operation (activates already installed version)
+pub fn finalize_switch(
+    cas: &Cas,
+    db: &StateDb,
+    name: &str,
+    version: &str,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        println!("Would switch {} to {}", name, version);
+        return Ok(());
+    }
+    
+    println!("🔄 Switching {} to {}...", name, version);
+    
+    let version_from = db.get_package(name)?.map(|p| p.version);
+
+    // 1. Unlink current files
+     if let Ok(files) = db.get_package_files(name) {
+        for f in files {
+            std::fs::remove_file(&f.path).ok();
+        }
+    }
+    
+    // 2. Retrieve artifacts for target version
+    let artifacts = db.get_artifacts(name, version)?;
+    if artifacts.is_empty() {
+        println!("⚠️ Warning: No artifacts found for {} {}. Reinstallation recommended.", name, version);
+    }
+    
+    let mut files_to_record = Vec::new();
+    
+    // 3. Link new artifacts
+    for art in &artifacts {
+        let target = std::path::Path::new(&art.path);
+        // Ensure path is safe? (it's absolute from DB)
+        if target.exists() { std::fs::remove_file(&target).ok(); }
+        
+        cas.link_to(&art.blake3, target)?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o755))?;
+        }
+        println!("  → {}", target.file_name().unwrap().to_string_lossy());
+        
+        files_to_record.push((art.path.clone(), art.blake3.clone()));
+    }
+    
+    // 4. Update DB status (active=true)
+    let pkg_info = db.get_package_version(name, version)?.expect("Package disappeared from DB");
+    
+    db.install_package(name, version, &pkg_info.blake3)?; // active=true
+    for (path, hash) in &files_to_record {
+        db.add_file(path, name, hash)?;
+    }
+    
+    // Record History
+    db.add_history(name, "switch", version_from.as_deref(), Some(version), true)?;
+    
+    println!("✓ active version is now {}", version);
     Ok(())
 }

@@ -23,6 +23,9 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
             continue;
         }
         
+        // Get version for history
+        let version_from = db.get_package(pkg).ok().flatten().map(|p| p.version);
+
         // Delete files
         for file in &files {
             if let Err(e) = std::fs::remove_file(&file.path) {
@@ -34,6 +37,11 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
         // Remove from DB
         db.remove_package(pkg)?;
         
+        // Record history
+        if let Some(v) = version_from {
+            db.add_history(pkg, "remove", Some(&v), None, true)?;
+        }
+
         println!("✓ {} removed ({} files)", pkg, files.len());
     }
     
