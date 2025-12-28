@@ -1,9 +1,9 @@
 //! Switch command to change active package version
 
 use anyhow::{Context, Result, bail};
-use dl::core::version::PackageSpec;
-use dl::db::StateDb;
-use dl::cas::Cas;
+use apl::core::version::PackageSpec;
+use apl::db::StateDb;
+use apl::cas::Cas;
 use crate::cmd::install::finalize_switch;
 
 /// Switch the active version of a package

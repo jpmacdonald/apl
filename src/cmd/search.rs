@@ -1,12 +1,12 @@
 //! Search command
 
 use anyhow::{Context, Result, bail};
-use dl::index::PackageIndex;
-use dl::dl_home;
+use apl::index::PackageIndex;
+use apl::apl_home;
 
 /// Search packages in the local index
 pub fn search(query: &str) -> Result<()> {
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }

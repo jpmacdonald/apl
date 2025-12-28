@@ -1,9 +1,9 @@
 //! Upgrade command
 
 use anyhow::{Context, Result, bail};
-use dl::db::StateDb;
-use dl::index::PackageIndex;
-use dl::dl_home;
+use apl::db::StateDb;
+use apl::index::PackageIndex;
+use apl::apl_home;
 
 /// Upgrade installed packages to latest versions
 pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
@@ -13,7 +13,7 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
         println!("Checking for upgrades...");
     }
     
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }

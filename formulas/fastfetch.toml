@@ -1,0 +1,16 @@
+[package]
+name = "fastfetch"
+version = "2.37.0"
+description = "A maintained, feature-rich and performance oriented, system information tool"
+type = "cli"
+
+[source]
+url = "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-macos-universal.tar.gz"
+blake3 = "3350c2e8e37359dd0d75ea4f0a19c3320f34b8b348322d60d0509f2baadc813d"
+
+[bottle.arm64]
+url = "https://github.com/fastfetch-cli/fastfetch/releases/download/2.37.0/fastfetch-macos-universal.tar.gz"
+blake3 = "3350c2e8e37359dd0d75ea4f0a19c3320f34b8b348322d60d0509f2baadc813d"
+
+[install]
+bin = ["fastfetch-macos-universal/usr/bin/fastfetch:fastfetch"]

@@ -1,7 +1,7 @@
 //! Remove command
 
 use anyhow::{Context, Result, bail};
-use dl::db::StateDb;
+use apl::db::StateDb;
 
 /// Remove one or more packages
 pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
@@ -51,6 +51,14 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
 
         println!("✓ {} removed ({} files)", pkg, files.len());
     }
-    
+
+    // Auto-update lockfile if it exists
+    if apl::lockfile::Lockfile::exists_default() {
+        println!("⟳ Updating lockfile...");
+        if let Err(e) = crate::cmd::lock::lock(false) {
+             println!("⚠ Failed to update lockfile: {}", e);
+        }
+    }
+
     Ok(())
 }

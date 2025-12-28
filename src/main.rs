@@ -1,4 +1,4 @@
-//! dl - Distill Package Manager CLI
+//! apl - A Package Layer CLI
 
 use std::path::PathBuf;
 
@@ -9,8 +9,8 @@ use tracing_subscriber::EnvFilter;
 mod cmd;
 
 #[derive(Parser)]
-#[command(name = "dl")]
-#[command(author, version, about = "dl - A modern package manager for macOS")]
+#[command(name = "apl")]
+#[command(author, version, about = "apl - A Package Layer for macOS")]
 pub struct Cli {
     /// Show what would happen without making changes
     #[arg(long, global = true)]
@@ -27,7 +27,7 @@ enum Commands {
         /// Package name(s), optionally with version: pkg or pkg@1.0.0
         #[arg(required = true)]
         packages: Vec<String>,
-        /// Only install packages pinned in dl.lock
+        /// Only install packages pinned in apl.lock
         #[arg(long)]
         locked: bool,
     },
@@ -65,7 +65,7 @@ enum Commands {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
-    /// Generate or update dl.lock from installed packages
+    /// Generate or update apl.lock from installed packages
     Lock,
     /// Search available packages
     Search {
@@ -87,7 +87,7 @@ enum Commands {
     /// Update package index from CDN
     Update {
         /// CDN URL for index
-        #[arg(long, env = "DL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/main/index.bin")]
+        #[arg(long, env = "APL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/gh-pages/index.bin")]
         url: String,
     },
     /// Upgrade installed packages to latest versions

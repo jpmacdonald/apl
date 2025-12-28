@@ -13,13 +13,13 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
 
     // 2. Extract to temp (we keep _temp_dir alive to preserve the files)
     let extract_dir = prepared.download_path.parent().unwrap().join("extracted");
-    let extracted = dl::extractor::extract_auto(&prepared.download_path, &extract_dir)?;
+    let extracted = apl::extractor::extract_auto(&prepared.download_path, &extract_dir)?;
     
     // Identify the binary to run (first in bin_list or package name)
     let bin_name = prepared.bin_list.first().cloned().unwrap_or_else(|| prepared.name.clone());
     
     let is_raw = extracted.len() == 1 && 
-        dl::extractor::detect_format(&prepared.download_path) == dl::extractor::ArchiveFormat::RawBinary;
+        apl::extractor::detect_format(&prepared.download_path) == apl::extractor::ArchiveFormat::RawBinary;
 
     // Find the binary path directly in the extracted files (no CAS)
     let bin_path = extracted.iter()

@@ -106,6 +106,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "apl"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "blake3",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "dirs",
+ "flate2",
+ "futures",
+ "indicatif",
+ "postcard",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "zip",
+ "zstd",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,35 +545,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "dl"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "async-compression",
- "blake3",
- "chrono",
- "clap",
- "clap_complete",
- "dirs",
- "flate2",
- "futures",
- "indicatif",
- "postcard",
- "reqwest",
- "rusqlite",
- "serde",
- "tar",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "zip",
- "zstd",
 ]
 
 [[package]]

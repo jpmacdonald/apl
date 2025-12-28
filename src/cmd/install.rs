@@ -5,14 +5,14 @@ use futures::future::join_all;
 use reqwest::Client;
 use std::path::PathBuf;
 
-use dl::core::version::PackageSpec;
-use dl::cas::Cas;
-use dl::db::StateDb;
-use dl::downloader::download_and_verify;
-use dl::formula::{Formula, PackageType};
-use dl::lockfile::Lockfile;
-use dl::{bin_path, dl_home};
-use dl::io::dmg;
+use apl::core::version::PackageSpec;
+use apl::cas::Cas;
+use apl::db::StateDb;
+use apl::downloader::download_and_verify;
+use apl::formula::{Formula, PackageType};
+use apl::lockfile::Lockfile;
+use apl::{bin_path, apl_home};
+use apl::io::dmg;
 
 /// Prepared package ready for finalization
 pub struct PreparedPackage {
@@ -32,12 +32,12 @@ enum InstallTask {
 
 /// Install one or more packages (parallel downloads, sequential install)
 pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result<()> {
-    use dl::index::PackageIndex;
+    use apl::index::PackageIndex;
 
     let db = StateDb::open().context("Failed to open state database")?;
 
     // Load index for resolution
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     let index = if index_path.exists() {
         PackageIndex::load(&index_path).ok()
     } else {
@@ -46,9 +46,9 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
 
     // Load lockfile if --locked
     let lockfile = if locked {
-        let lock_path = std::env::current_dir()?.join("dl.lock");
+        let lock_path = std::env::current_dir()?.join("apl.lock");
         if !lock_path.exists() {
-            bail!("--locked specified but dl.lock not found");
+            bail!("--locked specified but apl.lock not found");
         }
         Some(Lockfile::load(&lock_path)?)
     } else {
@@ -66,7 +66,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
             .context("No index found. Run 'dl update' first.")?;
         
         let names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
-        dl::resolver::resolve_dependencies(&names, index_ref)?
+        apl::resolver::resolve_dependencies(&names, index_ref)?
     };
 
     let mut tasks = Vec::new();
@@ -97,6 +97,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         if let Ok(Some(installed)) = db.get_package_version(name, &target_version) {
             if installed.active {
                 println!("✓ {} {} already installed and active", name, target_version);
+                perform_ux_checks(name);
                 continue; 
             } else {
                 // It's installed (inactive), so we Switch
@@ -167,93 +168,158 @@ pub async fn prepare_download(
     dry_run: bool,
     lockfile: Option<&Lockfile>,
 ) -> Result<Option<PreparedPackage>> {
-    use dl::index::PackageIndex;
-    use dl::formula::{PackageInfo, Source, Dependencies, InstallSpec, Hints, Bottle};
+    use apl::index::PackageIndex;
+    use apl::formula::{PackageInfo, Source, Dependencies, InstallSpec, Hints, Bottle};
 
     let formula_path = PathBuf::from(pkg_name);
     
-    // Try loading as file first, then fall back to index lookup
+    // Try loading as file first, then lockfile, then fallback to index
     let (bottle_url, bottle_hash, formula) = if formula_path.exists() {
         let formula = Formula::from_file(&formula_path)?;
         let bottle = formula.bottle_for_current_arch()
-            .context("No bottle for current architecture")?;
+             .context("No bottle for current architecture")?;
         (
             bottle.url.clone(),
             bottle.blake3.clone(),
             formula,
         )
     } else {
-        let index_path = dl_home().join("index.bin");
-        if !index_path.exists() {
-            bail!("Package '{}' not found. Run 'dl update' to fetch package index.", pkg_name);
-        }
-        
-        let index = PackageIndex::load(&index_path)
-            .context("Failed to load index")?;
-        
-        let entry = index.find(pkg_name)
-            .context(format!("Package '{}' not found in index", pkg_name))?;
-        
-        let release = if let Some(v) = requested_version {
-            if v == "latest" {
-                entry.latest()
-            } else {
-                entry.find_version(v)
-                    .context(format!("Version '{}' of package '{}' not found in index", v, pkg_name))?
-            }
+        // Check lockfile FIRST for authority
+        let locked_data = if let Some(lf) = lockfile {
+             if let Some(locked) = lf.find(pkg_name) {
+                 // If version requested and doesn't match lock, ignore lock (or error?)
+                 // cargo install --locked errors if mismatch. We will just prefer locked if it matches or strict mode.
+                 // For now: if version match or no version requested, use lock.
+                 let version_match = match requested_version {
+                     Some(v) => v == locked.version,
+                     None => true,
+                 };
+                 
+                 if version_match {
+                      // Reconstruct formula from lock info (minimal)
+                      let _current_arch = apl::arch::current();
+                      if locked.url.is_empty() {
+                          None // Old lockfile without URLs, fall back to index
+                      } else {
+                          Some((locked.url.clone(), locked.blake3.clone(), locked.version.clone()))
+                      }
+                 } else {
+                     None
+                 }
+             } else {
+                 None
+             }
         } else {
-            entry.latest()
-        };
-        
-        let current_arch = dl::arch::current();
-        let bottle = release.bottles.iter()
-            .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
-            .context(format!("No bottle for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
-            
-        let mut bottle_map = std::collections::HashMap::new();
-        bottle_map.insert(current_arch.to_string(), Bottle {
-            url: bottle.url.clone(),
-            blake3: bottle.blake3.clone(),
-            arch: current_arch.to_string(),
-            macos: "14.0".to_string(),
-        });
-        
-        let type_ = match entry.type_.as_str() {
-            "app" => PackageType::App,
-            _ => PackageType::Cli,
+            None
         };
 
-        let formula = Formula {
-            package: PackageInfo {
-                name: entry.name.clone(),
-                version: release.version.clone(),
-                description: entry.description.clone(),
-                homepage: String::new(),
-                license: String::new(),
-                type_,
-            },
-            source: Source {
-                url: String::new(),
-                blake3: String::new(),
-                strip_components: 0,
-            },
-            bottle: bottle_map,
-            dependencies: Dependencies {
-                runtime: release.deps.clone(),
-                build: vec![],
-                optional: vec![],
-            },
-            install: InstallSpec {
-                bin: if release.bin.is_empty() { vec![entry.name.clone()] } else { release.bin.clone() },
-                lib: vec![],
-                include: vec![],
-                script: String::new(),
-                app: release.app.clone(),
-            },
-            hints: Hints { post_install: release.hints.clone() },
-        };
-        
-        (bottle.url.clone(), bottle.blake3.clone(), formula)
+        if let Some((url, hash, version)) = locked_data {
+            // Reconstruct minimal formula
+            let type_ = PackageType::Cli; // Lockfile doesn't store type yet, assume CLI for now (TODO: store in lock)
+             let formula = Formula {
+                package: PackageInfo {
+                    name: pkg_name.to_string(),
+                    version,
+                    description: "(locked)".to_string(),
+                    homepage: String::new(),
+                    license: String::new(),
+                    type_,
+                },
+                source: Source {
+                    url: String::new(),
+                    blake3: String::new(),
+                    strip_components: 0,
+                },
+                bottle: std::collections::HashMap::new(), // Not needed for install
+                dependencies: Dependencies {
+                    runtime: vec![], // TODO: Lockfile needs to store deps to be perfect
+                    build: vec![],
+                    optional: vec![],
+                },
+                install: InstallSpec {
+                    bin: vec![pkg_name.to_string()], // Guess binary name same as package
+                    lib: vec![],
+                    include: vec![],
+                    script: String::new(),
+                    app: None,
+                },
+                hints: Hints { post_install: String::new() },
+            };
+            (url, hash, formula)
+        } else {
+            // FALLBACK TO INDEX
+            let index_path = apl_home().join("index.bin");
+            if !index_path.exists() {
+                bail!("Package '{}' not found and no index.bin. Run 'dl update'.", pkg_name);
+            }
+            
+            let index = PackageIndex::load(&index_path)
+                .context("Failed to load index")?;
+            
+            let entry = index.find(pkg_name)
+                .context(format!("Package '{}' not found in index", pkg_name))?;
+            
+            let release = if let Some(v) = requested_version {
+                if v == "latest" {
+                    entry.latest()
+                } else {
+                    entry.find_version(v)
+                        .context(format!("Version '{}' of package '{}' not found in index", v, pkg_name))?
+                }
+            } else {
+                entry.latest()
+            };
+            
+            let current_arch = apl::arch::current();
+            let bottle = release.bottles.iter()
+                .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
+                .context(format!("No bottle for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
+                
+            let mut bottle_map = std::collections::HashMap::new();
+            bottle_map.insert(current_arch.to_string(), Bottle {
+                url: bottle.url.clone(),
+                blake3: bottle.blake3.clone(),
+                arch: current_arch.to_string(),
+                macos: "14.0".to_string(),
+            });
+            
+            let type_ = match entry.type_.as_str() {
+                "app" => PackageType::App,
+                _ => PackageType::Cli,
+            };
+
+            let formula = Formula {
+                package: PackageInfo {
+                    name: entry.name.clone(),
+                    version: release.version.clone(),
+                    description: entry.description.clone(),
+                    homepage: String::new(),
+                    license: String::new(),
+                    type_,
+                },
+                source: Source {
+                    url: String::new(),
+                    blake3: String::new(),
+                    strip_components: 0,
+                },
+                bottle: bottle_map,
+                dependencies: Dependencies {
+                    runtime: release.deps.clone(),
+                    build: vec![],
+                    optional: vec![],
+                },
+                install: InstallSpec {
+                    bin: if release.bin.is_empty() { vec![entry.name.clone()] } else { release.bin.clone() },
+                    lib: vec![],
+                    include: vec![],
+                    script: String::new(),
+                    app: release.app.clone(),
+                },
+                hints: Hints { post_install: release.hints.clone() },
+            };
+            
+            (bottle.url.clone(), bottle.blake3.clone(), formula)
+        }
     };
 
     if let Some(lf) = lockfile {
@@ -320,14 +386,14 @@ pub fn finalize_package(
     }
     
     let extract_dir = pkg.download_path.parent().unwrap().join("extracted");
-    let extracted = dl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
+    let extracted = apl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
 
     println!("  📂 Extracted {} files", extracted.len());
 
     let mut files_to_record = Vec::new();
 
     let is_raw = extracted.len() == 1 && 
-        dl::extractor::detect_format(&pkg.download_path) == dl::extractor::ArchiveFormat::RawBinary;
+        apl::extractor::detect_format(&pkg.download_path) == apl::extractor::ArchiveFormat::RawBinary;
 
     for file in &extracted {
         let hash = cas.store_file(&file.absolute_path)?;
@@ -345,8 +411,20 @@ pub fn finalize_package(
             continue;
         };
 
-        for bin in bins {
-            let target = bin_path().join(bin);
+        for bin_spec in bins {
+            let (src_name, target_name) = if bin_spec.contains(':') {
+                let parts: Vec<&str> = bin_spec.split(':').collect();
+                (parts[0], parts[1])
+            } else {
+                (bin_spec, bin_spec)
+            };
+
+            // Only process if this file matches the source name (relative to archive root)
+            if file.relative_path.to_string_lossy() != src_name && file_name != src_name {
+                continue;
+            }
+
+            let target = bin_path().join(target_name);
             if target.exists() { std::fs::remove_file(&target).ok(); }
             
             cas.link_to(&hash, &target)?;
@@ -354,7 +432,7 @@ pub fn finalize_package(
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))?;
             }
-            println!("  → {}", bin);
+            println!("  → {}", target_name);
             
             let abs_path = target.to_string_lossy().to_string();
             files_to_record.push((abs_path, hash.clone()));
@@ -369,6 +447,8 @@ pub fn finalize_package(
 
     println!("✓ {} installed", pkg.name);
 
+    update_lockfile_if_exists();
+
     if let Some(formula) = &pkg.formula {
         if !formula.hints.post_install.is_empty() {
             println!();
@@ -382,14 +462,7 @@ pub fn finalize_package(
     let bin_name = pkg.formula.as_ref()
         .and_then(|f| f.install.bin.first())
         .unwrap_or(&pkg.name);
-    if let Ok(output) = std::process::Command::new("which").arg(bin_name).output() {
-        let which_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let expected = bin_path().join(bin_name);
-        if !which_path.is_empty() && which_path != expected.to_string_lossy() {
-            println!();
-            println!("💡 Run 'hash -r' or restart your terminal to use the new binary");
-        }
-    }
+    perform_ux_checks(bin_name);
 
     Ok(())
 }
@@ -456,7 +529,7 @@ fn finalize_app_package(
          let extract_dir = pkg.download_path.parent().unwrap().join("extracted_app");
          if extract_dir.exists() { std::fs::remove_dir_all(&extract_dir).ok(); }
          
-         dl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
+         apl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
          
          // Find app_name (recursive search or direct?)
          // Assume app is inside extract_dir (possibly nested in 1 dir)
@@ -551,5 +624,43 @@ pub fn finalize_switch(
     db.add_history(name, "switch", version_from.as_deref(), Some(version), true)?;
     
     println!("✓ active version is now {}", version);
+
+    update_lockfile_if_exists();
+    perform_ux_checks(name);
+
     Ok(())
+}
+
+fn update_lockfile_if_exists() {
+    if apl::lockfile::Lockfile::exists_default() {
+        println!("⟳ Updating lockfile...");
+        if let Err(e) = crate::cmd::lock::lock(false) {
+             println!("⚠ Failed to update lockfile: {}", e);
+        }
+    }
+}
+
+fn perform_ux_checks(bin_name: &str) {
+    // PATH check
+    let path_env = std::env::var_os("PATH").unwrap_or_default();
+    let bin_dir = bin_path();
+    let is_in_path = std::env::split_paths(&path_env).any(|p| p == bin_dir);
+
+    if !is_in_path {
+        println!();
+        println!("⚠ Warning: {} is not in your PATH.", bin_dir.display());
+        println!("  To use installed binaries, add this to your shell profile (~/.zshrc, ~/.bashrc, etc):");
+        println!("  export PATH=\"{}:$PATH\"", bin_dir.display());
+    } else {
+        // Shadowing check
+        if let Ok(output) = std::process::Command::new("which").arg(bin_name).output() {
+            let which_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let expected = bin_path().join(bin_name);
+            if !which_path.is_empty() && !which_path.ends_with(&expected.to_string_lossy().to_string()) {
+                println!();
+                println!("💡 Note: {} is shadowed by {}.", bin_name, which_path);
+                println!("   Run 'hash -r' or restart your terminal to use the new binary.");
+            }
+        }
+    }
 }

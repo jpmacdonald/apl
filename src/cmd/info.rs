@@ -1,9 +1,9 @@
 //! Info command
 
 use anyhow::{Context, Result, bail};
-use dl::db::StateDb;
-use dl::index::PackageIndex;
-use dl::dl_home;
+use apl::db::StateDb;
+use apl::index::PackageIndex;
+use apl::apl_home;
 
 /// Show info about a specific package
 pub fn info(package: &str) -> Result<()> {
@@ -13,7 +13,7 @@ pub fn info(package: &str) -> Result<()> {
     let installed = db.get_package(package)?;
     
     // Check index for more info
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     let index_entry = if index_path.exists() {
         PackageIndex::load(&index_path).ok().and_then(|idx| idx.find(package).cloned())
     } else {

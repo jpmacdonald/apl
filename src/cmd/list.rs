@@ -1,7 +1,7 @@
 //! List command
 
 use anyhow::{Context, Result};
-use dl::db::StateDb;
+use apl::db::StateDb;
 
 /// List all installed packages
 pub fn list() -> Result<()> {

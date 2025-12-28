@@ -2,12 +2,12 @@
 
 use anyhow::{Context, Result, bail};
 use reqwest::Client;
-use dl::index::PackageIndex;
-use dl::dl_home;
+use apl::index::PackageIndex;
+use apl::apl_home;
 
 /// Update package index from CDN
 pub async fn update(url: &str, dry_run: bool) -> Result<()> {
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     
     if dry_run {
         println!("Would download index from: {}", url);

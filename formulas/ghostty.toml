@@ -1,0 +1,16 @@
+[package]
+name = "ghostty"
+version = "1.2.3"
+description = "Ghostty is a cross-platform, GPU-accelerated terminal emulator"
+type = "app"
+
+[source]
+url = "https://release.files.ghostty.org/1.2.3/Ghostty.dmg"
+blake3 = "59f2584d0aaadc595ece8742f9c5a806c10ebd330b51a352748ad2305044d49b"
+
+[bottle.arm64]
+url = "https://release.files.ghostty.org/1.2.3/Ghostty.dmg"
+blake3 = "59f2584d0aaadc595ece8742f9c5a806c10ebd330b51a352748ad2305044d49b"
+
+[install]
+app = "Ghostty.app"

@@ -1,0 +1,16 @@
+[package]
+name = "neovim"
+version = "0.10.4"
+description = "Vim-fork focused on extensibility and usability"
+type = "cli"
+
+[source]
+url = "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-macos-arm64.tar.gz"
+blake3 = "7591bc3f2a9591a96d47bcf2cf054e3178e4ef4cd3aeace00137843aed1f0e7d"
+
+[bottle.arm64]
+url = "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-macos-arm64.tar.gz"
+blake3 = "7591bc3f2a9591a96d47bcf2cf054e3178e4ef4cd3aeace00137843aed1f0e7d"
+
+[install]
+bin = ["bin/nvim:nvim"]

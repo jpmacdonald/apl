@@ -2,8 +2,8 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use dl::db::StateDb;
-use dl::cas_path;
+use apl::db::StateDb;
+use apl::cas_path;
 
 /// Garbage collect orphaned CAS blobs
 pub fn clean(dry_run: bool) -> Result<()> {

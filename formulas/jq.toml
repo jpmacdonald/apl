@@ -1,31 +1,16 @@
-# Sample Formula: jq
-# A lightweight JSON processor
-
 [package]
 name = "jq"
 version = "1.7.1"
 description = "Lightweight and flexible command-line JSON processor"
-homepage = "https://jqlang.github.io/jq/"
-license = "MIT"
+type = "cli"
 
 [source]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-1.7.1.tar.gz"
-blake3 = "placeholder"
+url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
+blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
 
-# Pre-built bottles for each architecture
 [bottle.arm64]
 url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
 blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
-macos = "14.0"
-
-[bottle.x86_64]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-amd64"
-blake3 = "placeholder_x86"
-macos = "12.0"
-
-[dependencies]
-runtime = []
-build = []
 
 [install]
 bin = ["jq"]

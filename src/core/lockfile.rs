@@ -1,6 +1,6 @@
 //! Lockfile module for reproducible installs
 //!
-//! The lockfile (`dl.lock`) pins exact versions and hashes.
+//! The lockfile (`apl.lock`) pins exact versions and hashes.
 
 use std::fs;
 use std::path::Path;
@@ -83,17 +83,17 @@ impl Lockfile {
 
     /// Check if lockfile exists at default path
     pub fn exists_default() -> bool {
-        Path::new("dl.lock").exists()
+        Path::new("apl.lock").exists()
     }
 
-    /// Load from default path (dl.lock in current directory)
+    /// Load from default path (apl.lock in current directory)
     pub fn load_default() -> Result<Self, LockfileError> {
-        Self::load(Path::new("dl.lock"))
+        Self::load(Path::new("apl.lock"))
     }
 
     /// Save to default path
     pub fn save_default(&self) -> Result<(), LockfileError> {
-        self.save(Path::new("dl.lock"))
+        self.save(Path::new("apl.lock"))
     }
 }
 
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_lockfile_roundtrip() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("dl.lock");
+        let path = dir.path().join("apl.lock");
 
         let mut lockfile = Lockfile::new();
         lockfile.add_package(LockedPackage {

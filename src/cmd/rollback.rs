@@ -1,8 +1,8 @@
 //! Rollback command
 
 use anyhow::{Context, Result, bail};
-use dl::db::StateDb;
-use dl::cas::Cas;
+use apl::db::StateDb;
+use apl::cas::Cas;
 use crate::cmd::install::finalize_switch;
 
 /// Rollback a package to its previous state

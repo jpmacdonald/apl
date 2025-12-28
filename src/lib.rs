@@ -1,4 +1,4 @@
-//! dl - Distill Package Manager
+//! apl - A Package Layer
 //!
 //! A fast, minimal package manager for macOS CLI tools.
 
@@ -19,26 +19,26 @@ pub use io::extract as extractor;
 use std::path::PathBuf;
 use dirs::home_dir;
 
-/// Default dl home directory: ~/.dl
-pub fn dl_home() -> PathBuf {
+/// Default apl home directory: ~/.apl
+pub fn apl_home() -> PathBuf {
     home_dir()
         .expect("Could not determine home directory")
-        .join(".dl")
+        .join(".apl")
 }
 
-/// Content-addressable store path: ~/.dl/cache
+/// Content-addressable store path: ~/.apl/cache
 pub fn cas_path() -> PathBuf {
-    dl_home().join("cache")
+    apl_home().join("cache")
 }
 
-/// SQLite database path: ~/.dl/state.db
+/// SQLite database path: ~/.apl/state.db
 pub fn db_path() -> PathBuf {
-    dl_home().join("state.db")
+    apl_home().join("state.db")
 }
 
-/// Binary installation target: ~/.dl/bin
+/// Binary installation target: ~/.apl/bin
 pub fn bin_path() -> PathBuf {
-    dl_home().join("bin")
+    apl_home().join("bin")
 }
 
 /// Architecture constants

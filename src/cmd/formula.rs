@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use dl::formula::Formula;
+use apl::formula::Formula;
 
 /// Create a new formula template
 pub fn new(name: &str, output_dir: &Path) -> Result<()> {
@@ -90,16 +90,16 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     println!("✓ Computed hash: {}", hash);
     
     // Update formula file - simple approach: read TOML, update, write back
-    let mut formula = dl::formula::Formula::from_file(path)?;
+    let mut formula = apl::formula::Formula::from_file(path)?;
     formula.package.version = version.to_string();
     
     // Update the bottle URL and hash for current arch
-    let arch = dl::arch::current();
+    let arch = apl::arch::current();
     if let Some(bottle) = formula.bottle.get_mut(arch) {
         bottle.url = url.to_string();
         bottle.blake3 = hash.clone();
     } else {
-        formula.bottle.insert(arch.to_string(), dl::formula::Bottle {
+        formula.bottle.insert(arch.to_string(), apl::formula::Bottle {
             arch: arch.to_string(),
             url: url.to_string(),
             blake3: hash.clone(),

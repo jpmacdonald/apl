@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime};
-use dl::db::StateDb;
+use apl::db::StateDb;
 
 pub fn history(pkg_name: &str) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;

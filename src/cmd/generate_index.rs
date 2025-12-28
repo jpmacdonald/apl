@@ -3,8 +3,8 @@
 //! Scans a directory for .toml files and builds an index.bin
 
 use anyhow::Result;
-use dl::index::{PackageIndex, IndexBottle};
-use dl::formula::PackageType;
+use apl::index::{PackageIndex, IndexBottle};
+use apl::formula::PackageType;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::path::Path;
 
@@ -27,7 +27,7 @@ pub fn generate_index(formulas_dir: &Path, output: &Path) -> Result<()> {
         let path = entry.path();
         
         if path.extension().is_some_and(|ext| ext == "toml") {
-            let formula = dl::formula::Formula::from_file(&path)?;
+            let formula = apl::formula::Formula::from_file(&path)?;
             
             let bottles: Vec<IndexBottle> = formula.bottle.iter()
                 .map(|(arch, bottle)| IndexBottle {
@@ -37,7 +37,7 @@ pub fn generate_index(formulas_dir: &Path, output: &Path) -> Result<()> {
                 })
                 .collect();
             
-            let release = dl::core::index::IndexRelease {
+            let release = apl::core::index::IndexRelease {
                 version: formula.package.version.clone(),
                 bottles,
                 deps: formula.dependencies.runtime.clone(),

@@ -1,37 +1,37 @@
 #!/bin/bash
 set -e
 
-# Distill (dl) Bootstrap Installer
+# apl - A Package Layer Bootstrap Installer
 
-DL_HOME="$HOME/.dl"
-BIN_DIR="$DL_HOME/bin"
+APL_HOME="$HOME/.apl"
+BIN_DIR="$APL_HOME/bin"
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
 if [ "$OS" != "darwin" ]; then
-    echo "✗ Distill currently only supports macOS."
+    echo "✗ apl currently only supports macOS."
     exit 1
 fi
 
-echo "🚀 Installing Distill (dl)..."
+echo "🚀 Installing apl (A Package Layer)..."
 
 mkdir -p "$BIN_DIR"
-mkdir -p "$DL_HOME/cache"
+mkdir -p "$APL_HOME/cache"
 
 # For local development: copy from build directory
-if [ -f "./target/release/dl" ]; then
-    cp "./target/release/dl" "$BIN_DIR/dl"
-elif [ -f "./target/debug/dl" ]; then
-    cp "./target/debug/dl" "$BIN_DIR/dl"
+if [ -f "./target/release/apl" ]; then
+    cp "./target/release/apl" "$BIN_DIR/apl"
+elif [ -f "./target/debug/apl" ]; then
+    cp "./target/debug/apl" "$BIN_DIR/apl"
 fi
 
-chmod +x "$BIN_DIR/dl"
+chmod +x "$BIN_DIR/apl"
 
-echo "✓ Distill installed to $BIN_DIR/dl"
+echo "✓ apl installed to $BIN_DIR/apl"
 echo ""
 
-# PATH Automation - ensure ~/.dl/bin comes FIRST in PATH
-PATH_EXPORT='export PATH="$HOME/.dl/bin:$PATH"'
+# PATH Automation - ensure ~/.apl/bin comes FIRST in PATH
+PATH_EXPORT='export PATH="$HOME/.apl/bin:$PATH"'
 
 DETECTED_PROFILE=""
 case "$SHELL" in
@@ -41,14 +41,13 @@ case "$SHELL" in
 esac
 
 if [ -n "$DETECTED_PROFILE" ]; then
-    if grep -q ".dl/bin" "$DETECTED_PROFILE" 2>/dev/null; then
-        echo "✓ ~/.dl/bin is already in your PATH ($DETECTED_PROFILE)"
+    if grep -q ".apl/bin" "$DETECTED_PROFILE" 2>/dev/null; then
+        echo "✓ ~/.apl/bin is already in your PATH ($DETECTED_PROFILE)"
     else
-        # Add to profile (at the end so it takes priority)
         echo "" >> "$DETECTED_PROFILE"
-        echo "# Distill package manager" >> "$DETECTED_PROFILE"
+        echo "# apl - A Package Layer" >> "$DETECTED_PROFILE"
         echo "$PATH_EXPORT" >> "$DETECTED_PROFILE"
-        echo "✓ Added ~/.dl/bin to PATH in $DETECTED_PROFILE"
+        echo "✓ Added ~/.apl/bin to PATH in $DETECTED_PROFILE"
         echo "  Run 'source $DETECTED_PROFILE' or restart your terminal"
     fi
 else
@@ -57,4 +56,4 @@ else
 fi
 
 echo ""
-echo "Run 'dl update' to get started!"
+echo "Run 'apl update' to get started!"

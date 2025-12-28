@@ -1,0 +1,16 @@
+[package]
+name = "lazygit"
+version = "0.44.1"
+description = "A simple terminal UI for git commands"
+type = "cli"
+
+[source]
+url = "https://github.com/jesseduffield/lazygit/releases/download/v0.44.1/lazygit_0.44.1_Darwin_arm64.tar.gz"
+blake3 = "0eae5d480e1378c0b5d4a765dbe8699bd874a4ce56891182291ae33e4941188c"
+
+[bottle.arm64]
+url = "https://github.com/jesseduffield/lazygit/releases/download/v0.44.1/lazygit_0.44.1_Darwin_arm64.tar.gz"
+blake3 = "0eae5d480e1378c0b5d4a765dbe8699bd874a4ce56891182291ae33e4941188c"
+
+[install]
+bin = ["lazygit"]

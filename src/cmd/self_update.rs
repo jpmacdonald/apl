@@ -1,12 +1,12 @@
 //! Self-update command
 
 use anyhow::{Context, Result, bail};
-use dl::index::PackageIndex;
-use dl::dl_home;
+use apl::index::PackageIndex;
+use apl::apl_home;
 
 /// Update dl itself to the latest version
 pub async fn self_update(dry_run: bool) -> Result<()> {
-    let index_path = dl_home().join("index.bin");
+    let index_path = apl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }

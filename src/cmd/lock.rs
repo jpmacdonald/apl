@@ -1,39 +1,71 @@
 //! Lock command
 
 use anyhow::{Context, Result};
-use dl::db::StateDb;
-use dl::lockfile::{Lockfile, LockedPackage};
+use apl::db::StateDb;
+use apl::lockfile::{Lockfile, LockedPackage};
 
-/// Generate dl.lock from installed packages
+/// Generate apl.lock from installed packages
 pub fn lock(dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     let packages = db.list_packages()?;
     
     if packages.is_empty() {
-        println!("No packages installed. Nothing to lock.");
-        return Ok(());
+        println!("No packages installed. generating empty lockfile.");
     }
     
-    let lock_path = std::env::current_dir()?.join("dl.lock");
+    let lock_path = std::env::current_dir()?.join("apl.lock");
     
     if dry_run {
-        println!("Would generate dl.lock with {} packages:", packages.len());
+        println!("Would generate apl.lock with {} packages:", packages.len());
         for pkg in &packages {
             println!("  {} {}", pkg.name, pkg.version);
         }
         return Ok(());
     }
     
+    // Load index to look up URLs
+    let index_path = apl::apl_home().join("index.bin");
+    let index = if index_path.exists() {
+        Some(apl::index::PackageIndex::load(&index_path).context("Failed to load index")?)
+    } else {
+        None
+    };
+
+    if index.is_none() {
+        println!("⚠ Warning: No index found. Lockfile will contain empty URLs.");
+    }
+
     // Build lockfile from installed packages
-    let locked_packages: Vec<LockedPackage> = packages.iter()
-        .map(|pkg| LockedPackage {
+    let mut locked_packages = Vec::new();
+    let current_arch = apl::arch::current();
+
+    for pkg in packages {
+        let mut url = String::new();
+        let blake3 = pkg.blake3.clone();
+
+        // Try to find URL in index
+        if let Some(idx) = &index {
+            if let Some(entry) = idx.find(&pkg.name) {
+                if let Some(release) = entry.find_version(&pkg.version) {
+                    if let Some(bottle) = release.bottles.iter().find(|b| b.arch == current_arch) {
+                        url = bottle.url.clone();
+                        // Verify hash matches what we have installed (sanity check)
+                        if bottle.blake3 != blake3 {
+                            println!("⚠ Warning: Installed hash for {} disagrees with index", pkg.name);
+                        }
+                    }
+                }
+            }
+        }
+
+        locked_packages.push(LockedPackage {
             name: pkg.name.clone(),
             version: pkg.version.clone(),
-            blake3: pkg.blake3.clone(),
-            url: String::new(), // We don't have the URL stored in DB; could look up in index
-            arch: dl::arch::current().to_string(),
-        })
-        .collect();
+            blake3,
+            url,
+            arch: current_arch.to_string(),
+        });
+    }
     
     let lockfile = Lockfile {
         version: 1,
@@ -43,7 +75,7 @@ pub fn lock(dry_run: bool) -> Result<()> {
     
     lockfile.save(&lock_path)?;
     
-    println!("✓ Generated dl.lock with {} packages", packages.len());
+    println!("✓ Generated apl.lock with {} packages", lockfile.packages.len());
     
     Ok(())
 }

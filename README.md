@@ -1,13 +1,17 @@
-# Distill (dl)
+# apl - A Package Layer
 
-A **purely experimental** package manager for macOS CLI tools. Written in Rust.
+> **A fast binary package manager for macOS.**  
+> Reproducible. Secure. Blazingly fast.
 
-## What It Does
+`apl` is a modern package manager written in Rust, designed for speed and reliability. It treats your CLI tools and Mac Apps as immutable artifacts.
 
-- Installs single-binary CLI tools (like `jq`, `ripgrep`, `fzf`)
-- Uses a content-addressable store for deduplication
-- Supports transient execution with `dl run` (no global install)
-- Never runs post-install scripts
+## Features
+
+- ⚡️ **Fast**: Parallel downloads and zstd compression.
+- 🔒 **Secure**: Sandboxed extraction and "Zip Slip" protection.
+- 📦 **Apps**: Installs CLI tools (`ripgrep`) and GUI Apps (`Ghostty.app`) uniformly.
+- 💎 **Reproducible**: `apl.lock` pins exact versions and hashes for every install.
+- ☁️ **Self-Healing**: Automated index updates via GitHub Actions.
 
 ## Installation
 
@@ -15,60 +19,73 @@ A **purely experimental** package manager for macOS CLI tools. Written in Rust.
 curl -sL https://raw.githubusercontent.com/jpmacdonald/distill/main/install.sh | sh
 ```
 
-Then add `~/.dl/bin` to your PATH.
+**Important**: Add the binary directory to your shell configuration (`~/.zshrc`):
+```bash
+export PATH="$HOME/.apl/bin:$PATH"
+```
 
 ## Usage
 
+### Basics
+
 ```bash
-# Fetch the package index
-dl update
+# Update the package index
+apl update
 
-# Install tools
-dl install ripgrep bat fd
+# Install packages (generates/updates apl.lock)
+apl install ripgrep bat fd
 
-# Run a tool without installing
-dl run jq -- '.key' file.json
-
-# List installed packages
-dl list
+# Install a GUI App
+apl install ghostty
 
 # Remove a package
-dl remove ripgrep
-
-# Upgrade all packages
-dl upgrade
+apl remove ripgrep
 ```
 
-## Formulas
+### Reproducibility (Lockfiles)
 
-Packages are defined in TOML files. Example:
+`apl` automatically maintains an `apl.lock` file in your current directory. This file pins the exact version, URL, and BLAKE3 hash of every installed package.
 
-```toml
-[package]
-name = "jq"
-version = "1.7.1"
+To install exactly what's in the lockfile (ignoring index updates):
 
-[bottle.arm64]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
-blake3 = "..."
-
-[install]
-bin = ["jq"]
+```bash
+apl install --locked
 ```
 
-## Limitations
+### Transient Execution
 
-- Only supports macOS (arm64 and x86_64)
-- Only handles single-binary tools
-- Tools needing shell init (like `zoxide`) require manual `.zshrc` setup
-- Does not support `nvm`, `pyenv`, or similar shell managers
+Run a tool once without installing it globally:
+
+```bash
+apl run jq -- '.key' file.json
+```
 
 ## Architecture
 
-- **Index**: `~/.dl/index.bin` (postcard+zstd compressed)
-- **Database**: `~/.dl/state.db` (SQLite)
-- **Cache**: `~/.dl/cache/` (BLAKE3-hashed blobs)
-- **Binaries**: `~/.dl/bin/`
+- **Index**: Hosted on GitHub Pages (`gh-pages` branch), updated automatically via CI.
+- **Store**: Content-addressable storage in `~/.apl/cache`. Files are deduplicated by hash.
+- **State**: SQLite database at `~/.apl/state.db`.
+
+## Contributing
+
+Add a new formula in `formulas/<name>.toml`:
+
+```toml
+[package]
+name = "my-tool"
+version = "1.0.0"
+description = "A great tool"
+type = "cli" # or "app"
+
+[bottle.arm64]
+url = "https://example.com/tool.tar.gz"
+blake3 = "..."
+
+[install]
+bin = ["tool"]
+```
+
+Push to `main`. The GitHub Action will automatically build and publish the new index.
 
 ---
 
