@@ -1,0 +1,34 @@
+[package]
+name = "delta"
+version = "0.18.2"
+description = "A syntax-highlighting pager for git"
+homepage = "https://github.com/dandavison/delta"
+license = ""
+
+[source]
+url = "https://github.com/dandavison/delta/releases/download/0.18.2/delta-0.18.2-aarch64-apple-darwin.tar.gz"
+blake3 = "PLACEHOLDER"
+strip_components = 0
+
+[bottle.x86_64]
+url = "https://github.com/dandavison/delta/releases/download/0.18.2/delta-0.18.2-x86_64-apple-darwin.tar.gz"
+blake3 = "PLACEHOLDER"
+arch = "arm64"
+macos = "14.0"
+
+[bottle.arm64]
+url = "https://github.com/dandavison/delta/releases/download/0.18.2/delta-0.18.2-aarch64-apple-darwin.tar.gz"
+blake3 = "906240593a91488ed036652a41b7b6df4852484e5bcd69e3c0a15e63dea66f89"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["delta"]
+lib = []
+include = []
+script = ""

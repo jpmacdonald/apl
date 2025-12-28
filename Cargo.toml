@@ -22,7 +22,7 @@ clap = { version = "4", features = ["derive", "env"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
-rmp-serde = "1"
+postcard = { version = "1", features = ["alloc"] }
 
 # Error handling
 thiserror = "2"

@@ -36,3 +36,20 @@ pub fn db_path() -> PathBuf {
 pub fn bin_path() -> PathBuf {
     dl_home().join("bin")
 }
+
+/// Architecture constants
+pub mod arch {
+    /// ARM64 architecture (Apple Silicon)
+    pub const ARM64: &str = "arm64";
+    /// x86_64 architecture (Intel)
+    pub const X86_64: &str = "x86_64";
+
+    /// Get the current architecture string
+    pub fn current() -> &'static str {
+        if cfg!(target_arch = "aarch64") {
+            ARM64
+        } else {
+            X86_64
+        }
+    }
+}

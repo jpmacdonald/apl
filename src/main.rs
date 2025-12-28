@@ -60,21 +60,22 @@ enum Commands {
         /// Search query
         query: String,
     },
-    /// Generate index.msgpack from formulas directory
-    IndexGen {
+    /// Generate index.bin from formulas directory
+    #[command(name = "generate-index")]
+    GenerateIndex {
         /// Directory containing formula files
         #[arg(default_value = "formulas")]
         formulas_dir: PathBuf,
         /// Output file
-        #[arg(default_value = "index.msgpack")]
+        #[arg(default_value = "index.bin")]
         output: PathBuf,
     },
-    /// Garbage collect orphaned CAS blobs
-    Gc,
+    /// Remove orphaned CAS blobs and temp files
+    Clean,
     /// Update package index from CDN
     Update {
         /// CDN URL for index
-        #[arg(long, env = "DL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/main/index.msgpack")]
+        #[arg(long, env = "DL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/main/index.bin")]
         url: String,
     },
     /// Upgrade installed packages to latest versions
@@ -171,10 +172,10 @@ async fn main() -> Result<()> {
         Commands::Search { query } => {
             search_packages(&query)?;
         }
-        Commands::IndexGen { formulas_dir, output } => {
+        Commands::GenerateIndex { formulas_dir, output } => {
             generate_index(&formulas_dir, &output)?;
         }
-        Commands::Gc => {
+        Commands::Clean => {
             garbage_collect(dry_run)?;
         }
         Commands::Update { url } => {
@@ -232,7 +233,7 @@ async fn install_packages(packages: &[String], dry_run: bool, locked: bool) -> R
     let db = StateDb::open().context("Failed to open state database")?;
 
     // Load index for resolution
-    let index_path = dl_home().join("index.msgpack");
+    let index_path = dl_home().join("index.bin");
     let index = if index_path.exists() {
         PackageIndex::load(&index_path).ok()
     } else {
@@ -322,7 +323,7 @@ async fn prepare_download(
     let formula_path = PathBuf::from(pkg);
     
     // Try loading as file first, then fall back to index lookup
-    let (name, version, bottle_url, bottle_hash, bin_list, formula_opt) = if formula_path.exists() {
+    let (name, version, bottle_url, bottle_hash, bin_list, hints_str, formula_opt) = if formula_path.exists() {
         // Load from formula file
         let formula = Formula::from_file(&formula_path)?;
         let bottle = formula.bottle_for_current_arch()
@@ -333,11 +334,12 @@ async fn prepare_download(
             bottle.url.clone(),
             bottle.blake3.clone(),
             formula.install.bin.clone(),
+            formula.hints.post_install.clone(),
             Some(formula),
         )
     } else {
         // Try to find in index
-        let index_path = dl_home().join("index.msgpack");
+        let index_path = dl_home().join("index.bin");
         if !index_path.exists() {
             bail!("Package '{}' not found. Run 'dl update' to fetch package index.", pkg);
         }
@@ -349,7 +351,7 @@ async fn prepare_download(
             .context(format!("Package '{}' not found in index", pkg))?;
         
         // Find bottle for current arch
-        let current_arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" };
+        let current_arch = dl::arch::current();
         let bottle = entry.bottles.iter()
             .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
             .context(format!("No bottle for {} on {}", pkg, current_arch))?;
@@ -360,6 +362,7 @@ async fn prepare_download(
             bottle.url.clone(),
             bottle.blake3.clone(),
             entry.bin.clone(),
+            entry.hints.clone(),
             None, // No formula file
         )
     };
@@ -411,6 +414,7 @@ async fn prepare_download(
                 include: vec![],
                 script: String::new(),
             },
+            hints: dl::formula::Hints { post_install: hints_str },
         }
     });
 
@@ -489,6 +493,18 @@ fn finalize_package(
     }
 
     println!("✓ {} installed", pkg.name);
+
+    // Print hints if available
+    if let Some(formula) = &pkg.formula {
+        if !formula.hints.post_install.is_empty() {
+            println!();
+            println!("💡 Hint:");
+            for line in formula.hints.post_install.lines() {
+                println!("   {}", line);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -725,7 +741,7 @@ fn garbage_collect(dry_run: bool) -> Result<()> {
 fn search_packages(query: &str) -> Result<()> {
     use dl::index::PackageIndex;
     
-    let index_path = dl_home().join("index.msgpack");
+    let index_path = dl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }
@@ -748,7 +764,7 @@ fn search_packages(query: &str) -> Result<()> {
     Ok(())
 }
 
-/// Generate index.msgpack from formulas directory
+/// Generate index.bin from formulas directory
 fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> Result<()> {
     use dl::index::{PackageIndex, IndexEntry, IndexBottle};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -787,6 +803,7 @@ fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> R
                         bottles,
                         deps: formula.dependencies.runtime.clone(),
                         bin: formula.install.bin.clone(),
+                        hints: formula.hints.post_install.clone(),
                     });
                     count += 1;
                     println!("  + {}", formula.package.name);
@@ -808,7 +825,7 @@ fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> R
 async fn update_index(url: &str, dry_run: bool) -> Result<()> {
     use dl::index::PackageIndex;
     
-    let index_path = dl_home().join("index.msgpack");
+    let index_path = dl_home().join("index.bin");
     
     if dry_run {
         println!("Would download index from: {}", url);
@@ -852,7 +869,7 @@ async fn upgrade_packages(packages: &[String], dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    let index_path = dl_home().join("index.msgpack");
+    let index_path = dl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }
@@ -998,7 +1015,7 @@ fn formula_check(path: &std::path::Path) -> Result<()> {
 async fn self_update_dl(dry_run: bool) -> Result<()> {
     use dl::index::PackageIndex;
 
-    let index_path = dl_home().join("index.msgpack");
+    let index_path = dl_home().join("index.bin");
     if !index_path.exists() {
         bail!("No index found. Run 'dl update' first.");
     }
@@ -1113,39 +1130,30 @@ fn compute_file_hash_streaming(path: &std::path::Path) -> Result<String> {
 /// Run a package transiently without global installation
 async fn run_package(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> {
     let client = reqwest::Client::new();
-    let cas = Cas::new()?;
-
-    println!("🚀 Preparing to run '{}'...", pkg_name);
 
     // 1. Resolve and download
     let prepared = prepare_download(&client, pkg_name, false, None).await?
         .context(format!("Could not find or download package '{}'", pkg_name))?;
 
-    // 2. Extract and store in CAS (transiently: as in, we don't symlink to ~/.dl/bin)
+    // 2. Extract to temp (we keep _temp_dir alive to preserve the files)
     let extract_dir = prepared.download_path.parent().unwrap().join("extracted");
     let extracted = dl::extractor::extract_auto(&prepared.download_path, &extract_dir)?;
     
     // Identify the binary to run (first in bin_list or package name)
     let bin_name = prepared.bin_list.first().cloned().unwrap_or_else(|| prepared.name.clone());
-    let mut bin_path_in_cas = None;
-
+    
     let is_raw = extracted.len() == 1 && 
         dl::extractor::detect_format(&prepared.download_path) == dl::extractor::ArchiveFormat::RawBinary;
 
-    for file in &extracted {
-        let hash = cas.store_file(&file.absolute_path)?;
-        let is_match = if is_raw {
-            true // If it's a raw binary and there's only one file, it's the one we want
-        } else {
-            file.relative_path.to_string_lossy() == bin_name || file.relative_path.file_name().unwrap().to_string_lossy() == bin_name
-        };
-
-        if is_match {
-            bin_path_in_cas = Some(cas.blob_path(&hash));
-        }
-    }
-
-    let bin_path = bin_path_in_cas.context(format!("Could not find binary '{}' in package archive", bin_name))?;
+    // Find the binary path directly in the extracted files (no CAS)
+    let bin_path = extracted.iter()
+        .find(|f| {
+            if is_raw { return true; }
+            let fname = f.relative_path.file_name().unwrap().to_string_lossy();
+            fname == bin_name || f.relative_path.to_string_lossy() == bin_name
+        })
+        .map(|f| f.absolute_path.clone())
+        .context(format!("Could not find binary '{}' in package archive", bin_name))?;
 
     // 3. Ensure executable and run
     #[cfg(unix)]
@@ -1156,12 +1164,10 @@ async fn run_package(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<
         std::fs::set_permissions(&bin_path, perms)?;
     }
 
-    let mut child = std::process::Command::new(bin_path)
+    let status = std::process::Command::new(&bin_path)
         .args(args)
-        .spawn()
-        .context("Failed to spawn process")?;
-
-    let status = child.wait().context("Failed to wait for process")?;
+        .status()
+        .context("Failed to execute process")?;
     
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));

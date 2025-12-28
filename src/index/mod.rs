@@ -1,9 +1,9 @@
-//! Msgpack binary index
+//! Binary index using postcard + zstd
 //!
 //! Compact package registry fetched from CDN.
 
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -14,11 +14,8 @@ pub enum IndexError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("Decode error: {0}")]
-    Decode(#[from] rmp_serde::decode::Error),
-
-    #[error("Encode error: {0}")]
-    Encode(#[from] rmp_serde::encode::Error),
+    #[error("Serialization error: {0}")]
+    Postcard(#[from] postcard::Error),
 }
 
 /// Bottle info in the index
@@ -50,6 +47,9 @@ pub struct IndexEntry {
     /// Binary names to link
     #[serde(default)]
     pub bin: Vec<String>,
+    /// Post-install hints
+    #[serde(default)]
+    pub hints: String,
 }
 
 /// Package index (binary format)
@@ -73,30 +73,31 @@ impl PackageIndex {
         }
     }
 
-    /// Load index from a msgpack file
+    /// Load index from a zstd-compressed postcard file
     pub fn load(path: &Path) -> Result<Self, IndexError> {
-        let mut file = fs::File::open(path)?;
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)?;
-        Ok(rmp_serde::from_slice(&buf)?)
+        let compressed = fs::read(path)?;
+        let decompressed = zstd::decode_all(compressed.as_slice())?;
+        Ok(postcard::from_bytes(&decompressed)?)
     }
 
-    /// Save index to a msgpack file
+    /// Save index to a zstd-compressed postcard file
     pub fn save(&self, path: &Path) -> Result<(), IndexError> {
-        let buf = rmp_serde::to_vec(self)?;
-        let mut file = fs::File::create(path)?;
-        file.write_all(&buf)?;
+        let buf = postcard::to_allocvec(self)?;
+        let file = fs::File::create(path)?;
+        let mut encoder = zstd::stream::Encoder::new(file, 3)?;
+        encoder.write_all(&buf)?;
+        encoder.finish()?;
         Ok(())
     }
 
     /// Serialize to bytes (for network transfer)
     pub fn to_bytes(&self) -> Result<Vec<u8>, IndexError> {
-        Ok(rmp_serde::to_vec(self)?)
+        Ok(postcard::to_allocvec(self)?)
     }
 
     /// Deserialize from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, IndexError> {
-        Ok(rmp_serde::from_slice(data)?)
+        Ok(postcard::from_bytes(data)?)
     }
 
     /// Add or update a package entry
@@ -180,7 +181,7 @@ mod tests {
     #[test]
     fn test_file_persistence() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("index.msgpack");
+        let path = dir.path().join("index.bin");
 
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;

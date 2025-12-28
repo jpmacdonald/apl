@@ -1,0 +1,34 @@
+[package]
+name = "fzf"
+version = "0.57.0"
+description = "A command-line fuzzy finder"
+homepage = "https://github.com/junegunn/fzf"
+license = ""
+
+[source]
+url = "https://github.com/junegunn/fzf/releases/download/v0.57.0/fzf-0.57.0-darwin_arm64.tar.gz"
+blake3 = "PLACEHOLDER"
+strip_components = 0
+
+[bottle.arm64]
+url = "https://github.com/junegunn/fzf/releases/download/v0.57.0/fzf-0.57.0-darwin_arm64.tar.gz"
+blake3 = "ebb14f7aaf1ffe3d2d7f2a9661cb55cf17c9667d32b7ce2ce6367092f36c1730"
+arch = "arm64"
+macos = "14.0"
+
+[bottle.x86_64]
+url = "https://github.com/junegunn/fzf/releases/download/v0.57.0/fzf-0.57.0-darwin_amd64.tar.gz"
+blake3 = "PLACEHOLDER"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["fzf"]
+lib = []
+include = []
+script = ""

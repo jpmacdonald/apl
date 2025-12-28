@@ -1,0 +1,28 @@
+[package]
+name = "zoxide"
+version = "0.9.6"
+description = "A smarter cd command"
+homepage = "https://github.com/ajeetdsouza/zoxide"
+
+[source]
+url = "https://github.com/ajeetdsouza/zoxide/releases/download/v0.9.6/zoxide-0.9.6-aarch64-apple-darwin.tar.gz"
+blake3 = "aee88a25bc2e9a20c1aecb96d9043b1252e65834ddd03eb5dfcbe5222486dc23"
+
+[bottle.arm64]
+url = "https://github.com/ajeetdsouza/zoxide/releases/download/v0.9.6/zoxide-0.9.6-aarch64-apple-darwin.tar.gz"
+blake3 = "aee88a25bc2e9a20c1aecb96d9043b1252e65834ddd03eb5dfcbe5222486dc23"
+
+[bottle.x86_64]
+url = "https://github.com/ajeetdsouza/zoxide/releases/download/v0.9.6/zoxide-0.9.6-x86_64-apple-darwin.tar.gz"
+blake3 = "PLACEHOLDER"
+
+[install]
+bin = ["zoxide"]
+
+[hints]
+post_install = """
+To complete setup, add this to your ~/.zshrc:
+  eval "$(zoxide init zsh)"
+"""
+
+[dependencies]

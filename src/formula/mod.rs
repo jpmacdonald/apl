@@ -54,7 +54,7 @@ pub struct Bottle {
 }
 
 fn default_arch() -> String {
-    "arm64".to_string()
+    crate::arch::ARM64.to_string()
 }
 
 fn default_macos() -> String {
@@ -83,6 +83,8 @@ pub struct Formula {
     pub dependencies: Dependencies,
     #[serde(default)]
     pub install: InstallSpec,
+    #[serde(default)]
+    pub hints: Hints,
 }
 
 /// Installation specification
@@ -100,6 +102,14 @@ pub struct InstallSpec {
     /// Custom install script (shell commands)
     #[serde(default)]
     pub script: String,
+}
+
+/// Post-install hints (printed, never executed)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Hints {
+    /// Message to display after installation
+    #[serde(default)]
+    pub post_install: String,
 }
 
 impl Formula {
@@ -121,11 +131,7 @@ impl Formula {
 
     /// Get bottle for current architecture
     pub fn bottle_for_current_arch(&self) -> Option<&Bottle> {
-        let arch = if cfg!(target_arch = "aarch64") {
-            "arm64"
-        } else {
-            "x86_64"
-        };
+        let arch = crate::arch::current();
         self.bottle.get(arch)
     }
 }

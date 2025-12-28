@@ -15,7 +15,7 @@
 ## Installation
 
 ```bash
-curl -sL https://raw.githubusercontent.com/jimmy/distill/main/install.sh | sh
+curl -sL https://raw.githubusercontent.com/jpmacdonald/distill/main/install.sh | sh
 ```
 
 ## Quick Start
@@ -53,6 +53,26 @@ dl formula bump formulas/my-pkg.toml --version 2.0.0 --url https://...
 - **Cache**: BLAKE3-hashed CAS at `~/.dl/cache/`.
 - **Binaries**: Linked to `~/.dl/bin/` (add this to your PATH).
 - **Index**: High-performance Msgpack registry.
+
+## Transient Execution (`dl run`)
+
+Run a tool without installing it globally:
+```bash
+dl run jq -- '.key' file.json
+```
+
+## Special Installs & Limitations
+
+`dl` is designed for **single-binary tools**. Some tools require extra steps:
+
+| Tool | Install Support | Notes |
+| :--- | :--- | :--- |
+| `jq`, `ripgrep`, `fzf` | ✅ Full | Direct binary. |
+| `zoxide` | 🟡 Partial | Binary works, but `zoxide init zsh` must be added to `.zshrc` manually. |
+| `neovim`, `starship` | 🟡 Partial | Binary installed; config files are user-managed. |
+| `nvm`, `pyenv` | ❌ Not Supported | These are shell-init managers, not binaries. Use their official installers. |
+
+**Philosophy**: `dl` will *never* run post-install scripts. If a tool requires shell configuration, the user handles it. This keeps `dl` safe and predictable.
 
 ---
 Built with ❤️ in Rust for macOS.
