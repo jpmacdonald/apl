@@ -1,0 +1,30 @@
+//! Search command
+
+use anyhow::{Context, Result, bail};
+use dl::index::PackageIndex;
+use dl::dl_home;
+
+/// Search packages in the local index
+pub fn search(query: &str) -> Result<()> {
+    let index_path = dl_home().join("index.bin");
+    if !index_path.exists() {
+        bail!("No index found. Run 'dl update' first.");
+    }
+    
+    let index = PackageIndex::load(&index_path)
+        .context("Failed to load index")?;
+    
+    let results = index.search(query);
+    
+    if results.is_empty() {
+        println!("No packages found matching '{}'", query);
+        return Ok(());
+    }
+    
+    println!("📦 Packages matching '{}':", query);
+    for entry in results {
+        println!("  {} {} — {}", entry.name, entry.version, entry.description);
+    }
+    
+    Ok(())
+}

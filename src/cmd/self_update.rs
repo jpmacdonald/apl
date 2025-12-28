@@ -1,0 +1,41 @@
+//! Self-update command
+
+use anyhow::{Context, Result, bail};
+use dl::index::PackageIndex;
+use dl::dl_home;
+
+/// Update dl itself to the latest version
+pub async fn self_update(dry_run: bool) -> Result<()> {
+    let index_path = dl_home().join("index.bin");
+    if !index_path.exists() {
+        bail!("No index found. Run 'dl update' first.");
+    }
+    
+    let index = PackageIndex::load(&index_path)
+        .context("Failed to load index")?;
+    
+    let entry = index.find("dl")
+        .context("dl package not found in index. Self-update not available.")?;
+    
+    // Get current version
+    let current_version = env!("CARGO_PKG_VERSION");
+    
+    if entry.version == current_version {
+        println!("✓ dl is already at the latest version ({})", current_version);
+        return Ok(());
+    }
+    
+    println!("📦 Updating dl: {} → {}", current_version, entry.version);
+    
+    if dry_run {
+        return Ok(());
+    }
+    
+    // Install the new version
+    crate::cmd::install::install(&["dl".to_string()], false, false).await?;
+    
+    println!("✓ dl updated to {}", entry.version);
+    println!("  Restart your terminal to use the new version.");
+    
+    Ok(())
+}
