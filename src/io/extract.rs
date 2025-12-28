@@ -150,7 +150,6 @@ pub fn extract_auto(archive_path: &Path, dest_dir: &Path) -> Result<Vec<Extracte
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use std::io::Write;
 
     #[test]
     fn test_detect_format() {
