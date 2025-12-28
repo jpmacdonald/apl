@@ -1,6 +1,6 @@
 # Distill (dl)
 
-A package manager for macOS CLI tools. Written in Rust.
+A **purely experimental** package manager for macOS CLI tools. Written in Rust.
 
 ## What It Does
 
