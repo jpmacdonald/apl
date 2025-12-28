@@ -48,6 +48,9 @@ pub struct IndexRelease {
     /// Post-install hints
     #[serde(default)]
     pub hints: String,
+    /// Name of the .app bundle (for type="app")
+    #[serde(default)]
+    pub app: Option<String>,
 }
 
 /// Compact package entry in the index
@@ -58,6 +61,9 @@ pub struct IndexEntry {
     /// Package description
     #[serde(default)]
     pub description: String,
+    /// Package type ("cli" or "app")
+    #[serde(default)]
+    pub type_: String,
     /// All available releases (sorted by version descending)
     pub releases: Vec<IndexRelease>,
 }
@@ -89,7 +95,7 @@ impl PackageIndex {
     /// Create a new empty index
     pub fn new() -> Self {
         Self {
-            version: 2,
+            version: 3,
             updated_at: 0,
             packages: Vec::new(),
         }
@@ -129,9 +135,9 @@ impl PackageIndex {
         let header: IndexHeader = postcard::from_bytes(data)
             .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?; // Placeholder if header fails
 
-        if header.version < 2 {
+        if header.version < 3 {
             // We could implement migration here, but for now just bail with a clear message.
-            return Err(IndexError::VersionMismatch(header.version, 2));
+            return Err(IndexError::VersionMismatch(header.version, 3));
         }
 
         Ok(postcard::from_bytes(data)?)
@@ -147,9 +153,10 @@ impl PackageIndex {
     }
 
     /// Add a single release to a package
-    pub fn upsert_release(&mut self, name: &str, description: &str, release: IndexRelease) {
+    pub fn upsert_release(&mut self, name: &str, description: &str, type_: &str, release: IndexRelease) {
         if let Some(entry) = self.packages.iter_mut().find(|e| e.name == name) {
             entry.description = description.to_string();
+            entry.type_ = type_.to_string();
             if let Some(existing) = entry.releases.iter_mut().find(|r| r.version == release.version) {
                 *existing = release;
             } else {
@@ -161,6 +168,7 @@ impl PackageIndex {
             self.packages.push(IndexEntry {
                 name: name.to_string(),
                 description: description.to_string(),
+                type_: type_.to_string(),
                 releases: vec![release],
             });
         }
@@ -192,6 +200,7 @@ mod tests {
         index.upsert(IndexEntry {
             name: "neovim".to_string(),
             description: "Vim-fork focused on extensibility".to_string(),
+            type_: "cli".to_string(),
             releases: vec![IndexRelease {
                 version: "0.10.0".to_string(),
                 bottles: vec![
@@ -204,6 +213,7 @@ mod tests {
                 deps: vec!["libuv".to_string()],
                 bin: vec!["nvim".to_string()],
                 hints: String::new(),
+                app: None,
             }],
         });
 
@@ -224,6 +234,7 @@ mod tests {
             deps: vec![],
             bin: vec![],
             hints: String::new(),
+            app: None,
         };
         let release2 = IndexRelease {
             version: "1.1.0".to_string(),
@@ -231,10 +242,11 @@ mod tests {
             deps: vec![],
             bin: vec![],
             hints: String::new(),
+            app: None,
         };
 
-        index.upsert_release("test", "Test description", release1);
-        index.upsert_release("test", "Test description", release2);
+        index.upsert_release("test", "Test description", "cli", release1);
+        index.upsert_release("test", "Test description", "cli", release2);
 
         let entry = index.find("test").unwrap();
         assert_eq!(entry.releases.len(), 2);
@@ -251,7 +263,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(IndexError::VersionMismatch(found, expected)) = result {
             assert_eq!(found, 1);
-            assert_eq!(expected, 2);
+            assert_eq!(expected, 3);
         } else {
             panic!("Expected VersionMismatch error");
         }
@@ -264,7 +276,8 @@ mod tests {
 
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;
-        index.upsert_release("ripgrep", "Fast grep", IndexRelease {
+        index.updated_at = 1234567890;
+        index.upsert_release("ripgrep", "Fast grep", "cli", IndexRelease {
             version: "14.0.0".to_string(),
             bottles: vec![IndexBottle {
                 arch: "aarch64-apple-darwin".to_string(),
@@ -274,6 +287,7 @@ mod tests {
             deps: vec![],
             bin: vec![],
             hints: String::new(),
+            app: None,
         });
 
         index.save(&path).unwrap();

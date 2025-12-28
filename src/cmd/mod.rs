@@ -4,6 +4,7 @@ pub mod install;
 pub mod remove;
 pub mod list;
 pub mod search;
+pub mod generate_index;
 pub mod update;
 pub mod upgrade;
 pub mod run;

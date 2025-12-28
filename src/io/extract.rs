@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 use zstd::stream::Decoder as ZstdDecoder;
+use zip::ZipArchive;
 
 #[derive(Error, Debug)]
 pub enum ExtractError {
@@ -73,9 +74,17 @@ fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>
             .skip(0) // Keep full path for now; can strip if needed
             .collect();
         
+        // Create parent directories
         let absolute_path = dest_dir.join(&relative_path);
         
-        // Create parent directories
+        // Sanitize path to prevent Zip Slip
+        if !absolute_path.starts_with(dest_dir) {
+            return Err(ExtractError::Archive(format!(
+                "Invalid path in archive: {}", 
+                relative_path.display()
+            )));
+        }
+        
         if let Some(parent) = absolute_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -85,6 +94,55 @@ fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>
         
         // Check if executable (Unix mode has execute bit)
         let is_executable = entry.header().mode().map(|m| m & 0o111 != 0).unwrap_or(false);
+        
+        extracted_files.push(ExtractedFile {
+            relative_path,
+            absolute_path,
+            is_executable,
+        });
+    }
+    
+    Ok(extracted_files)
+}
+
+/// Extract a zip archive
+pub fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
+    let file = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(file).map_err(|e| ExtractError::Archive(e.to_string()))?;
+    
+    fs::create_dir_all(dest_dir)?;
+    let mut extracted_files = Vec::new();
+    
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| ExtractError::Archive(e.to_string()))?;
+        let relative_path = match file.enclosed_name() {
+             Some(path) => path.to_owned(),
+             None => continue,
+        };
+        
+        if file.is_dir() {
+             fs::create_dir_all(dest_dir.join(&relative_path))?;
+             continue;
+        }
+        
+        let absolute_path = dest_dir.join(&relative_path);
+        if let Some(p) = absolute_path.parent() {
+            fs::create_dir_all(p)?;
+        }
+        
+        let mut outfile = File::create(&absolute_path)?;
+        io::copy(&mut file, &mut outfile)?;
+        
+        #[cfg(unix)]
+        let is_executable = if let Some(mode) = file.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&absolute_path, fs::Permissions::from_mode(mode))?;
+            mode & 0o111 != 0
+        } else {
+            false
+        };
+        #[cfg(not(unix))]
+        let is_executable = false;
         
         extracted_files.push(ExtractedFile {
             relative_path,
@@ -106,6 +164,8 @@ pub fn detect_format(path: &Path) -> ArchiveFormat {
         ArchiveFormat::TarGz
     } else if path_str.ends_with(".tar") {
         ArchiveFormat::Tar
+    } else if path_str.ends_with(".zip") {
+        ArchiveFormat::Zip
     } else {
         ArchiveFormat::RawBinary
     }
@@ -117,6 +177,7 @@ pub enum ArchiveFormat {
     TarZst,
     TarGz,
     Tar,
+    Zip,
     RawBinary,
 }
 
@@ -129,6 +190,7 @@ pub fn extract_auto(archive_path: &Path, dest_dir: &Path) -> Result<Vec<Extracte
             let file = File::open(archive_path)?;
             extract_tar(BufReader::new(file), dest_dir)
         }
+        ArchiveFormat::Zip => extract_zip(archive_path, dest_dir),
         ArchiveFormat::RawBinary => {
             // For raw binaries, just copy the file
             fs::create_dir_all(dest_dir)?;

@@ -67,12 +67,14 @@ mod tests {
         IndexEntry {
             name: name.into(),
             description: "".into(),
+            type_: "cli".into(),
             releases: vec![IndexRelease {
                 version: "1.0.0".into(),
                 bottles: vec![],
                 deps,
                 bin: vec![],
                 hints: "".into(),
+                app: None,
             }],
         }
     }

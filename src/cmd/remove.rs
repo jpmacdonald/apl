@@ -28,7 +28,14 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
 
         // Delete files
         for file in &files {
-            if let Err(e) = std::fs::remove_file(&file.path) {
+            let path = std::path::Path::new(&file.path);
+            let result = if path.is_dir() {
+                std::fs::remove_dir_all(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+            
+            if let Err(e) = result {
                 // Only warn, don't fail
                 eprintln!("  Warning: could not remove {}: {}", file.path, e);
             }

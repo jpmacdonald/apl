@@ -9,9 +9,10 @@ use dl::core::version::PackageSpec;
 use dl::cas::Cas;
 use dl::db::StateDb;
 use dl::downloader::download_and_verify;
-use dl::formula::Formula;
+use dl::formula::{Formula, PackageType};
 use dl::lockfile::Lockfile;
 use dl::{bin_path, dl_home};
+use dl::io::dmg;
 
 /// Prepared package ready for finalization
 pub struct PreparedPackage {
@@ -167,22 +168,19 @@ pub async fn prepare_download(
     lockfile: Option<&Lockfile>,
 ) -> Result<Option<PreparedPackage>> {
     use dl::index::PackageIndex;
+    use dl::formula::{PackageInfo, Source, Dependencies, InstallSpec, Hints, Bottle};
 
     let formula_path = PathBuf::from(pkg_name);
     
     // Try loading as file first, then fall back to index lookup
-    let (name, version, bottle_url, bottle_hash, bin_list, hints_str, formula_opt) = if formula_path.exists() {
+    let (bottle_url, bottle_hash, formula) = if formula_path.exists() {
         let formula = Formula::from_file(&formula_path)?;
         let bottle = formula.bottle_for_current_arch()
             .context("No bottle for current architecture")?;
         (
-            formula.package.name.clone(),
-            formula.package.version.clone(),
             bottle.url.clone(),
             bottle.blake3.clone(),
-            formula.install.bin.clone(),
-            formula.hints.post_install.clone(),
-            Some(formula),
+            formula,
         )
     } else {
         let index_path = dl_home().join("index.bin");
@@ -211,28 +209,63 @@ pub async fn prepare_download(
         let bottle = release.bottles.iter()
             .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
             .context(format!("No bottle for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
+            
+        let mut bottle_map = std::collections::HashMap::new();
+        bottle_map.insert(current_arch.to_string(), Bottle {
+            url: bottle.url.clone(),
+            blake3: bottle.blake3.clone(),
+            arch: current_arch.to_string(),
+            macos: "14.0".to_string(),
+        });
         
-        (
-            entry.name.clone(),
-            release.version.clone(),
-            bottle.url.clone(),
-            bottle.blake3.clone(),
-            release.bin.clone(),
-            release.hints.clone(),
-            None,
-        )
+        let type_ = match entry.type_.as_str() {
+            "app" => PackageType::App,
+            _ => PackageType::Cli,
+        };
+
+        let formula = Formula {
+            package: PackageInfo {
+                name: entry.name.clone(),
+                version: release.version.clone(),
+                description: entry.description.clone(),
+                homepage: String::new(),
+                license: String::new(),
+                type_,
+            },
+            source: Source {
+                url: String::new(),
+                blake3: String::new(),
+                strip_components: 0,
+            },
+            bottle: bottle_map,
+            dependencies: Dependencies {
+                runtime: release.deps.clone(),
+                build: vec![],
+                optional: vec![],
+            },
+            install: InstallSpec {
+                bin: if release.bin.is_empty() { vec![entry.name.clone()] } else { release.bin.clone() },
+                lib: vec![],
+                include: vec![],
+                script: String::new(),
+                app: release.app.clone(),
+            },
+            hints: Hints { post_install: release.hints.clone() },
+        };
+        
+        (bottle.url.clone(), bottle.blake3.clone(), formula)
     };
 
     if let Some(lf) = lockfile {
-        if let Some(locked) = lf.find(&name) {
-            if locked.version != version {
-                bail!("Locked to {} but index has {}", locked.version, version);
+        if let Some(locked) = lf.find(&formula.package.name) {
+            if locked.version != formula.package.version {
+                bail!("Locked to {} but index has {}", locked.version, formula.package.version);
             }
         }
     }
 
     if dry_run {
-        println!("Would install: {} {}", name, version);
+        println!("Would install: {} {}", formula.package.name, formula.package.version);
         println!("  Source: {}", bottle_url);
         return Ok(None);
     }
@@ -245,38 +278,12 @@ pub async fn prepare_download(
         .await
         .context("Download failed")?;
 
-    let formula = formula_opt.unwrap_or_else(|| {
-        Formula {
-            package: dl::formula::PackageInfo {
-                name: name.clone(),
-                version: version.clone(),
-                description: String::new(),
-                homepage: String::new(),
-                license: String::new(),
-            },
-            source: dl::formula::Source {
-                url: String::new(),
-                blake3: String::new(),
-                strip_components: 0,
-            },
-            bottle: std::collections::HashMap::new(),
-            dependencies: dl::formula::Dependencies::default(),
-            install: dl::formula::InstallSpec {
-                bin: if bin_list.is_empty() { vec![name.clone()] } else { bin_list.clone() },
-                lib: vec![],
-                include: vec![],
-                script: String::new(),
-            },
-            hints: dl::formula::Hints { post_install: hints_str },
-        }
-    });
-
     Ok(Some(PreparedPackage {
-        name: name.clone(),
-        version: version.clone(),
+        name: formula.package.name.clone(),
+        version: formula.package.version.clone(),
         download_path: temp_file,
+        bin_list: formula.install.bin.clone(),
         formula: Some(formula),
-        bin_list,
         blake3: bottle_hash,
         _temp_dir: Some(temp_dir),
     }))
@@ -290,6 +297,12 @@ pub fn finalize_package(
     _dry_run: bool,
 ) -> Result<()> {
     println!("📦 Installing {} {}...", pkg.name, pkg.version);
+    
+    // Dispatch if App
+    let is_app = pkg.formula.as_ref().map(|f| f.package.type_ == PackageType::App).unwrap_or(false);
+    if is_app {
+        return finalize_app_package(cas, db, pkg, _dry_run);
+    }
 
     let version_from = db.get_package(&pkg.name)?.map(|p| p.version);
     
@@ -378,6 +391,103 @@ pub fn finalize_package(
         }
     }
 
+    Ok(())
+}
+
+fn finalize_app_package(
+    _cas: &Cas,
+    db: &StateDb,
+    pkg: &PreparedPackage,
+    _dry_run: bool,
+) -> Result<()> {
+    let app_name = pkg.formula.as_ref()
+        .and_then(|f| f.install.app.as_ref())
+        .ok_or_else(|| anyhow::anyhow!("type='app' requires [install] app='Name.app'"))?;
+
+    let version_from = db.get_package(&pkg.name)?.map(|p| p.version);
+    if let Some(ref v) = version_from {
+        if v != &pkg.version {
+             println!("  (Updating {} from {} to {})", pkg.name, v, pkg.version);
+        }
+    }
+    
+    let applications_dir = dirs::home_dir().context("No home dir")?.join("Applications");
+    let target_app_path = applications_dir.join(app_name);
+    
+    // Clean old app
+    if target_app_path.exists() {
+         std::fs::remove_dir_all(&target_app_path).ok();
+    }
+    
+    // Clean previous install files (from DB)
+    if let Ok(files) = db.get_package_files(&pkg.name) {
+        for f in files {
+            let p = std::path::Path::new(&f.path);
+            if p.exists() {
+                 if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
+                 else { std::fs::remove_file(p).ok(); }
+            }
+        }
+    }
+    
+    let is_dmg = pkg.download_path.extension().map_or(false, |e| e == "dmg");
+    
+    if is_dmg {
+         let mount = dmg::attach(&pkg.download_path)?;
+         println!("  💿 Mounted DMG at {}", mount.path.display());
+         
+         let src_app = mount.path.join(app_name);
+         if !src_app.exists() {
+             bail!("{} not found in DMG at {}", app_name, src_app.display());
+         }
+         
+         // Copy recursively using cp -r
+         let status = std::process::Command::new("cp")
+             .arg("-r")
+             .arg(&src_app)
+             .arg(&target_app_path)
+             .status()?;
+             
+         if !status.success() {
+             bail!("Failed to copy .app bundle");
+         }
+         // Detach happens on drop
+    } else {
+         let extract_dir = pkg.download_path.parent().unwrap().join("extracted_app");
+         if extract_dir.exists() { std::fs::remove_dir_all(&extract_dir).ok(); }
+         
+         dl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
+         
+         // Find app_name (recursive search or direct?)
+         // Assume app is inside extract_dir (possibly nested in 1 dir)
+         let mut found_path = extract_dir.join(app_name);
+         if !found_path.exists() {
+             // Try one level deep
+             let entries: Vec<_> = std::fs::read_dir(&extract_dir)?.flatten().collect();
+             if entries.len() == 1 && entries[0].file_type()?.is_dir() {
+                 found_path = entries[0].path().join(app_name);
+             }
+         }
+         
+         if found_path.exists() {
+             std::fs::rename(found_path, &target_app_path)?;
+         } else {
+             bail!("{} not found in archive", app_name);
+         }
+    }
+    
+    // Quarantine removal
+    let _ = std::process::Command::new("xattr")
+        .args(&["-r", "-d", "com.apple.quarantine"])
+        .arg(&target_app_path)
+        .status();
+        
+    let files_to_record = vec![(target_app_path.to_string_lossy().to_string(), "APP_BUNDLE".to_string())];
+    
+    db.install_complete_package(&pkg.name, &pkg.version, &pkg.blake3, &files_to_record, &files_to_record)?;
+    db.add_history(&pkg.name, "install", version_from.as_deref(), Some(&pkg.version), true)?;
+    
+    println!("✓ {} installed to ~/Applications/{}", pkg.name, app_name);
     Ok(())
 }
 

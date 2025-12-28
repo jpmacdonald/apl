@@ -18,6 +18,15 @@ pub enum FormulaError {
     Parse(#[from] toml::de::Error),
 }
 
+/// Package type
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageType {
+    #[default]
+    Cli,
+    App,
+}
+
 /// Package metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
@@ -29,6 +38,9 @@ pub struct PackageInfo {
     pub homepage: String,
     #[serde(default)]
     pub license: String,
+    #[serde(default)]
+    #[serde(rename = "type")]
+    pub type_: PackageType,
 }
 
 /// Package source
@@ -102,6 +114,9 @@ pub struct InstallSpec {
     /// Custom install script (shell commands)
     #[serde(default)]
     pub script: String,
+    /// Name of the .app bundle to install (for type="app")
+    #[serde(default)]
+    pub app: Option<String>,
 }
 
 /// Post-install hints (printed, never executed)

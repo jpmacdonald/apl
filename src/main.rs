@@ -187,7 +187,7 @@ async fn main() -> Result<()> {
             cmd::search::search(&query)
         }
         Commands::GenerateIndex { formulas_dir, output } => {
-            generate_index(&formulas_dir, &output)
+            cmd::generate_index::generate_index(&formulas_dir, &output)
         }
         Commands::Clean => {
             cmd::clean::clean(dry_run)
@@ -225,53 +225,3 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Generate index.bin from formulas directory
-fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> Result<()> {
-    use dl::index::{PackageIndex, IndexBottle};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
-    let mut index = PackageIndex::new();
-    index.updated_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    
-    // Read all formula files
-    for entry in std::fs::read_dir(formulas_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.extension().is_some_and(|ext| ext == "toml") {
-            let formula = dl::formula::Formula::from_file(&path)?;
-            
-            let bottles: Vec<IndexBottle> = formula.bottle.iter()
-                .map(|(arch, bottle)| IndexBottle {
-                    arch: arch.clone(),
-                    url: bottle.url.clone(),
-                    blake3: bottle.blake3.clone(),
-                })
-                .collect();
-            
-            let release = dl::core::index::IndexRelease {
-                version: formula.package.version.clone(),
-                bottles,
-                deps: formula.dependencies.runtime.clone(),
-                bin: formula.install.bin.clone(),
-                hints: formula.hints.post_install.clone(),
-            };
-            
-            index.upsert_release(
-                &formula.package.name,
-                &formula.package.description,
-                release
-            );
-            
-            println!("  + {} (v{})", formula.package.name, formula.package.version);
-        }
-    }
-    
-    index.save(output)?;
-    println!("✓ Generated {} with {} packages", output.display(), index.packages.len());
-    
-    Ok(())
-}
