@@ -845,11 +845,13 @@ async fn update_index(url: &str, dry_run: bool) -> Result<()> {
     
     let bytes = response.bytes().await?;
     
-    // Verify it's valid msgpack
-    let index = PackageIndex::from_bytes(&bytes)
+    // Decompress zstd, then parse postcard
+    let decompressed = zstd::decode_all(bytes.as_ref())
+        .context("Failed to decompress index")?;
+    let index = PackageIndex::from_bytes(&decompressed)
         .context("Invalid index format")?;
     
-    // Save to disk
+    // Save compressed data to disk (as-is from CDN)
     std::fs::write(&index_path, &bytes)?;
     
     println!("✓ Updated index: {} packages", index.packages.len());
