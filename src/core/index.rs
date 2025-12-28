@@ -145,6 +145,7 @@ mod tests {
             ],
             deps: vec!["libuv".to_string()],
             bin: vec!["nvim".to_string()],
+            hints: String::new(),
         });
 
         let bytes = index.to_bytes().unwrap();
@@ -164,6 +165,7 @@ mod tests {
             bottles: vec![],
             deps: vec![],
             bin: vec![],
+            hints: String::new(),
         });
         index.upsert(IndexEntry {
             name: "vim".to_string(),
@@ -172,6 +174,7 @@ mod tests {
             bottles: vec![],
             deps: vec![],
             bin: vec![],
+            hints: String::new(),
         });
 
         let results = index.search("vim");
@@ -196,6 +199,7 @@ mod tests {
             }],
             deps: vec![],
             bin: vec![],
+            hints: String::new(),
         });
 
         index.save(&path).unwrap();

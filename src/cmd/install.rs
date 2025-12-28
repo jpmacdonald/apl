@@ -50,19 +50,37 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         None
     };
 
+    // Parse package specs for @version syntax
+    let specs: Vec<PackageSpec> = packages.iter()
+        .map(|p| PackageSpec::parse(p))
+        .collect::<Result<Vec<_>>>()?;
+
     // Resolve dependencies
     let resolved = {
         let index_ref = index.as_ref()
             .context("No index found. Run 'dl update' first.")?;
         
-        // Parse package specs for @version syntax
-        let specs: Vec<PackageSpec> = packages.iter()
-            .map(|p| PackageSpec::parse(p))
-            .collect::<Result<Vec<_>>>()?;
-        
         let names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
         dl::resolver::resolve_dependencies(&names, index_ref)?
     };
+
+    // Check version constraints
+    if let Some(index_ref) = &index {
+        for spec in &specs {
+            if let Some(requested_version) = &spec.version {
+                if requested_version != "latest" {
+                    if let Some(entry) = index_ref.find(&spec.name) {
+                        if entry.version != *requested_version {
+                            bail!(
+                                "Requested {}@{} but index has version {}",
+                                spec.name, requested_version, entry.version
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     println!("📦 Downloading {} packages...", resolved.len());
 

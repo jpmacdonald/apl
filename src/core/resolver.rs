@@ -72,6 +72,7 @@ mod tests {
                 bottles: vec![],
                 deps: vec!["b".into()],
                 bin: vec![],
+                hints: "".into(),
             },
             IndexEntry {
                 name: "b".into(),
@@ -80,6 +81,7 @@ mod tests {
                 bottles: vec![],
                 deps: vec![],
                 bin: vec![],
+                hints: "".into(),
             },
         ]);
 
@@ -90,10 +92,10 @@ mod tests {
     #[test]
     fn test_complex_resolution() {
         let index = mock_index(vec![
-            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into(), "c".into()], bin: vec![] },
-            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![] },
-            IndexEntry { name: "c".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![] },
-            IndexEntry { name: "d".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec![], bin: vec![] },
+            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into(), "c".into()], bin: vec![], hints: "".into() },
+            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![], hints: "".into() },
+            IndexEntry { name: "c".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![], hints: "".into() },
+            IndexEntry { name: "d".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec![], bin: vec![], hints: "".into() },
         ]);
 
         let resolved = resolve_dependencies(&["a".into()], &index).unwrap();
@@ -107,8 +109,8 @@ mod tests {
     #[test]
     fn test_cycle_detection() {
         let index = mock_index(vec![
-            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into()], bin: vec![] },
-            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["a".into()], bin: vec![] },
+            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into()], bin: vec![], hints: "".into() },
+            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["a".into()], bin: vec![], hints: "".into() },
         ]);
 
         let result = resolve_dependencies(&["a".into()], &index);

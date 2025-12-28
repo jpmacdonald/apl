@@ -18,11 +18,7 @@ echo "🚀 Installing Distill (dl)..."
 mkdir -p "$BIN_DIR"
 mkdir -p "$DL_HOME/cache"
 
-# In a real scenario, we would download the pre-built binary
-# For this demo, we assume the user has cloned the repo or we point to a CDN
-# curl -sL https://github.com/jimmy/distill/releases/latest/download/dl-macos-$ARCH -o "$BIN_DIR/dl"
-
-# For local verification/bootstrap:
+# For local development: copy from build directory
 if [ -f "./target/release/dl" ]; then
     cp "./target/release/dl" "$BIN_DIR/dl"
 elif [ -f "./target/debug/dl" ]; then
@@ -34,7 +30,9 @@ chmod +x "$BIN_DIR/dl"
 echo "✓ Distill installed to $BIN_DIR/dl"
 echo ""
 
-# PATH Automation
+# PATH Automation - ensure ~/.dl/bin comes FIRST in PATH
+PATH_EXPORT='export PATH="$HOME/.dl/bin:$PATH"'
+
 DETECTED_PROFILE=""
 case "$SHELL" in
     *zsh)  DETECTED_PROFILE="$HOME/.zshrc" ;;
@@ -43,17 +41,19 @@ case "$SHELL" in
 esac
 
 if [ -n "$DETECTED_PROFILE" ]; then
-    if ! grep -q ".dl/bin" "$DETECTED_PROFILE" 2>/dev/null; then
-        echo "💡 Would you like to add ~/.dl/bin to your PATH in $DETECTED_PROFILE? (y/n)"
-        # Note: In a real non-interactive script, we might just do it or use a flag --no-modify-path
-        # For now, we'll just print the instructions to keep it safe.
-        echo "   Run this to add it: echo 'export PATH=\"\$HOME/.dl/bin:\$PATH\"' >> $DETECTED_PROFILE"
-    else
+    if grep -q ".dl/bin" "$DETECTED_PROFILE" 2>/dev/null; then
         echo "✓ ~/.dl/bin is already in your PATH ($DETECTED_PROFILE)"
+    else
+        # Add to profile (at the end so it takes priority)
+        echo "" >> "$DETECTED_PROFILE"
+        echo "# Distill package manager" >> "$DETECTED_PROFILE"
+        echo "$PATH_EXPORT" >> "$DETECTED_PROFILE"
+        echo "✓ Added ~/.dl/bin to PATH in $DETECTED_PROFILE"
+        echo "  Run 'source $DETECTED_PROFILE' or restart your terminal"
     fi
 else
     echo "💡 Add this to your shell profile:"
-    echo "   export PATH=\"\$HOME/.dl/bin:\$PATH\""
+    echo "   $PATH_EXPORT"
 fi
 
 echo ""
