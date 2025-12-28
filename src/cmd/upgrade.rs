@@ -46,8 +46,8 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
             continue; // Package not in index
         };
         
-        if installed_pkg.version != index_entry.version {
-            upgrades.push((pkg_name.clone(), installed_pkg.version.clone(), index_entry.version.clone()));
+        if installed_pkg.version != index_entry.latest().version {
+            upgrades.push((pkg_name.clone(), installed_pkg.version.clone(), index_entry.latest().version.clone()));
         }
     }
     

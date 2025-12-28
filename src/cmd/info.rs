@@ -27,15 +27,21 @@ pub fn info(package: &str) -> Result<()> {
     println!("📦 {}", package);
     
     if let Some(entry) = &index_entry {
-        println!("  Version: {}", entry.version);
+        let latest = entry.latest();
+        println!("  Latest Version: {}", latest.version);
         if !entry.description.is_empty() {
             println!("  Description: {}", entry.description);
         }
-        if !entry.deps.is_empty() {
-            println!("  Dependencies: {}", entry.deps.join(", "));
+        
+        // Show versions
+        let version_list: Vec<String> = entry.releases.iter().map(|r| r.version.clone()).collect();
+        println!("  Available Versions: {}", version_list.join(", "));
+
+        if !latest.deps.is_empty() {
+            println!("  Dependencies: {}", latest.deps.join(", "));
         }
-        if !entry.bin.is_empty() {
-            println!("  Binaries: {}", entry.bin.join(", "));
+        if !latest.bin.is_empty() {
+            println!("  Binaries: {}", latest.bin.join(", "));
         }
     }
     

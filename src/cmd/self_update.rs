@@ -20,12 +20,12 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     // Get current version
     let current_version = env!("CARGO_PKG_VERSION");
     
-    if entry.version == current_version {
+    if entry.latest().version == current_version {
         println!("✓ dl is already at the latest version ({})", current_version);
         return Ok(());
     }
     
-    println!("📦 Updating dl: {} → {}", current_version, entry.version);
+    println!("📦 Updating dl: {} → {}", current_version, entry.latest().version);
     
     if dry_run {
         return Ok(());
@@ -34,7 +34,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     // Install the new version
     crate::cmd::install::install(&["dl".to_string()], false, false).await?;
     
-    println!("✓ dl updated to {}", entry.version);
+    println!("✓ dl updated to {}", entry.latest().version);
     println!("  Restart your terminal to use the new version.");
     
     Ok(())

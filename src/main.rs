@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
 
 /// Generate index.bin from formulas directory
 fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> Result<()> {
-    use dl::index::{PackageIndex, IndexEntry, IndexBottle};
+    use dl::index::{PackageIndex, IndexBottle};
     use std::time::{SystemTime, UNIX_EPOCH};
     
     let mut index = PackageIndex::new();
@@ -228,19 +228,21 @@ fn generate_index(formulas_dir: &std::path::Path, output: &std::path::Path) -> R
                 })
                 .collect();
             
-            let hints_str = formula.hints.post_install.clone();
-            
-            index.upsert(IndexEntry {
-                name: formula.package.name.clone(),
+            let release = dl::core::index::IndexRelease {
                 version: formula.package.version.clone(),
-                description: formula.package.description.clone(),
-                deps: formula.dependencies.runtime.clone(),
                 bottles,
+                deps: formula.dependencies.runtime.clone(),
                 bin: formula.install.bin.clone(),
-                hints: hints_str,
-            });
+                hints: formula.hints.post_install.clone(),
+            };
             
-            println!("  + {}", formula.package.name);
+            index.upsert_release(
+                &formula.package.name,
+                &formula.package.description,
+                release
+            );
+            
+            println!("  + {} (v{})", formula.package.name, formula.package.version);
         }
     }
     

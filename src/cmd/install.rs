@@ -10,7 +10,6 @@ use dl::cas::Cas;
 use dl::db::StateDb;
 use dl::downloader::download_and_verify;
 use dl::formula::Formula;
-use dl::index::PackageIndex;
 use dl::lockfile::Lockfile;
 use dl::{bin_path, dl_home};
 
@@ -56,7 +55,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         .collect::<Result<Vec<_>>>()?;
 
     // Resolve dependencies
-    let resolved = {
+    let resolved_names = {
         let index_ref = index.as_ref()
             .context("No index found. Run 'dl update' first.")?;
         
@@ -64,39 +63,31 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         dl::resolver::resolve_dependencies(&names, index_ref)?
     };
 
-    // Check version constraints
-    if let Some(index_ref) = &index {
-        for spec in &specs {
-            if let Some(requested_version) = &spec.version {
-                if requested_version != "latest" {
-                    if let Some(entry) = index_ref.find(&spec.name) {
-                        if entry.version != *requested_version {
-                            bail!(
-                                "Requested {}@{} but index has version {}",
-                                spec.name, requested_version, entry.version
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Filter out already-installed packages (skip download entirely)
+    // Filter out already-installed packages
     let mut to_install = Vec::new();
-    for pkg_name in &resolved {
-        if let Ok(Some(installed)) = db.get_package(pkg_name) {
-            // Check if installed version matches what we'd install
+    for name in &resolved_names {
+        // Find if any spec explicitly requested this package (to get version)
+        let requested_version = specs.iter()
+            .find(|s| &s.name == name)
+            .and_then(|s| s.version.clone());
+
+        if let Ok(Some(installed)) = db.get_package(name) {
             if let Some(index_ref) = &index {
-                if let Some(entry) = index_ref.find(pkg_name) {
-                    if installed.version == entry.version {
-                        println!("✓ {} {} already installed", pkg_name, installed.version);
+                if let Some(entry) = index_ref.find(name) {
+                    let target_version = match &requested_version {
+                        Some(v) if v == "latest" => entry.latest().version.clone(),
+                        Some(v) => v.clone(),
+                        None => entry.latest().version.clone(),
+                    };
+                    
+                    if installed.version == target_version {
+                        println!("✓ {} {} already installed", name, installed.version);
                         continue;
                     }
                 }
             }
         }
-        to_install.push(pkg_name.clone());
+        to_install.push((name.clone(), requested_version));
     }
 
     if to_install.is_empty() {
@@ -108,7 +99,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
     // Phase 1: Download in parallel
     let client = Client::new();
     let download_futures: Vec<_> = to_install.iter()
-        .map(|pkg| prepare_download(&client, pkg, dry_run, lockfile.as_ref()))
+        .map(|(name, version)| prepare_download(&client, name, version.as_deref(), dry_run, lockfile.as_ref()))
         .collect();
 
     let results = join_all(download_futures).await;
@@ -139,13 +130,14 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
 /// Prepare a package download (parallel-safe, no DB access)
 pub async fn prepare_download(
     client: &Client,
-    pkg: &str,
+    pkg_name: &str,
+    requested_version: Option<&str>,
     dry_run: bool,
     lockfile: Option<&Lockfile>,
 ) -> Result<Option<PreparedPackage>> {
     use dl::index::PackageIndex;
 
-    let formula_path = PathBuf::from(pkg);
+    let formula_path = PathBuf::from(pkg_name);
     
     // Try loading as file first, then fall back to index lookup
     let (name, version, bottle_url, bottle_hash, bin_list, hints_str, formula_opt) = if formula_path.exists() {
@@ -166,28 +158,40 @@ pub async fn prepare_download(
         // Try to find in index
         let index_path = dl_home().join("index.bin");
         if !index_path.exists() {
-            bail!("Package '{}' not found. Run 'dl update' to fetch package index.", pkg);
+            bail!("Package '{}' not found. Run 'dl update' to fetch package index.", pkg_name);
         }
         
         let index = PackageIndex::load(&index_path)
             .context("Failed to load index")?;
         
-        let entry = index.find(pkg)
-            .context(format!("Package '{}' not found in index", pkg))?;
+        let entry = index.find(pkg_name)
+            .context(format!("Package '{}' not found in index", pkg_name))?;
+        
+        // Find specific release
+        let release = if let Some(v) = requested_version {
+            if v == "latest" {
+                entry.latest()
+            } else {
+                entry.find_version(v)
+                    .context(format!("Version '{}' of package '{}' not found in index", v, pkg_name))?
+            }
+        } else {
+            entry.latest()
+        };
         
         // Find bottle for current arch
         let current_arch = dl::arch::current();
-        let bottle = entry.bottles.iter()
+        let bottle = release.bottles.iter()
             .find(|b| b.arch.contains(current_arch) || b.arch == current_arch)
-            .context(format!("No bottle for {} on {}", pkg, current_arch))?;
+            .context(format!("No bottle for {} (v{}) on {}", pkg_name, release.version, current_arch))?;
         
         (
             entry.name.clone(),
-            entry.version.clone(),
+            release.version.clone(),
             bottle.url.clone(),
             bottle.blake3.clone(),
-            entry.bin.clone(),
-            entry.hints.clone(),
+            release.bin.clone(),
+            release.hints.clone(),
             None, // No formula file
         )
     };
@@ -262,10 +266,14 @@ pub fn finalize_package(
 ) -> Result<()> {
     println!("📦 Installing {} {}...", pkg.name, pkg.version);
 
-    // Check if already installed
-    if db.get_package(&pkg.name)?.is_some() {
-        println!("  {} already installed, skipping", pkg.name);
-        return Ok(());
+    // Check if EXACT version already installed
+    if let Some(installed) = db.get_package(&pkg.name)? {
+        if installed.version == pkg.version {
+            println!("  {} {} already installed, skipping", pkg.name, pkg.version);
+            return Ok(());
+        }
+        // If different version, we'll overwrite the symlink later
+        println!("  (Updating {} from {} to {})", pkg.name, installed.version, pkg.version);
     }
 
     // Extract

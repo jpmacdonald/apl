@@ -8,7 +8,7 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     let client = Client::new();
 
     // 1. Resolve and download
-    let prepared = crate::cmd::install::prepare_download(&client, pkg_name, false, None).await?
+    let prepared = crate::cmd::install::prepare_download(&client, pkg_name, None, false, None).await?
         .context(format!("Could not find or download package '{}'", pkg_name))?;
 
     // 2. Extract to temp (we keep _temp_dir alive to preserve the files)

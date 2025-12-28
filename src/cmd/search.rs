@@ -23,7 +23,7 @@ pub fn search(query: &str) -> Result<()> {
     
     println!("📦 Packages matching '{}':", query);
     for entry in results {
-        println!("  {} {} — {}", entry.name, entry.version, entry.description);
+        println!("  {} {} — {}", entry.name, entry.latest().version, entry.description);
     }
     
     Ok(())

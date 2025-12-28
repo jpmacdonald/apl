@@ -38,7 +38,8 @@ fn resolve_recursive(
     let entry = index.find(name)
         .with_context(|| format!("Package '{}' not found in index", name))?;
 
-    for dep in &entry.deps {
+    let latest = entry.latest();
+    for dep in &latest.deps {
         resolve_recursive(dep, index, order, visited, visiting)?;
     }
 
@@ -52,7 +53,7 @@ fn resolve_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::index::{IndexEntry, IndexBottle};
+    use crate::core::index::{IndexEntry, IndexRelease};
 
     fn mock_index(entries: Vec<IndexEntry>) -> PackageIndex {
         let mut index = PackageIndex::new();
@@ -62,27 +63,25 @@ mod tests {
         index
     }
 
+    fn simple_entry(name: &str, deps: Vec<String>) -> IndexEntry {
+        IndexEntry {
+            name: name.into(),
+            description: "".into(),
+            releases: vec![IndexRelease {
+                version: "1.0.0".into(),
+                bottles: vec![],
+                deps,
+                bin: vec![],
+                hints: "".into(),
+            }],
+        }
+    }
+
     #[test]
     fn test_simple_resolution() {
         let index = mock_index(vec![
-            IndexEntry {
-                name: "a".into(),
-                version: "1.0".into(),
-                description: "".into(),
-                bottles: vec![],
-                deps: vec!["b".into()],
-                bin: vec![],
-                hints: "".into(),
-            },
-            IndexEntry {
-                name: "b".into(),
-                version: "1.0".into(),
-                description: "".into(),
-                bottles: vec![],
-                deps: vec![],
-                bin: vec![],
-                hints: "".into(),
-            },
+            simple_entry("a", vec!["b".into()]),
+            simple_entry("b", vec![]),
         ]);
 
         let resolved = resolve_dependencies(&["a".into()], &index).unwrap();
@@ -92,10 +91,10 @@ mod tests {
     #[test]
     fn test_complex_resolution() {
         let index = mock_index(vec![
-            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into(), "c".into()], bin: vec![], hints: "".into() },
-            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![], hints: "".into() },
-            IndexEntry { name: "c".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["d".into()], bin: vec![], hints: "".into() },
-            IndexEntry { name: "d".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec![], bin: vec![], hints: "".into() },
+            simple_entry("a", vec!["b".into(), "c".into()]),
+            simple_entry("b", vec!["d".into()]),
+            simple_entry("c", vec!["d".into()]),
+            simple_entry("d", vec![]),
         ]);
 
         let resolved = resolve_dependencies(&["a".into()], &index).unwrap();
@@ -109,8 +108,8 @@ mod tests {
     #[test]
     fn test_cycle_detection() {
         let index = mock_index(vec![
-            IndexEntry { name: "a".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["b".into()], bin: vec![], hints: "".into() },
-            IndexEntry { name: "b".into(), version: "1.0".into(), description: "".into(), bottles: vec![], deps: vec!["a".into()], bin: vec![], hints: "".into() },
+            simple_entry("a", vec!["b".into()]),
+            simple_entry("b", vec!["a".into()]),
         ]);
 
         let result = resolve_dependencies(&["a".into()], &index);
