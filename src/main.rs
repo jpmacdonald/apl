@@ -75,7 +75,7 @@ enum Commands {
     /// Update package index from CDN
     Update {
         /// CDN URL for index
-        #[arg(long, env = "DL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/main/index.bin")]
+        #[arg(long, env = "DL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/master/index.bin")]
         url: String,
     },
     /// Upgrade installed packages to latest versions
