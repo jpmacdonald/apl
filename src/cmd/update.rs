@@ -17,6 +17,9 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     
     println!("🔄 Updating package index...");
     
+    // Load current index for comparison
+    let current_index = PackageIndex::load(&index_path).ok();
+    
     let client = Client::new();
     let response = client.get(url).send().await
         .context("Failed to fetch index")?;
@@ -27,11 +30,18 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     
     let bytes = response.bytes().await?;
     
-    // Decompress zstd, then parse postcard
+    // Decompress zstd, then parse postcard to check version/timestamp
     let decompressed = zstd::decode_all(bytes.as_ref())
         .context("Failed to decompress index")?;
     let index = PackageIndex::from_bytes(&decompressed)
         .context("Invalid index format")?;
+    
+    if let Some(current) = current_index {
+        if current.updated_at == index.updated_at {
+            println!("✓ Already up to date: {} packages", index.packages.len());
+            return Ok(());
+        }
+    }
     
     // Save compressed data to disk (as-is from CDN)
     std::fs::write(&index_path, &bytes)?;

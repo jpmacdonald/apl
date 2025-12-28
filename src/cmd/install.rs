@@ -82,11 +82,32 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         }
     }
 
-    println!("📦 Downloading {} packages...", resolved.len());
+    // Filter out already-installed packages (skip download entirely)
+    let mut to_install = Vec::new();
+    for pkg_name in &resolved {
+        if let Ok(Some(installed)) = db.get_package(pkg_name) {
+            // Check if installed version matches what we'd install
+            if let Some(index_ref) = &index {
+                if let Some(entry) = index_ref.find(pkg_name) {
+                    if installed.version == entry.version {
+                        println!("✓ {} {} already installed", pkg_name, installed.version);
+                        continue;
+                    }
+                }
+            }
+        }
+        to_install.push(pkg_name.clone());
+    }
+
+    if to_install.is_empty() {
+        return Ok(());
+    }
+
+    println!("📦 Downloading {} packages...", to_install.len());
 
     // Phase 1: Download in parallel
     let client = Client::new();
-    let download_futures: Vec<_> = resolved.iter()
+    let download_futures: Vec<_> = to_install.iter()
         .map(|pkg| prepare_download(&client, pkg, dry_run, lockfile.as_ref()))
         .collect();
 
@@ -306,6 +327,19 @@ pub fn finalize_package(
             for line in formula.hints.post_install.lines() {
                 println!("   {}", line);
             }
+        }
+    }
+
+    // Check if there's a shadowing binary in PATH
+    let bin_name = pkg.formula.as_ref()
+        .and_then(|f| f.install.bin.first())
+        .unwrap_or(&pkg.name);
+    if let Ok(output) = std::process::Command::new("which").arg(bin_name).output() {
+        let which_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let expected = bin_path().join(bin_name);
+        if !which_path.is_empty() && which_path != expected.to_string_lossy() {
+            println!();
+            println!("💡 Run 'hash -r' or restart your terminal to use the new binary");
         }
     }
 
