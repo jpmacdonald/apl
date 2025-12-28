@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use apl::core::version::PackageSpec;
 use apl::db::StateDb;
 use apl::cas::Cas;
+use apl::io::output::InstallOutput;
 use crate::cmd::install::finalize_switch;
 
 /// Switch the active version of a package
@@ -29,7 +30,8 @@ pub fn switch(pkg_spec: &str, dry_run: bool) -> Result<()> {
             
             // Proceed to switch
             let cas = Cas::new()?;
-            finalize_switch(&cas, &db, &p.name, &p.version, dry_run)?;
+            let output = InstallOutput::new(false);
+            finalize_switch(&cas, &db, &p.name, &p.version, dry_run, &output)?;
         }
         None => {
             // Check if package is installed at all (maybe user made typo in version)

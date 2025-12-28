@@ -115,6 +115,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "console",
  "dirs",
  "flate2",
  "futures",

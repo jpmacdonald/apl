@@ -1,30 +1,37 @@
 //! Remove command
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use apl::db::StateDb;
+use apl::io::output::{InstallOutput, PackageState};
 
 /// Remove one or more packages
 pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
+    
+    let output = InstallOutput::new(false);
+    output.section("Removing");
+
+    let mut remove_count = 0;
     
     for pkg in packages {
         // Get file list before removing
         let files = db.get_package_files(pkg)?;
         
         if files.is_empty() {
-            bail!("Package '{}' is not installed", pkg);
+             output.warn(&format!("Package '{}' is not installed", pkg));
+             continue;
         }
         
+        // Determine version and type for better status
+        let pkg_info = db.get_package(pkg).ok().flatten();
+        let version = pkg_info.map(|p| p.version).unwrap_or_else(|| "unknown".to_string());
+
         if dry_run {
-            println!("Would remove: {}", pkg);
-            for file in &files {
-                println!("  Would delete: {}", file.path);
-            }
+            output.package_line(PackageState::Queued, pkg, &version, "(dry run: remove)");
             continue;
         }
         
-        // Get version for history
-        let version_from = db.get_package(pkg).ok().flatten().map(|p| p.version);
+        output.package_line(PackageState::Installing, pkg, &version, "removing...");
 
         // Delete files
         for file in &files {
@@ -36,8 +43,8 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
             };
             
             if let Err(e) = result {
-                // Only warn, don't fail
-                eprintln!("  Warning: could not remove {}: {}", file.path, e);
+                // Only warn in verbose, don't clutter the main feed
+                output.verbose(&format!("could not remove {}: {}", file.path, e));
             }
         }
         
@@ -45,19 +52,24 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
         db.remove_package(pkg)?;
         
         // Record history
-        if let Some(v) = version_from {
-            db.add_history(pkg, "remove", Some(&v), None, true)?;
-        }
+        db.add_history(pkg, "remove", Some(&version), None, true)?;
 
-        println!("✓ {} removed ({} files)", pkg, files.len());
+        output.package_line(PackageState::Installed, pkg, &version, "done");
+        remove_count += 1;
+    }
+
+    if remove_count > 0 {
+        println!();
+        println!("  {} {} package{} removed",
+            console::style("✨").green(),
+            remove_count,
+            if remove_count == 1 { "" } else { "s" },
+        );
     }
 
     // Auto-update lockfile if it exists
     if apl::lockfile::Lockfile::exists_default() {
-        println!("⟳ Updating lockfile...");
-        if let Err(e) = crate::cmd::lock::lock(false) {
-             println!("⚠ Failed to update lockfile: {}", e);
-        }
+        let _ = crate::cmd::lock::lock(false, true); // silent
     }
 
     Ok(())

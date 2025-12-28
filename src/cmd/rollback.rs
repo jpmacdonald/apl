@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, bail};
 use apl::db::StateDb;
 use apl::cas::Cas;
+use apl::io::output::InstallOutput;
 use crate::cmd::install::finalize_switch;
 
 /// Rollback a package to its previous state
@@ -40,7 +41,8 @@ pub fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
     
     // Execute switch
     let cas = Cas::new()?;
-    finalize_switch(&cas, &db, pkg_name, &target_version, dry_run)?;
+    let output = InstallOutput::new(false);
+    finalize_switch(&cas, &db, pkg_name, &target_version, dry_run, &output)?;
     
     Ok(())
 }

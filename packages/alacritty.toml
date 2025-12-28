@@ -1,0 +1,16 @@
+[package]
+name = "alacritty"
+version = "0.15.1"
+description = "A cross-platform, GPU-accelerated terminal emulator"
+type = "app"
+
+[source]
+url = "https://github.com/alacritty/alacritty/releases/download/v0.15.1/Alacritty-v0.15.1.dmg"
+blake3 = "5079fe15d54564dfe68461c06ecb3a39c91ebe0eecd163f58208baa228d94527"
+
+[binary.arm64]
+url = "https://github.com/alacritty/alacritty/releases/download/v0.15.1/Alacritty-v0.15.1.dmg"
+blake3 = "5079fe15d54564dfe68461c06ecb3a39c91ebe0eecd163f58208baa228d94527"
+
+[install]
+app = "Alacritty.app"

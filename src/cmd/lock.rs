@@ -5,11 +5,11 @@ use apl::db::StateDb;
 use apl::lockfile::{Lockfile, LockedPackage};
 
 /// Generate apl.lock from installed packages
-pub fn lock(dry_run: bool) -> Result<()> {
+pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     let packages = db.list_packages()?;
     
-    if packages.is_empty() {
+    if packages.is_empty() && !silent {
         println!("No packages installed. generating empty lockfile.");
     }
     
@@ -31,7 +31,7 @@ pub fn lock(dry_run: bool) -> Result<()> {
         None
     };
 
-    if index.is_none() {
+    if index.is_none() && !silent {
         println!("⚠ Warning: No index found. Lockfile will contain empty URLs.");
     }
 
@@ -50,7 +50,7 @@ pub fn lock(dry_run: bool) -> Result<()> {
                     if let Some(bottle) = release.bottles.iter().find(|b| b.arch == current_arch) {
                         url = bottle.url.clone();
                         // Verify hash matches what we have installed (sanity check)
-                        if bottle.blake3 != blake3 {
+                        if bottle.blake3 != blake3 && !silent {
                             println!("⚠ Warning: Installed hash for {} disagrees with index", pkg.name);
                         }
                     }
@@ -75,7 +75,9 @@ pub fn lock(dry_run: bool) -> Result<()> {
     
     lockfile.save(&lock_path)?;
     
-    println!("✓ Generated apl.lock with {} packages", lockfile.packages.len());
+    if !silent {
+        println!("✓ Generated apl.lock with {} packages", lockfile.packages.len());
+    }
     
     Ok(())
 }

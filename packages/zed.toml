@@ -1,0 +1,16 @@
+[package]
+name = "zed"
+version = "0.217.3"
+description = "High-performance, multiplayer code editor"
+type = "app"
+
+[source]
+url = "https://github.com/zed-industries/zed/releases/download/v0.217.3/Zed-aarch64.dmg"
+blake3 = "30c69b9adc851a11b8a3857dfae7e0cd50ef2bc4968d5e8f56af064519235810"
+
+[binary.arm64]
+url = "https://github.com/zed-industries/zed/releases/download/v0.217.3/Zed-aarch64.dmg"
+blake3 = "30c69b9adc851a11b8a3857dfae7e0cd50ef2bc4968d5e8f56af064519235810"
+
+[install]
+app = "Zed.app"

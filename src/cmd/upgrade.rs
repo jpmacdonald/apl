@@ -67,7 +67,7 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
     
     // Perform upgrades
     let upgrade_names: Vec<String> = upgrades.into_iter().map(|(n, _, _)| n.to_string()).collect();
-    crate::cmd::install::install(&upgrade_names, false, false).await?;
+    crate::cmd::install::install(&upgrade_names, false, false, false).await?;
     
     Ok(())
 }

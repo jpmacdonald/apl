@@ -1,0 +1,16 @@
+[package]
+name = "plex"
+version = "1.42.2.10156"
+description = "Plex Media Server"
+type = "app"
+
+[source]
+url = "https://downloads.plex.tv/plex-media-server-new/1.42.2.10156-f737b826c/macos/PlexMediaServer-1.42.2.10156-f737b826c-universal.zip"
+blake3 = "617ba3daaf52a14b95b94abb3412b65ac28ebaf21aec06a51c40228782cea5f9"
+
+[binary.arm64]
+url = "https://downloads.plex.tv/plex-media-server-new/1.42.2.10156-f737b826c/macos/PlexMediaServer-1.42.2.10156-f737b826c-universal.zip"
+blake3 = "617ba3daaf52a14b95b94abb3412b65ac28ebaf21aec06a51c40228782cea5f9"
+
+[install]
+app = "Plex Media Server.app"

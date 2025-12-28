@@ -32,7 +32,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     }
     
     // Install the new version
-    crate::cmd::install::install(&["apl".to_string()], false, false).await?;
+    crate::cmd::install::install(&["apl".to_string()], false, false, false).await?;
     
     println!("✓ apl updated to {}", entry.latest().version);
     println!("  Restart your terminal to use the new version.");

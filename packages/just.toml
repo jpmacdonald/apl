@@ -1,0 +1,16 @@
+[package]
+name = "just"
+version = "1.40.0"
+description = "A command runner for project-specific tasks"
+type = "cli"
+
+[source]
+url = "https://github.com/casey/just/releases/download/1.40.0/just-1.40.0-aarch64-apple-darwin.tar.gz"
+blake3 = "79a25decfef0b889b23b725c010d808b085941234edc9fbaedf064433a16af55"
+
+[binary.arm64]
+url = "https://github.com/casey/just/releases/download/1.40.0/just-1.40.0-aarch64-apple-darwin.tar.gz"
+blake3 = "79a25decfef0b889b23b725c010d808b085941234edc9fbaedf064433a16af55"
+
+[install]
+bin = ["just"]

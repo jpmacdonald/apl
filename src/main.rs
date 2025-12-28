@@ -34,6 +34,9 @@ enum Commands {
         /// Only install packages pinned in apl.lock
         #[arg(long)]
         locked: bool,
+        /// Show verbose output (DMG mounting, file counts, etc.)
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Remove a package
     Remove {
@@ -160,8 +163,8 @@ async fn main() -> Result<()> {
     let dry_run = cli.dry_run;
 
     match cli.command {
-        Commands::Install { packages, locked } => {
-            cmd::install::install(&packages, dry_run, locked).await
+        Commands::Install { packages, locked, verbose } => {
+            cmd::install::install(&packages, dry_run, locked, verbose).await
         }
         Commands::Remove { packages } => {
             cmd::remove::remove(&packages, dry_run)
@@ -185,7 +188,7 @@ async fn main() -> Result<()> {
             cmd::hash::hash(&files)
         }
         Commands::Lock => {
-            cmd::lock::lock(dry_run)
+            cmd::lock::lock(dry_run, false)
         }
         Commands::Search { query } => {
             cmd::search::search(&query)

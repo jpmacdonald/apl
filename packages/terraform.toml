@@ -1,0 +1,16 @@
+[package]
+name = "terraform"
+version = "1.10.3"
+description = "Infrastructure as Code tool"
+type = "cli"
+
+[source]
+url = "https://releases.hashicorp.com/terraform/1.10.3/terraform_1.10.3_darwin_arm64.zip"
+blake3 = "db1ab75d4e87d12758431718f450f8988ab3c038d4e7d32aa72431da951d0c8a"
+
+[binary.arm64]
+url = "https://releases.hashicorp.com/terraform/1.10.3/terraform_1.10.3_darwin_arm64.zip"
+blake3 = "db1ab75d4e87d12758431718f450f8988ab3c038d4e7d32aa72431da951d0c8a"
+
+[install]
+bin = ["terraform"]

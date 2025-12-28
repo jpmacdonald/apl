@@ -1,7 +1,7 @@
 //! DMG handling via hdiutil
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use anyhow::{Result, Context, bail};
 
 /// Represents a mounted DMG. Dropping this struct will detach the volume.
@@ -53,6 +53,8 @@ pub fn detach(mount_point: &Path) -> Result<()> {
             .arg("detach")
             .arg(mount_point)
             .arg("-force")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
             
         if let Ok(s) = status {
