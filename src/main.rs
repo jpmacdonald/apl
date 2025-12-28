@@ -16,6 +16,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     dry_run: bool,
 
+    /// Suppress non-essential output
+    #[arg(short, long, global = true)]
+    quiet: bool,
+
     #[command(subcommand)]
     command: Commands,
 }

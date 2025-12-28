@@ -76,7 +76,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool) -> Result
         // Find if any spec explicitly requested this package (to get version)
         let requested_version = specs.iter()
             .find(|s| &s.name == name)
-            .and_then(|s| s.version.clone());
+            .and_then(|s| s.version().map(|v| v.to_string()));
 
         // Determine target version from index (or latest)
         let target_version = if let Some(index_ref) = &index {

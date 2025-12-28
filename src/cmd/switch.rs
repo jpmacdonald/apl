@@ -10,7 +10,9 @@ use crate::cmd::install::finalize_switch;
 pub fn switch(pkg_spec: &str, dry_run: bool) -> Result<()> {
     // Parse input (can be "name@version" or just "name" if we supported interactive, but for now strict)
     let spec = PackageSpec::parse(pkg_spec)?;
-    let version = spec.version.context("Version is required for switch (e.g., 'dl switch jq@1.6')")?;
+    let version = spec.version()
+        .map(|v| v.to_string())
+        .context("Version is required for switch (e.g., 'apl switch jq@1.6')")?;
     
     let db = StateDb::open().context("Failed to open state database")?;
     

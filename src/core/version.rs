@@ -1,4 +1,8 @@
-//! Version parsing and @syntax handling
+//! Version parsing - simple exact versions only
+//!
+//! Supports:
+//! - Latest: `jq` or `jq@latest`
+//! - Exact: `jq@1.7.1`
 
 use anyhow::{Result, bail};
 
@@ -10,7 +14,7 @@ pub struct PackageSpec {
 }
 
 impl PackageSpec {
-    /// Parse a package specifier like "jq" or "jq@1.7.1"
+    /// Parse a package specifier like `jq` or `jq@1.7.1`
     pub fn parse(spec: &str) -> Result<Self> {
         if let Some((name, version)) = spec.split_once('@') {
             if name.is_empty() {
@@ -19,9 +23,17 @@ impl PackageSpec {
             if version.is_empty() {
                 bail!("Invalid package specifier: missing version after @");
             }
+            
+            // Treat "latest" as no version (get latest)
+            let version = if version == "latest" {
+                None
+            } else {
+                Some(version.to_string())
+            };
+            
             Ok(Self {
                 name: name.to_string(),
-                version: Some(version.to_string()),
+                version,
             })
         } else {
             Ok(Self {
@@ -29,6 +41,11 @@ impl PackageSpec {
                 version: None,
             })
         }
+    }
+    
+    /// Get version string for display
+    pub fn version(&self) -> Option<&str> {
+        self.version.as_deref()
     }
     
     /// Check if this specifier requests a specific version
@@ -59,7 +76,7 @@ mod tests {
     fn test_parse_latest() {
         let spec = PackageSpec::parse("jq@latest").unwrap();
         assert_eq!(spec.name, "jq");
-        assert_eq!(spec.version, Some("latest".to_string()));
+        assert_eq!(spec.version, None); // latest = no version = get latest
     }
 
     #[test]

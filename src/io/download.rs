@@ -7,7 +7,7 @@ use std::path::Path;
 
 use blake3::Hasher;
 use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reqwest::Client;
 use thiserror::Error;
 use tokio::fs::File;
@@ -23,6 +23,11 @@ pub enum DownloadError {
 
     #[error("Hash mismatch: expected {expected}, got {actual}")]
     HashMismatch { expected: String, actual: String },
+}
+
+/// Create a multi-progress container for parallel downloads
+pub fn create_multi_progress() -> MultiProgress {
+    MultiProgress::new()
 }
 
 /// Download a file with progress bar, streaming to disk
@@ -66,7 +71,7 @@ pub async fn download_and_verify(
 
     let pb = create_progress_bar(total_size);
     let filename = url.split('/').last().unwrap_or("file");
-    pb.set_message(format!("⬇ {filename}"));
+    pb.set_message(filename.to_string());
 
     let mut file = File::create(dest).await?;
     let mut stream = response.bytes_stream();
@@ -88,7 +93,7 @@ pub async fn download_and_verify(
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != expected_hash {
-        pb.finish_with_message("✗ Hash mismatch");
+        pb.finish_with_message(format!("✗ {filename}"));
         // Clean up failed download
         tokio::fs::remove_file(dest).await.ok();
         return Err(DownloadError::HashMismatch {
@@ -101,15 +106,33 @@ pub async fn download_and_verify(
     Ok(actual_hash)
 }
 
-/// Create a styled progress bar
+/// Create a beautifully styled progress bar (uv-inspired)
 fn create_progress_bar(total: u64) -> ProgressBar {
     let pb = ProgressBar::new(total);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{msg}\n{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-            .unwrap()
-            .progress_chars("█▓▒░"),
-    );
+    
+    let style = ProgressStyle::default_bar()
+        .template("  {spinner:.green} {msg:32!.cyan} [{bar:40.green/dim}] {bytes:>10}/{total_bytes:<10} ({eta})")
+        .unwrap()
+        .progress_chars("━━╺")
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
+    
+    pb.set_style(style);
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
+}
+
+/// Create a spinner for non-progress operations
+pub fn create_spinner(msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    
+    let style = ProgressStyle::default_spinner()
+        .template("  {spinner:.cyan} {msg}")
+        .unwrap()
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏", "✓"]);
+    
+    pb.set_style(style);
+    pb.set_message(msg.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
     pb
 }
 
