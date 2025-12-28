@@ -1,0 +1,36 @@
+name: Update Packages
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight
+  workflow_dispatch:
+
+jobs:
+  update-formulas:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: Build dl
+        run: cargo build --release
+        
+      - name: Update Formulas
+        run: |
+          # Example for bat
+          ./target/release/dl formula bump formulas/bat.toml --version $(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//') --url "https://github.com/sharkdp/bat/releases/download/v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')/bat-v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')-aarch64-apple-darwin.tar.gz"
+          
+          # Add more packages here or use a script to map repo -> formula
+          
+      - name: Regenerate Index
+        run: ./target/release/dl index-gen formulas index.msgpack
+        
+      - name: Commit changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add formulas/*.toml index.msgpack
+          git commit -m "chore: automated package updates and index regeneration" || echo "No changes to commit"
+          git push

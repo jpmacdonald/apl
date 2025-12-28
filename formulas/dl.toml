@@ -1,0 +1,15 @@
+[package]
+name = "dl"
+version = "0.1.1"
+description = "mock dl update"
+
+[source]
+url = "http://localhost:8000/dl_mock"
+blake3 = "bf8953c218144189a45a444173247fb0e0a2e10b8c5e25dce9888764d95d1c29"
+
+[bottle.arm64]
+url = "http://localhost:8000/dl_mock"
+blake3 = "bf8953c218144189a45a444173247fb0e0a2e10b8c5e25dce9888764d95d1c29"
+
+[install]
+bin = ["dl"]

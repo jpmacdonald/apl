@@ -1,0 +1,51 @@
+[package]
+name = "dl"
+version = "0.1.1"
+edition = "2024"
+description = "A modern, fast package manager for macOS"
+license = "MIT"
+repository = "https://github.com/jimmy/distill"
+
+[dependencies]
+# Hashing
+blake3 = "1.5"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+rmp-serde = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Utilities
+dirs = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+reqwest = { version = "0.12.28", features = ["stream", "rustls-tls"] }
+indicatif = "0.18.3"
+futures = "0.3.31"
+async-compression = { version = "0.4.36", features = ["zstd", "tokio"] }
+tempfile = "3.24.0"
+tar = "0.4.44"
+flate2 = "1.1.5"
+zstd = "0.13.3"
+clap_complete = "4.5.62"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[dev-dependencies]
+tempfile = "3.24.0"
