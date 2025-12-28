@@ -1,18 +1,22 @@
 //! dl - Distill Package Manager
 //!
-//! A modern, fast package manager for macOS inspired by uv, pacman, and apt.
+//! A fast, minimal package manager for macOS CLI tools.
 
-pub mod cas;
-pub mod db;
-pub mod downloader;
-pub mod extractor;
-pub mod formula;
-pub mod index;
-pub mod lockfile;
-pub mod resolver;
+pub mod core;
+pub mod io;
+pub mod store;
+
+// Re-exports for convenience
+pub use core::formula;
+pub use core::index;
+pub use core::lockfile;
+pub use core::resolver;
+pub use store::cas;
+pub use store::db;
+pub use io::download as downloader;
+pub use io::extract as extractor;
 
 use std::path::PathBuf;
-
 use dirs::home_dir;
 
 /// Default dl home directory: ~/.dl

@@ -1,5 +1,5 @@
 use anyhow::{Result, bail, Context};
-use crate::index::PackageIndex;
+use crate::core::index::PackageIndex;
 use std::collections::HashSet;
 
 /// Resolves dependencies for a set of packages and returns them in installation order.
@@ -52,7 +52,7 @@ fn resolve_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::{IndexEntry, IndexBottle};
+    use crate::core::index::{IndexEntry, IndexBottle};
 
     fn mock_index(entries: Vec<IndexEntry>) -> PackageIndex {
         let mut index = PackageIndex::new();

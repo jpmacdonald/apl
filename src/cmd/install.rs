@@ -5,7 +5,7 @@ use futures::future::join_all;
 use reqwest::Client;
 use std::path::PathBuf;
 
-use crate::core::version::PackageSpec;
+use dl::core::version::PackageSpec;
 use dl::cas::Cas;
 use dl::db::StateDb;
 use dl::downloader::download_and_verify;

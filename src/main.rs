@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 mod cmd;
-mod core;
 
 #[derive(Parser)]
 #[command(name = "dl")]
