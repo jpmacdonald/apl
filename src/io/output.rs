@@ -1,222 +1,268 @@
-//! Polished console output for apl
+//! Real-time progress output for apl using indicatif
 //!
-//! Uses indicatif for animated spinners and progress bars with fixed-width columns.
+//! Key patterns (validated by tests/progress_test.rs):
+//! 1. Create all bars BEFORE spawning async tasks
+//! 2. Clone bar handles to pass into tasks
+//! 3. Always call finish() on every bar before scope ends
+//! 4. Never use println during operation - use mp.println() or wait
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use console::style;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-// Fixed column widths for alignment
-const NAME_WIDTH: usize = 12;
+const NAME_WIDTH: usize = 14;
 const VERSION_WIDTH: usize = 10;
 
-/// Styled output for install/remove operations
-pub struct InstallOutput {
-    verbose: bool,
-    mp: MultiProgress,
+/// Progress tracker for package operations
+#[derive(Clone)]
+pub struct PackageProgress {
+    mp: Arc<MultiProgress>,
     bars: Arc<Mutex<HashMap<String, ProgressBar>>>,
 }
 
-impl InstallOutput {
-    pub fn new(verbose: bool) -> Self {
+impl PackageProgress {
+    pub fn new() -> Self {
         Self {
-            verbose,
-            mp: MultiProgress::new(),
+            mp: Arc::new(MultiProgress::new()),
             bars: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    /// Print section header
-    pub fn section(&self, title: &str) {
-        self.mp.suspend(|| {
-            let bar = "━".repeat(45 - title.len());
-            println!("{} {}", style(title).bold(), style(bar).dim());
-        });
-    }
-
-    /// Create a download progress bar with spinner, percent, and bar
-    /// Template: "  ⠋ hyperfine      1.19.0      45%  [━━━━━░░░░░]"
-    pub fn download_bar(&self, name: &str, version: &str, total_size: u64) -> ProgressBar {
-        let mut bars = self.bars.lock().unwrap();
-        
-        // Style for downloading: spinner + percent + bar
-        let pb_style = ProgressStyle::default_bar()
+    /// Add a placeholder for a package (Pending state)
+    pub fn add_package(&self, name: &str, version: &str) -> ProgressBar {
+        let style = ProgressStyle::default_spinner()
             .template(&format!(
-                "  {{spinner:.dim}} {{prefix:<{NAME_WIDTH}}}  {{msg:>{VERSION_WIDTH}}}  {{percent:>3}}%  [{{bar:10.cyan/dim}}]"
+                "  {{spinner}} {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  pending"
             ))
             .unwrap()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✔")
-            .progress_chars("━░");
-        
-        let pb = self.mp.add(ProgressBar::new(total_size));
-        pb.set_style(pb_style);
-        pb.set_prefix(format!("{}", style(name).cyan()));
-        pb.set_message(format!("{}", style(version).dim()));
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ");
+
+        let pb = self.mp.add(ProgressBar::new(0));
+        pb.set_style(style);
+        pb.set_prefix(name.to_string());
+        pb.set_message(version.to_string());
         pb.enable_steady_tick(Duration::from_millis(80));
-        
-        bars.insert(name.to_string(), pb.clone());
+
+        self.bars
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), pb.clone());
         pb
     }
 
-    /// Create a spinner for operations like "Moving to Applications..."
-    pub fn spinner(&self, name: &str, version: &str, msg: &str) -> ProgressBar {
-        let mut bars = self.bars.lock().unwrap();
-        
-        let pb_style = ProgressStyle::default_spinner()
-            .template(&format!(
-                "  {{spinner:.dim}} {{prefix:<{NAME_WIDTH}}}  {{msg:>{VERSION_WIDTH}}}  {{wide_msg}}"
-            ))
-            .unwrap()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✔");
-        
-        let pb = self.mp.add(ProgressBar::new_spinner());
-        pb.set_style(pb_style);
-        pb.set_prefix(format!("{}", style(name).cyan()));
-        pb.set_message(format!("{}", style(version).dim()));
-        pb.enable_steady_tick(Duration::from_millis(80));
-        
-        // Store detail in position field (hacky but works)
-        pb.println(format!("    {}", style(msg).dim()));
-        
-        bars.insert(name.to_string(), pb.clone());
-        pb
-    }
-
-    /// Finish a bar with success (green check)
-    pub fn finish_ok(&self, name: &str, version: &str, detail: &str) {
-        let bars = self.bars.lock().unwrap();
-        if let Some(pb) = bars.get(name) {
-            // Clear the progress bar and print the final message explicitly
-            // This ensures the output is locked in place
-            pb.finish_and_clear();
+    /// Transition to "downloading..." state with progress bar
+    pub fn set_downloading(&self, name: &str, version: &str, total_bytes: u64) {
+        if let Some(pb) = self.bars.lock().unwrap().get(name) {
+            let style = ProgressStyle::default_bar()
+                .template(&format!(
+                    "  ⠸ {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  [{{bar:15}}] {{bytes}}/{{total_bytes}}"
+                ))
+                .unwrap()
+                .progress_chars("═╸ ");
+            pb.set_style(style);
+            pb.set_message(version.to_string());
+            pb.set_length(total_bytes);
         }
-        drop(bars);
-        
-        // Print the final state using suspend to ensure it's visible
-        self.mp.suspend(|| {
-            println!("  {} {:<NAME_WIDTH$}  {:>VERSION_WIDTH$}  {}", 
-                style("✔").green(),
-                style(name).cyan(), 
-                style(version).dim(), 
-                style(detail).dim()
-            );
-        });
     }
 
-    /// Finish a bar with failure (red X)
-    pub fn finish_err(&self, name: &str, version: &str, detail: &str) {
-        let bars = self.bars.lock().unwrap();
-        if let Some(pb) = bars.get(name) {
-            pb.finish_and_clear();
+    /// Transition bar to "installing..." state
+    pub fn set_installing(&self, name: &str, version: &str) {
+        if let Some(pb) = self.bars.lock().unwrap().get(name) {
+            let style = ProgressStyle::default_spinner()
+                .template(&format!(
+                    "  {{spinner}} {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  installing..."
+                ))
+                .unwrap()
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ");
+            pb.set_style(style);
+            pb.set_message(version.to_string());
         }
-        drop(bars);
-        
-        self.mp.suspend(|| {
-            println!("  {} {:<NAME_WIDTH$}  {:>VERSION_WIDTH$}  {}", 
-                style("✗").red(),
-                style(name).cyan(), 
-                style(version).dim(), 
-                style(detail).red()
-            );
-        });
     }
 
-    /// Simple done line (no bar needed)
-    pub fn done(&self, name: &str, version: &str, detail: &str) {
-        self.mp.suspend(|| {
-            println!("  {} {:<NAME_WIDTH$}  {:>VERSION_WIDTH$}  {}", 
-                style("✔").green(),
-                style(name).cyan(), 
-                style(version).dim(), 
-                style(detail).dim()
-            );
-        });
+    /// Transition bar to "done" state (finished)
+    pub fn set_done(&self, name: &str, version: &str) {
+        if let Some(pb) = self.bars.lock().unwrap().get(name) {
+            let style = ProgressStyle::default_spinner()
+                .template(&format!(
+                    "  ✔ {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  done"
+                ))
+                .unwrap();
+            pb.set_style(style);
+            pb.set_message(version.to_string());
+            pb.finish();
+        }
     }
 
-    /// Simple fail line (no bar needed)
-    pub fn fail(&self, name: &str, version: &str, detail: &str) {
-        self.mp.suspend(|| {
-            println!("  {} {:<NAME_WIDTH$}  {:>VERSION_WIDTH$}  {}", 
-                style("✗").red(),
-                style(name).cyan(), 
-                style(version).dim(), 
-                style(detail).red()
-            );
-        });
+    /// Transition bar to failed state
+    pub fn set_failed(&self, name: &str, version: &str, reason: &str) {
+        if let Some(pb) = self.bars.lock().unwrap().get(name) {
+            let style = ProgressStyle::default_spinner()
+                .template(&format!(
+                    "  ✘ {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  {}",
+                    reason
+                ))
+                .unwrap();
+            pb.set_style(style);
+            pb.set_message(version.to_string());
+            pb.finish();
+        }
     }
 
-    /// Clear all bars (for section transitions) - prints blank line to seal section
-    pub fn clear_section(&self) {
-        let mut bars = self.bars.lock().unwrap();
-        for (_, pb) in bars.drain() {
+    /// Get a bar handle by name
+    pub fn get(&self, name: &str) -> Option<ProgressBar> {
+        self.bars.lock().unwrap().get(name).cloned()
+    }
+
+    /// Finish all bars
+    pub fn finish_all(&self) {
+        for pb in self.bars.lock().unwrap().values() {
             if !pb.is_finished() {
                 pb.finish();
             }
         }
-        // Print blank line to separate sections
-        drop(bars);
-        self.mp.suspend(|| println!());
     }
 
-    /// Verbose output
-    pub fn verbose(&self, msg: &str) {
-        if self.verbose {
-            self.mp.suspend(|| {
-                println!("    {}", style(msg).dim());
-            });
-        }
+    pub fn print_summary(&self, count: usize, action: &str, duration_secs: f64) {
+        self.finish_all();
+        println!();
+        println!(
+            "  {} {} package{} in {:.1}s",
+            if action == "installed" {
+                "Installed"
+            } else {
+                "Removed"
+            },
+            count,
+            if count == 1 { "" } else { "s" },
+            duration_secs
+        );
     }
 
-    /// Print summary
-    pub fn summary(&self, count: usize, action: &str, duration_secs: f64) {
-        self.mp.suspend(|| {
-            println!();
-            println!("  {} {} package{} {} in {:.1}s",
-                style("✨").green(),
-                count,
-                if count == 1 { "" } else { "s" },
-                action,
-                duration_secs,
-            );
-        });
+    pub fn print_warning(&self, msg: &str) {
+        self.mp.println(format!("  ⚠ {}", msg)).ok();
     }
 
-    /// Warning message
-    pub fn warn(&self, msg: &str) {
-        self.mp.suspend(|| {
-            println!("  {} {}", style("⚠").yellow(), msg);
-        });
-    }
-
-    /// Error message  
-    pub fn error(&self, msg: &str) {
-        self.mp.suspend(|| {
-            println!("  {} {}", style("✗").red(), msg);
-        });
-    }
-
-    /// Hint message
-    pub fn hint(&self, msg: &str) {
-        self.mp.suspend(|| {
-            println!("  {} {}", style("💡").dim(), style(msg).dim());
-        });
-    }
-
-    /// Get the MultiProgress for external use
-    pub fn mp(&self) -> &MultiProgress {
-        &self.mp
+    pub fn print_section(&self, title: &str) {
+        self.mp
+            .println(format!("{} {}", title, "━".repeat(40)))
+            .ok();
     }
 }
 
-/// Format bytes as human-readable
+/// Format bytes as human readable
 pub fn format_size(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KiB", bytes as f64 / 1024.0)
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
     } else {
-        format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
+        format!("{} B", bytes)
+    }
+}
+
+// ============================================================================
+// Legacy InstallOutput - Now wraps PackageProgress for consistent UI
+// ============================================================================
+
+#[derive(Clone)]
+pub struct InstallOutput {
+    progress: PackageProgress,
+}
+
+impl InstallOutput {
+    pub fn new(_verbose: bool) -> Self {
+        Self {
+            progress: PackageProgress::new(),
+        }
+    }
+
+    pub fn section(&self, title: &str) {
+        self.progress.print_section(title);
+    }
+
+    pub fn done(&self, name: &str, version: &str, _detail: &str) {
+        if self.progress.get(name).is_none() {
+            self.progress.add_package(name, version);
+        }
+        self.progress.set_done(name, version);
+    }
+
+    pub fn warn(&self, msg: &str) {
+        self.progress.print_warning(msg);
+    }
+
+    pub fn error(&self, msg: &str) {
+        eprintln!("  ✘ {}", msg);
+    }
+
+    pub fn hint(&self, msg: &str) {
+        println!("  💡 {}", msg);
+    }
+
+    pub fn summary(&self, count: usize, action: &str, duration: f64) {
+        self.progress.print_summary(count, action, duration);
+    }
+
+    pub fn download_bar(&self, name: &str, version: &str, total: u64) -> ProgressBar {
+        let pb = self.progress.add_package(name, version);
+        self.progress.set_downloading(name, version, total);
+        pb
+    }
+
+    pub fn finish_ok(&self, name: &str, version: &str, size_or_detail: &str) {
+        if let Some(pb) = self.progress.get(name) {
+            let style = ProgressStyle::default_spinner()
+                .template(&format!(
+                    "  ✔ {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  {}",
+                    size_or_detail
+                ))
+                .unwrap();
+            pb.set_style(style);
+            pb.set_message(version.to_string());
+            pb.finish();
+        }
+    }
+
+    pub fn finish_err(&self, name: &str, version: &str, detail: &str) {
+        self.progress.set_failed(name, version, detail);
+    }
+
+    pub fn spinner(&self, name: &str, version: &str, msg: &str) -> ProgressBar {
+        let pb = self.progress.get(name).unwrap_or_else(|| {
+            let pb = self.progress.add_package(name, version);
+            pb
+        });
+
+        let style = ProgressStyle::default_spinner()
+            .template(&format!(
+                "  {{spinner}} {{prefix:<{NAME_WIDTH}}} {{msg:<{VERSION_WIDTH}}}  {}",
+                msg
+            ))
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ");
+        pb.set_style(style);
+        pb
+    }
+
+    pub fn fail(&self, name: &str, version: &str, detail: &str) {
+        self.progress.set_failed(name, version, detail);
+    }
+
+    pub fn verbose(&self, _msg: &str) {
+        // Potentially use mp.println if we want verbose output to not flicker
+    }
+
+    pub fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
+        for (name, version) in packages {
+            self.progress
+                .add_package(name, version.as_deref().unwrap_or(""));
+        }
     }
 }
