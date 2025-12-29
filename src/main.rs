@@ -167,7 +167,7 @@ async fn main() -> Result<()> {
             cmd::install::install(&packages, dry_run, locked, verbose).await
         }
         Commands::Remove { packages } => {
-            cmd::remove::remove(&packages, dry_run)
+            cmd::remove::remove(&packages, dry_run).await
         }
         Commands::Switch { spec } => {
             cmd::switch::switch(&spec, dry_run)
@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
             cmd::history::history(&package)
         }
         Commands::Rollback { package } => {
-            cmd::rollback::rollback(&package, dry_run)
+            cmd::rollback::rollback(&package, dry_run).await
         }
         Commands::List => {
             cmd::list::list()

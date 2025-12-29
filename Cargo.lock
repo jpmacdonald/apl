@@ -112,6 +112,7 @@ dependencies = [
  "anyhow",
  "async-compression",
  "blake3",
+ "bytes",
  "chrono",
  "clap",
  "clap_complete",

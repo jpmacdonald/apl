@@ -4,6 +4,8 @@ use anyhow::{Context, Result, bail};
 use futures::future::join_all;
 use reqwest::Client;
 use std::path::PathBuf;
+use std::time::Instant;
+use std::sync::Arc;
 
 use apl::core::version::PackageSpec;
 use apl::cas::Cas;
@@ -12,7 +14,7 @@ use apl::package::{Package as Formula, PackageType};
 use apl::lockfile::Lockfile;
 use apl::{bin_path, apl_home};
 use apl::io::dmg;
-use apl::io::output::{InstallOutput, PackageState, format_size};
+use apl::io::output::{InstallOutput, format_size};
 
 
 /// Prepared package ready for finalization
@@ -62,19 +64,65 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool, verbose: 
         .map(|p| PackageSpec::parse(p))
         .collect::<Result<Vec<_>>>()?;
 
-    // Resolve dependencies
+    // Validate existence in index before resolving
+    // This allows us to fail gracefully for individual missing packages
+    // while continuing to install the others.
+    let mut valid_names = Vec::new();
+    if let Some(index_ref) = &index {
+        for spec in &specs {
+            if index_ref.find(&spec.name).is_some() {
+                valid_names.push(spec.name.clone());
+            } else {
+                 // Print error immediately for missing packages
+                 // We fake a 'Fetching' header just for this error if it's the first thing?
+                 // Or we waits?
+                 // UI Semantics says:
+                 // Fetching ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                 //   ✗ foo                        Package 'foo' not found in index
+                 //   ✔ bar ...
+                 // So we should probably defer this printing or print it in the Fetching phase if we can.
+                 // However, resolution happens BEFORE Fetching. 
+                 // We will print it cleanly here without the header, or trigger a failure that output recognizes?
+                 // Let's print it here. It might appear before "Fetching", which is acceptable/safer than crashing.
+                 output.fail(&spec.name, "", "Package not found in index");
+            }
+        }
+    } else {
+        // No index? All will likely fail in resolution if not local, 
+        // but we'll let resolver handle the "no index" error globally if it's strictly required.
+        valid_names = specs.iter().map(|s| s.name.clone()).collect();
+    }
+    
+    // Stop if nothing valid
+    if valid_names.is_empty() {
+        if !specs.is_empty() {
+             return Ok(()); // All failed
+        }
+    }
+
+    // Resolve dependencies for VALID packages only
     let resolved_names = {
         let index_ref = index.as_ref()
             .context("No index found. Run 'dl update' first.")?;
         
-        let names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
-        apl::resolver::resolve_dependencies(&names, index_ref)?
+        let mut resolved = apl::resolver::resolve_dependencies(&valid_names, index_ref)?;
+        
+        // Ensure strictly unique list
+        resolved.sort();
+        resolved.dedup();
+        resolved
     };
 
     let mut tasks = Vec::new();
+    let mut processed_names = std::collections::HashSet::new();
 
     // Determine what to do for each resolved package
     for name in &resolved_names {
+        if processed_names.contains(name) {
+             continue;
+        }
+        processed_names.insert(name.clone());
+
         // Find if any spec explicitly requested this package (to get version)
         let requested_version = specs.iter()
             .find(|s| &s.name == name)
@@ -98,8 +146,8 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool, verbose: 
         // Check DB for this specific version
         if let Ok(Some(installed)) = db.get_package_version(name, &target_version) {
             if installed.active {
-                output.package_line(PackageState::Installed, name, &target_version, "already installed and active");
-                perform_ux_checks_styled(name, &output);
+                output.done(name, &target_version, "already installed");
+                perform_ux_batch_checks(&[name.clone()], &output);
                 continue; 
             } else {
                 // It's installed (inactive), so we Switch
@@ -118,6 +166,7 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool, verbose: 
 
     // Process Switches first (fast)
     let cas = Cas::new()?;
+    let mut install_queued = Vec::new();
     for task in &tasks {
         if let InstallTask::Switch(name, version) = task {
             finalize_switch(&cas, &db, name, version, dry_run, &output)?;
@@ -133,49 +182,89 @@ pub async fn install(packages: &[String], dry_run: bool, locked: bool, verbose: 
     if !to_download.is_empty() {
         output.section("Fetching");
         
-        let client = Client::new();
-        let mp = apl::io::download::create_multi_progress();
+        let client = Client::builder()
+            .tcp_nodelay(true)
+            .pool_max_idle_per_host(20)
+            .build()?;
         
         let download_futures: Vec<_> = to_download.iter()
             .map(|(name, version)| {
                 let client = &client;
-                let mp = &mp;
                 let lockfile = lockfile.as_ref();
                 let index = index.as_ref();
                 let output = &output;
                 async move {
-                    prepare_download_mp(client, name, version.as_deref(), dry_run, lockfile, mp, index, output).await
+                    prepare_download_mp(client, name, version.as_deref(), dry_run, lockfile, index, output).await
                 }
             })
             .collect();
 
+        // Run all downloads, do not abort on one failure
         let results = join_all(download_futures).await;
 
-        let mut prepared = Vec::new();
+        let mut download_results = Vec::new();
         for result in results {
             match result {
-                Ok(Some(pkg)) => prepared.push(pkg),
+                Ok(Some(pkg)) => download_results.push(pkg),
                 Ok(None) => {} 
-                Err(e) => return Err(e),
+                Err(e) => {
+                     // Error is already printed by download_and_verify_mp 'abandon_with_message' 
+                     // OR it returns Err.
+                     // We should log it if verbose
+                     output.verbose(&format!("Download failed: {}", e));
+                     // Do not return Err, just continue
+                }
             }
         }
 
         if dry_run {
             return Ok(());
         }
+        
+        // Add DOwnloaded packages to the installation queue
+        install_queued.extend(download_results);
+    }
 
+    // Install Local (Everything in Parallel)
+    if !install_queued.is_empty() {
+        // Finalize all Fetching bars before new section
+        output.clear_section();
+        
+        // Print the section header
         output.section("Installing");
-
-        // Finalize downloads
+        
+        let start_time = Instant::now();
         let mut install_count = 0;
-        let start_time = std::time::Instant::now();
 
-        for pkg in &prepared {
-            finalize_package(&cas, &db, pkg, dry_run, &output)?;
-            install_count += 1;
+        let mut set = tokio::task::JoinSet::new();
+        let cas_arc = Arc::new(cas);
+        let mut installed_names = Vec::new();
+        
+        for pkg in install_queued {
+            let cas = cas_arc.clone();
+
+            set.spawn_blocking(move || {
+                perform_local_install(pkg, &cas)
+            });
         }
-
-        output.summary(install_count, start_time.elapsed().as_secs_f64());
+        
+        while let Some(res) = set.join_next().await {
+            match res {
+                Ok(Ok(info)) => {
+                    installed_names.push(info.package.name.clone());
+                    if commit_installation(&db, &info, &output).is_ok() {
+                        install_count += 1;
+                    }
+                }
+                Ok(Err(e)) => output.error(&format!("Installation failed: {}", e)),
+                Err(e) => output.error(&format!("Task panicked: {}", e)),
+            }
+        }
+        
+        // Run UX checks once at the end for all successful installs
+        perform_ux_batch_checks(&installed_names, &output);
+        
+        output.summary(install_count, "installed", start_time.elapsed().as_secs_f64());
     }
 
     update_lockfile_if_exists_quietly();
@@ -188,9 +277,8 @@ pub async fn prepare_download_mp(
     client: &Client,
     pkg_name: &str,
     requested_version: Option<&str>,
-    dry_run: bool,
+    _dry_run: bool,
     lockfile: Option<&Lockfile>,
-    mp: &indicatif::MultiProgress,
     index: Option<&apl::index::PackageIndex>,
     output: &InstallOutput,
 ) -> Result<Option<PreparedPackage>> {
@@ -258,29 +346,25 @@ pub async fn prepare_download_mp(
         }
     };
 
-    if dry_run {
-        output.package_line(PackageState::Queued, &formula.package.name, &formula.package.version, &format!("(dry run: {})", binary_url));
-        return Ok(None);
-    }
-
     let temp_dir = tempfile::tempdir()?;
     let url_filename = binary_url.split('/').last().unwrap_or("download");
     let temp_file = temp_dir.path().join(url_filename);
-
-    // Create progress bar
-    let pb = output.create_progress(mp, &formula.package.name, &formula.package.version, 0);
-
-    // Use our new download_and_verify_mp
+    
+    // Create download progress bar (initially 0 size, will update from Content-Length)
+    let pb = output.download_bar(&formula.package.name, &formula.package.version, 0);
+    
+    // Download with live progress updates
     let result = apl::io::download::download_and_verify_mp(client, &binary_url, &temp_file, &binary_hash, &pb).await;
     
-    // Clear and update bar on finish
+    // Update to done/fail - use finish_ok which keeps bar visible
     match result {
         Ok(_) => {
-            let size = std::fs::metadata(&temp_file)?.len();
-            output.finish_progress_ok(&pb, &format_size(size));
+            let size = std::fs::metadata(&temp_file).map(|m| m.len()).unwrap_or(0);
+            let size_str = format_size(size);
+            output.finish_ok(&formula.package.name, &formula.package.version, &size_str);
         }
         Err(e) => {
-            pb.abandon_with_message(format!("✗ {}", pkg_name));
+            output.finish_err(&formula.package.name, &formula.package.version, &e.to_string());
             return Err(e.into());
         }
     }
@@ -296,52 +380,39 @@ pub async fn prepare_download_mp(
     }))
 }
 
-/// Finalize package installation (sequential, uses DB)
-pub fn finalize_package(
-    cas: &Cas,
-    db: &StateDb,
-    pkg: &PreparedPackage,
-    _dry_run: bool,
-    output: &InstallOutput,
-) -> Result<()> {
-    let mut detail = String::new();
-    
-    // Dispatch if App
-    let is_app = pkg.formula.as_ref().map(|f| f.package.type_ == PackageType::App).unwrap_or(false);
-    
-    let version_from = db.get_package(&pkg.name)?.map(|p| p.version);
-    if let Some(ref v) = version_from {
-        if v != &pkg.version {
-            detail = format!("(upgrading from {})", v);
-        }
-    }
 
-    output.package_line(PackageState::Installing, &pkg.name, &pkg.version, &detail);
+/// Information about a successful local installation to be committed to DB
+struct InstallInfo {
+    package: PreparedPackage,
+    files_to_record: Vec<(String, String)>, // (path, hash)
+    is_app: bool,
+}
+
+/// Perform extraction and linking for a package (Thread Safe)
+fn perform_local_install(
+    pkg: PreparedPackage,
+    cas: &Cas,
+) -> Result<InstallInfo> {
+    // Check if it's an .app bundle
+    let is_app = pkg.formula.as_ref().map(|f| f.package.type_ == PackageType::App).unwrap_or(false) ||
+         pkg.download_path.to_string_lossy().to_lowercase().ends_with(".dmg");
 
     if is_app {
-        return finalize_app_package(cas, db, pkg, _dry_run, output);
+        return perform_app_install(pkg);
     }
-
-
-    // Cleanup active file links
-    if let Ok(files) = db.get_package_files(&pkg.name) {
-        for f in files {
-            std::fs::remove_file(&f.path).ok();
-        }
-    }
-    
-    let extract_dir = pkg.download_path.parent().unwrap().join("extracted");
-    let extracted = apl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
-
-    output.verbose(&format!("Extracted {} files", extracted.len()));
 
     let mut files_to_record = Vec::new();
+    
+    let extract_dir = pkg.download_path.parent().unwrap().join("extracted");
+    let extracted = apl::extractor::extract_auto(&pkg.download_path, &extract_dir)
+        .map_err(|e| anyhow::anyhow!("Extraction failed: {}", e))?;
 
     let is_raw = extracted.len() == 1 && 
         apl::extractor::detect_format(&pkg.download_path) == apl::extractor::ArchiveFormat::RawBinary;
 
     for file in &extracted {
-        let hash = cas.store_file(&file.absolute_path)?;
+        let hash = cas.store_file(&file.absolute_path)
+            .map_err(|e| anyhow::anyhow!("Failed to store in CAS: {}", e))?;
 
         let file_name = file.relative_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         
@@ -364,95 +435,58 @@ pub fn finalize_package(
                 (bin_spec, bin_spec)
             };
 
-            // Only process if this file matches the source name (relative to archive root)
             if file.relative_path.to_string_lossy() != src_name && file_name != src_name {
                 continue;
             }
 
             let target = bin_path().join(target_name);
-            if target.exists() { std::fs::remove_file(&target).ok(); }
+            if target.exists() { 
+                let _ = std::fs::remove_file(&target); 
+            }
             
-            cas.link_to(&hash, &target)?;
+            cas.link_to(&hash, &target)
+                .map_err(|e| anyhow::anyhow!("Linking failed for {}: {}", target_name, e))?;
+
             #[cfg(unix)] {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))?;
+                let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755));
             }
-            output.verbose(&format!("linked {}", target_name));
             
             let abs_path = target.to_string_lossy().to_string();
             files_to_record.push((abs_path, hash.clone()));
         }
     }
 
-    // Record in DB: Track version, active=true, artifacts and files atomically
-    db.install_complete_package(&pkg.name, &pkg.version, &pkg.blake3, &files_to_record, &files_to_record)?;
-    
-    // Record history
-    db.add_history(&pkg.name, "install", version_from.as_deref(), Some(&pkg.version), true)?;
-
-    output.package_line(PackageState::Installed, &pkg.name, &pkg.version, "done");
-
-    if let Some(formula) = &pkg.formula {
-        if !formula.hints.post_install.is_empty() {
-            output.hint("Hint:");
-            for line in formula.hints.post_install.lines() {
-                output.hint(&format!("  {}", line));
-            }
-        }
-    }
-
-    let bin_name = pkg.formula.as_ref()
-        .and_then(|f| f.install.bin.first())
-        .unwrap_or(&pkg.name);
-    perform_ux_checks_styled(bin_name, output);
-
-    Ok(())
+    Ok(InstallInfo {
+        package: pkg,
+        files_to_record,
+        is_app: false,
+    })
 }
 
-fn finalize_app_package(
-    _cas: &Cas,
-    db: &StateDb,
-    pkg: &PreparedPackage,
-    _dry_run: bool,
-    output: &InstallOutput,
-) -> Result<()> {
+/// Perform app bundle installation (Thread Safe for FS, not DB)
+fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo> {
     let app_name = pkg.formula.as_ref()
         .and_then(|f| f.install.app.as_ref())
         .ok_or_else(|| anyhow::anyhow!("type='app' requires [install] app='Name.app'"))?;
 
-    let version_from = db.get_package(&pkg.name)?.map(|p| p.version);
-    
     let applications_dir = dirs::home_dir().context("No home dir")?.join("Applications");
     let target_app_path = applications_dir.join(app_name);
     
     // Clean old app
     if target_app_path.exists() {
-         std::fs::remove_dir_all(&target_app_path).ok();
-    }
-    
-    // Clean previous install files (from DB)
-    if let Ok(files) = db.get_package_files(&pkg.name) {
-        for f in files {
-            let p = std::path::Path::new(&f.path);
-            if p.exists() {
-                 if p.is_dir() { std::fs::remove_dir_all(p).ok(); }
-                 else { std::fs::remove_file(p).ok(); }
-            }
-        }
+         let _ = std::fs::remove_dir_all(&target_app_path);
     }
     
     let is_dmg = pkg.download_path.extension().map_or(false, |e| e == "dmg");
     
     if is_dmg {
          let mount = dmg::attach(&pkg.download_path)?;
-         output.verbose(&format!("Mounted DMG at {}", mount.path.display()));
-         
          let src_app = mount.path.join(app_name);
          if !src_app.exists() {
              bail!("{} not found in DMG at {}", app_name, src_app.display());
          }
          
-         // Copy recursively using cp -r
          let status = std::process::Command::new("cp")
              .arg("-r")
              .arg(&src_app)
@@ -462,19 +496,15 @@ fn finalize_app_package(
          if !status.success() {
              bail!("Failed to copy .app bundle");
          }
-         output.verbose("Copied .app bundle");
-         // Detach happens on drop
     } else {
          let extract_dir = pkg.download_path.parent().unwrap().join("extracted_app");
-         if extract_dir.exists() { std::fs::remove_dir_all(&extract_dir).ok(); }
+         if extract_dir.exists() { let _ = std::fs::remove_dir_all(&extract_dir); }
          
-         apl::extractor::extract_auto(&pkg.download_path, &extract_dir)?;
+         apl::extractor::extract_auto(&pkg.download_path, &extract_dir)
+             .map_err(|e| anyhow::anyhow!("Extraction failed: {}", e))?;
          
-         // Find app_name (recursive search or direct?)
-         // Assume app is inside extract_dir (possibly nested in 1 dir)
          let mut found_path = extract_dir.join(app_name);
          if !found_path.exists() {
-             // Try one level deep
              let entries: Vec<_> = std::fs::read_dir(&extract_dir)?.flatten().collect();
              if entries.len() == 1 && entries[0].file_type()?.is_dir() {
                  found_path = entries[0].path().join(app_name);
@@ -488,7 +518,6 @@ fn finalize_app_package(
          }
     }
     
-    // Clear all extended attributes (quarantine, signatures) to prevent "damaged app" error
     let _ = std::process::Command::new("xattr")
         .args(&["-cr"])
         .arg(&target_app_path)
@@ -496,12 +525,66 @@ fn finalize_app_package(
         
     let files_to_record = vec![(target_app_path.to_string_lossy().to_string(), "APP_BUNDLE".to_string())];
     
-    db.install_complete_package(&pkg.name, &pkg.version, &pkg.blake3, &files_to_record, &files_to_record)?;
-    db.add_history(&pkg.name, "install", version_from.as_deref(), Some(&pkg.version), true)?;
+    Ok(InstallInfo {
+        package: pkg,
+        files_to_record,
+        is_app: true,
+    })
+}
+
+/// Finalize installation in the database
+fn commit_installation(
+    db: &StateDb,
+    info: &InstallInfo,
+    output: &InstallOutput,
+) -> Result<()> {
+    let pkg = &info.package;
     
-    output.package_line(PackageState::Installed, &pkg.name, &pkg.version, &format!("installed to ~/Applications/{}", app_name));
+    // Get version_from here (main thread)
+    // Record status line is already handled by caller (real-time feedback)
+    let version_from = db.get_package(&pkg.name).ok().flatten().map(|p| p.version);
+    
+    // Cleanup active file links (important: serialized)
+    if let Ok(files) = db.get_package_files(&pkg.name) {
+        for f in files {
+            std::fs::remove_file(&f.path).ok();
+        }
+    }
+
+    // Record in DB
+    db.install_complete_package(
+        &pkg.name, 
+        &pkg.version, 
+        &pkg.blake3, 
+        &info.files_to_record, 
+        &info.files_to_record
+    ).map_err(|e| anyhow::anyhow!("Database update failed: {}", e))?;
+    
+    // Record history
+    db.add_history(&pkg.name, "install", version_from.as_deref(), Some(&pkg.version), true)?;
+
+    let status = if info.is_app {
+        let app_name = pkg.formula.as_ref().and_then(|f| f.install.app.as_ref()).map(|s| s.as_str()).unwrap_or("");
+        format!("installed to ~/Applications/{}", app_name)
+    } else {
+        "done".to_string()
+    };
+    
+    output.done(&pkg.name, &pkg.version, &status);
+
+    if let Some(formula) = &pkg.formula {
+        if !formula.hints.post_install.is_empty() {
+            output.hint("Hint:");
+            for line in formula.hints.post_install.lines() {
+                output.hint(&format!("  {}", line));
+            }
+        }
+    }
+    
     Ok(())
 }
+
+
 
 /// Finalize a Switch operation (activates already installed version)
 pub fn finalize_switch(
@@ -513,11 +596,9 @@ pub fn finalize_switch(
     output: &InstallOutput,
 ) -> Result<()> {
     if dry_run {
-        output.package_line(PackageState::Queued, name, version, "(dry run: switch)");
+        output.done(name, version, "(dry run: switch)");
         return Ok(());
     }
-    
-    output.package_line(PackageState::Installing, name, version, "switching...");
     
     let version_from = db.get_package(name)?.map(|p| p.version);
 
@@ -563,9 +644,9 @@ pub fn finalize_switch(
     // Record History
     db.add_history(name, "switch", version_from.as_deref(), Some(version), true)?;
     
-    output.package_line(PackageState::Installed, name, version, "done");
+    output.done(name, version, "done");
 
-    perform_ux_checks_styled(name, output);
+    perform_ux_batch_checks(&[name.to_string()], output);
 
     Ok(())
 }
@@ -576,8 +657,8 @@ fn update_lockfile_if_exists_quietly() {
     }
 }
 
-fn perform_ux_checks_styled(bin_name: &str, output: &InstallOutput) {
-    // PATH check
+fn perform_ux_batch_checks(names: &[String], output: &InstallOutput) {
+    // 1. PATH check (global)
     let path_env = std::env::var_os("PATH").unwrap_or_default();
     let bin_dir = bin_path();
     let is_in_path = std::env::split_paths(&path_env).any(|p| p == bin_dir);
@@ -586,8 +667,10 @@ fn perform_ux_checks_styled(bin_name: &str, output: &InstallOutput) {
         output.warn(&format!("{} is not in your PATH.", bin_dir.display()));
         output.hint("To use installed binaries, add this to your shell profile (~/.zshrc, ~/.bashrc, etc):");
         output.hint(&format!("  export PATH=\"{}:$PATH\"", bin_dir.display()));
-    } else {
-        // Shadowing check
+    }
+
+    // 2. Shadowing check (per-package)
+    for bin_name in names {
         if let Ok(output_cmd) = std::process::Command::new("which").arg(bin_name).output() {
             let which_path = String::from_utf8_lossy(&output_cmd.stdout).trim().to_string();
             let expected = bin_path().join(bin_name);

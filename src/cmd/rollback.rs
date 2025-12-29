@@ -7,7 +7,7 @@ use apl::io::output::InstallOutput;
 use crate::cmd::install::finalize_switch;
 
 /// Rollback a package to its previous state
-pub fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
+pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     
     // Find last SUCCESSFUL action
@@ -25,7 +25,7 @@ pub fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
              // If last action was install (with no previous version), rollback means removing
              if event.action == "install" {
                  println!("Last action was fresh install of {}. Removing...", pkg_name);
-                 crate::cmd::remove::remove(&[pkg_name.to_string()], dry_run)?;
+                 crate::cmd::remove::remove(&[pkg_name.to_string()], dry_run).await?;
                  return Ok(());
              }
              bail!("Cannot rollback: previous state unknown (action: {})", event.action);

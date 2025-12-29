@@ -1,61 +1,63 @@
 //! Remove command
 
 use anyhow::{Context, Result};
+use futures::future::join_all;
 use apl::db::StateDb;
-use apl::io::output::{InstallOutput, PackageState};
+use apl::io::output::InstallOutput;
 
 /// Remove one or more packages
-pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
+pub async fn remove(packages: &[String], dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     
     let output = InstallOutput::new(false);
     output.section("Removing");
 
     let mut remove_count = 0;
-    
+    let mut handles = Vec::new();
+
     for pkg in packages {
-        // Get file list before removing
-        let files = db.get_package_files(pkg)?;
+        let pkg_info = db.get_package(pkg).ok().flatten();
         
-        if files.is_empty() {
+        if pkg_info.is_none() {
              output.warn(&format!("Package '{}' is not installed", pkg));
              continue;
         }
         
-        // Determine version and type for better status
-        let pkg_info = db.get_package(pkg).ok().flatten();
+        let files = db.get_package_files(pkg).unwrap_or_default();
         let version = pkg_info.map(|p| p.version).unwrap_or_else(|| "unknown".to_string());
 
         if dry_run {
-            output.package_line(PackageState::Queued, pkg, &version, "(dry run: remove)");
+            output.done(pkg, &version, "(dry run)");
             continue;
         }
         
-        output.package_line(PackageState::Installing, pkg, &version, "removing...");
+        let files_to_delete: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        let pkg_name = pkg.clone();
+        let version_clone = version.clone();
 
-        // Delete files
-        for file in &files {
-            let path = std::path::Path::new(&file.path);
-            let result = if path.is_dir() {
-                std::fs::remove_dir_all(path)
-            } else {
-                std::fs::remove_file(path)
-            };
-            
-            if let Err(e) = result {
-                // Only warn in verbose, don't clutter the main feed
-                output.verbose(&format!("could not remove {}: {}", file.path, e));
+        handles.push(tokio::task::spawn_blocking(move || {
+            for file_path in files_to_delete {
+                let path = std::path::Path::new(&file_path);
+                let _ = if path.is_dir() {
+                    std::fs::remove_dir_all(path)
+                } else {
+                    std::fs::remove_file(path)
+                };
             }
-        }
-        
-        // Remove from DB
-        db.remove_package(pkg)?;
-        
-        // Record history
-        db.add_history(pkg, "remove", Some(&version), None, true)?;
+            (pkg_name, version_clone)
+        }));
+    }
 
-        output.package_line(PackageState::Installed, pkg, &version, "done");
-        remove_count += 1;
+    let results = join_all(handles).await;
+
+    for res in results {
+        if let Ok((name, version)) = res {
+             // Record in DB and History
+             let _ = db.remove_package(&name);
+             let _ = db.add_history(&name, "remove", Some(&version), None, true);
+             output.done(&name, &version, "done");
+             remove_count += 1;
+        }
     }
 
     if remove_count > 0 {
@@ -69,7 +71,7 @@ pub fn remove(packages: &[String], dry_run: bool) -> Result<()> {
 
     // Auto-update lockfile if it exists
     if apl::lockfile::Lockfile::exists_default() {
-        let _ = crate::cmd::lock::lock(false, true); // silent
+        let _ = crate::cmd::lock::lock(false, true);
     }
 
     Ok(())

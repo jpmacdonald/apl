@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use apl::io::output::InstallOutput;
-use apl::io::download::create_multi_progress;
+
 use apl::apl_home;
 use crate::cmd::install::prepare_download_mp;
 
@@ -12,12 +12,11 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     let client = Client::new();
 
     // 1. Resolve and download
-    let output = InstallOutput::new(false);
-    let mp = create_multi_progress();
+    let _output = InstallOutput::new(false);
     let index_path = apl_home().join("index.bin");
     let index = apl::index::PackageIndex::load(&index_path).ok();
 
-    let prepared = prepare_download_mp(&client, pkg_name, None, false, None, &mp, index.as_ref(), &output).await?
+    let prepared = prepare_download_mp(&client, pkg_name, None, false, None, index.as_ref(), &_output).await?
         .context(format!("Could not find or download package '{}'", pkg_name))?;
 
     // 2. Extract to temp (we keep _temp_dir alive to preserve the files)
