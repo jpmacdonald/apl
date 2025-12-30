@@ -258,7 +258,7 @@ async fn download_chunked(
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != expected_hash {
-        output.fail(&pkg_name, &format_size(total_size), "hash mismatch");
+        output.fail(pkg_name, &format_size(total_size), "hash mismatch");
         let _ = tokio::fs::remove_file(dest).await;
         return Err(DownloadError::HashMismatch {
             expected: expected_hash.to_string(),
@@ -367,6 +367,161 @@ fn format_size(bytes: u64) -> String {
         format!("{:.1} KiB", bytes as f64 / KIB as f64)
     } else {
         format!("{bytes} B")
+    }
+}
+/// Download, Cache, and Pipelined Extract (Async)
+///
+/// 1. Stream from Network
+/// 2. Tee:
+///    - Path A: Write to Cache File + Hash (Main loop)
+///    - Path B: Send to Channel -> StreamReader -> Zstd -> Tar Unpack (Spawned Task)
+/// 3. Verify Hash
+pub async fn download_and_extract(
+    client: &Client,
+    pkg_name: &str,
+    url: &str,
+    cache_dest: &Path,
+    extract_dest: &Path,
+    expected_hash: &str,
+    output: &CliOutput,
+) -> Result<String, DownloadError> {
+    use async_compression::tokio::bufread::ZstdDecoder;
+    use tokio_tar::Archive;
+    use tokio_util::io::StreamReader;
+
+    let user_agent = format!("apl/{}", env!("CARGO_PKG_VERSION"));
+
+    let head_resp = client
+        .head(url)
+        .header(reqwest::header::USER_AGENT, &user_agent)
+        .send()
+        .await?;
+
+    let total_size = head_resp.content_length().unwrap_or(0);
+    // Note: We ignore accept_ranges for pipelined extraction, we prefer sequential stream
+
+    output.set_downloading(pkg_name, "", total_size);
+
+    let response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, &user_agent)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let mut stream = response.bytes_stream();
+    let mut file = File::create(cache_dest).await?;
+    let mut hasher = Hasher::new();
+    let mut downloaded: u64 = 0;
+
+    // Channel for Pipeline (Download -> Extract)
+    // 64KB buffer
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(32);
+
+    // Convert Receiver to AsyncRead
+    let stream_reader = StreamReader::new(tokio_stream::wrappers::ReceiverStream::new(rx));
+
+    // Detect compression format from URL
+    let is_gzip = url.ends_with(".tar.gz") || url.ends_with(".tgz");
+    let is_zip = url.ends_with(".zip");
+
+    // For zip files, we can't pipeline - download first, then extract
+    if is_zip {
+        drop(tx); // Don't use pipelined extraction for zip
+
+        // Standard download loop
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res?;
+            file.write_all(&chunk).await?;
+            hasher.write_all(&chunk)?;
+            downloaded += chunk.len() as u64;
+            output.update_download(pkg_name, downloaded);
+        }
+        file.flush().await?;
+
+        let actual_hash = hasher.finalize().to_hex().to_string();
+        if actual_hash != expected_hash {
+            output.fail(pkg_name, &format_size(downloaded), "hash mismatch");
+            tokio::fs::remove_file(cache_dest).await.ok();
+            return Err(DownloadError::HashMismatch {
+                expected: expected_hash.to_string(),
+                actual: actual_hash,
+            });
+        }
+
+        // Sync zip extraction
+        let cache_path = cache_dest.to_path_buf();
+        let extract_path = extract_dest.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&cache_path)?;
+            let mut archive = zip::ZipArchive::new(file)?;
+            archive.extract(&extract_path)?;
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(std::io::Error::other)??;
+
+        return Ok(actual_hash);
+    }
+
+    // Spawn Extractor Task (for tar archives)
+    let extract_dest_owned = extract_dest.to_path_buf();
+    let extractor_handle = tokio::spawn(async move {
+        if is_gzip {
+            use async_compression::tokio::bufread::GzipDecoder;
+            let decoder = GzipDecoder::new(stream_reader);
+            let mut archive = Archive::new(decoder);
+            archive.unpack(&extract_dest_owned).await?;
+        } else {
+            let decoder = ZstdDecoder::new(stream_reader);
+            let mut archive = Archive::new(decoder);
+            archive.unpack(&extract_dest_owned).await?;
+        }
+        Ok::<(), std::io::Error>(())
+    });
+
+    // Main Loop: Download -> Cache + Hash + Pipe
+    while let Some(chunk_res) = stream.next().await {
+        let chunk = chunk_res?;
+        // Write to Cache
+        file.write_all(&chunk).await?;
+        // Update Hash
+        hasher.write_all(&chunk)?;
+
+        downloaded += chunk.len() as u64;
+        output.update_download(pkg_name, downloaded);
+
+        // Pipe to Extractor (Clone bytes is cheap, it's Arc)
+        if tx.send(Ok(chunk)).await.is_err() {
+            // Receiver dropped (Extractor failed?), stop downloading
+            return Err(
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Extractor died").into(),
+            );
+        }
+    }
+    drop(tx); // Close channel
+
+    file.flush().await?;
+    let actual_hash = hasher.finalize().to_hex().to_string();
+
+    // Verify Hash FIRST
+    if actual_hash != expected_hash {
+        output.fail(pkg_name, &format_size(downloaded), "hash mismatch");
+        tokio::fs::remove_file(cache_dest).await.ok();
+        // Also clean up partial extraction? Install caller handles temp dir cleanup.
+        return Err(DownloadError::HashMismatch {
+            expected: expected_hash.to_string(),
+            actual: actual_hash,
+        });
+    }
+
+    // Wait for extraction to finish
+    match extractor_handle.await {
+        Ok(Ok(_)) => Ok(actual_hash),
+        Ok(Err(e)) => Err(DownloadError::Io(e)),
+        Err(e) => Err(DownloadError::Io(std::io::Error::other(
+            e,
+        ))),
     }
 }
 

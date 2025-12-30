@@ -57,7 +57,7 @@ fn resolve_recursive(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::index::{IndexEntry, IndexRelease};
+    use crate::core::index::{IndexEntry, VersionInfo};
 
     fn mock_index(entries: Vec<IndexEntry>) -> PackageIndex {
         let mut index = PackageIndex::new();
@@ -71,14 +71,18 @@ mod tests {
         IndexEntry {
             name: name.into(),
             description: "".into(),
+            homepage: "https://example.com".into(),
             type_: "cli".into(),
-            releases: vec![IndexRelease {
+            releases: vec![VersionInfo {
                 version: "1.0.0".into(),
-                bottles: vec![],
+                binaries: vec![],
                 deps,
                 bin: vec![],
                 hints: "".into(),
                 app: None,
+                source: None,
+                build_deps: vec![],
+                build_script: String::new(),
             }],
         }
     }

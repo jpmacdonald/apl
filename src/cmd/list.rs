@@ -21,18 +21,8 @@ pub fn list() -> Result<()> {
     let mut total_size: u64 = 0;
 
     for pkg in &packages {
-        // Get actual size from CAS
-        let artifacts = db
-            .get_artifacts(&pkg.name, &pkg.version)
-            .unwrap_or_default();
-        let cas = apl::cas::Cas::default();
-        let pkg_size: u64 = artifacts
-            .iter()
-            .map(|art| {
-                let blob_path = cas.blob_path(&art.blake3);
-                std::fs::metadata(blob_path).map(|m| m.len()).unwrap_or(0)
-            })
-            .sum();
+        // Use stored size
+        let pkg_size = pkg.size_bytes;
         total_size += pkg_size;
 
         // Format installed date

@@ -29,6 +29,7 @@ pub struct Package {
     pub installed_at: i64,
     /// Whether this is the currently linked version
     pub active: bool,
+    pub size_bytes: u64,
 }
 
 /// Artifact mapping (for a specific package version)
@@ -65,10 +66,10 @@ impl StateDb {
     /// Open database at a specific path (for testing)
     pub fn open_at(path: &Path) -> Result<Self, DbError> {
         let conn = Connection::open(path)?;
-        
+
         // Enable WAL mode + Foreign Keys
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
-        
+
         let db = Self { conn };
         db.migrate_or_init()?;
         Ok(db)
@@ -76,19 +77,25 @@ impl StateDb {
 
     fn migrate_or_init(&self) -> Result<(), DbError> {
         // 1. Check V2 (active column)
-        let has_active: u32 = self.conn.query_row(
-            "SELECT count(*) FROM pragma_table_info('packages') WHERE name='active'",
-            [],
-            |r| r.get(0)
-        ).unwrap_or(0);
-        
+        let has_active: u32 = self
+            .conn
+            .query_row(
+                "SELECT count(*) FROM pragma_table_info('packages') WHERE name='active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
         if has_active == 0 {
             // Check if ANY table exists (if not, fresh init)
-            let tables: u32 = self.conn.query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='packages'",
-                [],
-                |r| r.get(0)
-            ).unwrap_or(0);
+            let tables: u32 = self
+                .conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='packages'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
 
             if tables > 0 {
                 // V1 -> V2
@@ -99,18 +106,21 @@ impl StateDb {
                 return Ok(());
             }
         }
-        
+
         // 2. Check V3 (history)
-        let has_history: u32 = self.conn.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='history'",
-            [],
-            |r| r.get(0)
-        ).unwrap_or(0);
+        let has_history: u32 = self
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='history'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
 
         if has_history == 0 {
             self.migrate_v2_to_v3()?;
         }
-        
+
         Ok(())
     }
 
@@ -135,7 +145,7 @@ impl StateDb {
         )?;
         Ok(())
     }
-    
+
     fn migrate_v2_to_v3(&self) -> Result<(), DbError> {
         println!("📦 enabling history tracking (Schema V3)...");
         self.conn.execute(
@@ -166,6 +176,7 @@ impl StateDb {
                 blake3 TEXT NOT NULL,
                 installed_at INTEGER NOT NULL,
                 active BOOLEAN NOT NULL DEFAULT 0,
+                size_bytes INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (name, version)
             );
 
@@ -195,33 +206,33 @@ impl StateDb {
         println!("📦 Migrating database to V2 (Multi-version support)...");
         // Disable FKs during migration dance
         self.conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
-        
+
         // 1. Rename old tables
         self.conn.execute_batch(
             "
             ALTER TABLE packages RENAME TO packages_old;
             ALTER TABLE files RENAME TO files_old;
-            "
+            ",
         )?;
-        
+
         // 2. Create new schema
         self.init_schema_v2()?;
-        
+
         // 3. Migrate Data
         // Assume all existing packages in V1 are 'active'
         self.conn.execute(
             "INSERT INTO packages (name, version, blake3, installed_at, active)
              SELECT name, version, blake3, installed_at, 1 FROM packages_old",
-            []
+            [],
         )?;
-        
+
         // Migrate files -> files (no FK now)
         self.conn.execute(
             "INSERT INTO files (path, package, blake3)
              SELECT path, package, blake3 FROM files_old",
-            []
+            [],
         )?;
-        
+
         // Backfill artifacts from files_old
         // Since V1 didn't track artifacts separately, we assume current files are the artifacts for current version
         self.conn.execute(
@@ -229,18 +240,18 @@ impl StateDb {
              SELECT f.package, p.version, f.path, f.blake3 
              FROM files_old f 
              JOIN packages_old p ON f.package = p.name",
-            []
+            [],
         )?;
-        
+
         // 4. Cleanup
         self.conn.execute_batch(
             "
             DROP TABLE packages_old;
             DROP TABLE files_old;
             PRAGMA foreign_keys=ON;
-            "
+            ",
         )?;
-        
+
         println!("✓ Database migration complete.");
         Ok(())
     }
@@ -251,52 +262,52 @@ impl StateDb {
         name: &str,
         version: &str,
         blake3: &str,
-        artifacts: &[(String, String)], // (path, blake3)
+        size_bytes: u64,
+        artifacts: &[(String, String)],    // (path, blake3)
         active_files: &[(String, String)], // (path, blake3)
     ) -> Result<(), DbError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-            
+
         let tx = self.conn.unchecked_transaction()?;
-        
+
         // 1. Deactivate others
-        tx.execute("UPDATE packages SET active = 0 WHERE name = ?1", params![name])?;
-        
+        tx.execute(
+            "UPDATE packages SET active = 0 WHERE name = ?1",
+            params![name],
+        )?;
+
         // 2. Insert package
         tx.execute(
-            "INSERT OR REPLACE INTO packages (name, version, blake3, installed_at, active)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![name, version, blake3, now, true],
+            "INSERT OR REPLACE INTO packages (name, version, blake3, installed_at, active, size_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![name, version, blake3, now, true, size_bytes],
         )?;
-        
+
         // 3. Insert artifacts
         let mut stmt_art = tx.prepare("INSERT OR REPLACE INTO artifacts (package, version, path, blake3) VALUES (?1, ?2, ?3, ?4)")?;
         for (path, hash) in artifacts {
             stmt_art.execute(params![name, version, path, hash])?;
         }
         drop(stmt_art);
-        
+
         // 4. Insert active files
-        let mut stmt_file = tx.prepare("INSERT OR REPLACE INTO files (path, package, blake3) VALUES (?1, ?2, ?3)")?;
+        let mut stmt_file =
+            tx.prepare("INSERT OR REPLACE INTO files (path, package, blake3) VALUES (?1, ?2, ?3)")?;
         for (path, hash) in active_files {
             stmt_file.execute(params![path, name, hash])?;
         }
         drop(stmt_file);
-        
+
         tx.commit()?;
         Ok(())
     }
 
     /// Record a package installation (sets as ACTIVE)
     /// Wraps install_package_version with active=true
-    pub fn install_package(
-        &self,
-        name: &str,
-        version: &str,
-        blake3: &str,
-    ) -> Result<(), DbError> {
+    pub fn install_package(&self, name: &str, version: &str, blake3: &str) -> Result<(), DbError> {
         self.install_package_version(name, version, blake3, true)
     }
 
@@ -317,7 +328,10 @@ impl StateDb {
 
         if active {
             // Deactivate other versions first
-            tx.execute("UPDATE packages SET active = 0 WHERE name = ?1", params![name])?;
+            tx.execute(
+                "UPDATE packages SET active = 0 WHERE name = ?1",
+                params![name],
+            )?;
         }
 
         tx.execute(
@@ -336,7 +350,7 @@ impl StateDb {
         package: &str,
         version: &str,
         path: &str,
-        blake3: &str
+        blake3: &str,
     ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR REPLACE INTO artifacts (package, version, path, blake3)
@@ -380,7 +394,7 @@ impl StateDb {
     /// Get the ACTIVE version of a package
     pub fn get_package(&self, name: &str) -> Result<Option<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active FROM packages WHERE name = ?1 AND active = 1",
+            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND active = 1",
         )?;
 
         let mut rows = stmt.query(params![name])?;
@@ -392,16 +406,21 @@ impl StateDb {
                 blake3: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
+                size_bytes: row.get(5)?,
             }))
         } else {
             Ok(None)
         }
     }
-    
+
     /// Get a specific version of a package
-    pub fn get_package_version(&self, name: &str, version: &str) -> Result<Option<Package>, DbError> {
+    pub fn get_package_version(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<Option<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active FROM packages WHERE name = ?1 AND version = ?2",
+            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND version = ?2",
         )?;
 
         let mut rows = stmt.query(params![name, version])?;
@@ -413,6 +432,7 @@ impl StateDb {
                 blake3: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
+                size_bytes: row.get(5)?,
             }))
         } else {
             Ok(None)
@@ -422,7 +442,7 @@ impl StateDb {
     /// List all ACTIVE installed packages
     pub fn list_packages(&self) -> Result<Vec<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active FROM packages WHERE active = 1 ORDER BY name",
+            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE active = 1 ORDER BY name",
         )?;
 
         let packages = stmt.query_map([], |row| {
@@ -432,6 +452,7 @@ impl StateDb {
                 blake3: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
+                size_bytes: row.get(5)?,
             })
         })?;
 
@@ -441,7 +462,7 @@ impl StateDb {
     /// List ALL installed versions of a package
     pub fn list_package_versions(&self, name: &str) -> Result<Vec<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active FROM packages WHERE name = ?1 ORDER BY version DESC",
+            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 ORDER BY version DESC",
         )?;
 
         let packages = stmt.query_map(params![name], |row| {
@@ -451,6 +472,7 @@ impl StateDb {
                 blake3: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
+                size_bytes: row.get(5)?,
             })
         })?;
 
@@ -463,16 +485,16 @@ impl StateDb {
             "SELECT package, version, path, blake3 FROM artifacts WHERE package = ?1 AND version = ?2",
         )?;
         let rows = stmt.query_map(params![package, version], |row| {
-             Ok(Artifact {
-                 package: row.get(0)?,
-                 version: row.get(1)?,
-                 path: row.get(2)?,
-                 blake3: row.get(3)?,
-             })
+            Ok(Artifact {
+                package: row.get(0)?,
+                version: row.get(1)?,
+                path: row.get(2)?,
+                blake3: row.get(3)?,
+            })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
-    
+
     // History methods
 
     pub fn add_history(
@@ -487,7 +509,7 @@ impl StateDb {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
-            
+
         self.conn.execute(
             "INSERT INTO history (timestamp, action, package, version_from, version_to, success)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -499,39 +521,42 @@ impl StateDb {
     pub fn get_history(&self, package: &str) -> Result<Vec<HistoryEvent>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, timestamp, action, package, version_from, version_to, success 
-             FROM history WHERE package = ?1 ORDER BY timestamp ASC"
+             FROM history WHERE package = ?1 ORDER BY timestamp ASC",
         )?;
         let rows = stmt.query_map(params![package], |row| {
-             Ok(HistoryEvent {
-                 id: row.get(0)?,
-                 timestamp: row.get(1)?,
-                 action: row.get(2)?,
-                 package: row.get(3)?,
-                 version_from: row.get(4)?,
-                 version_to: row.get(5)?,
-                 success: row.get(6)?,
-             })
+            Ok(HistoryEvent {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                action: row.get(2)?,
+                package: row.get(3)?,
+                version_from: row.get(4)?,
+                version_to: row.get(5)?,
+                success: row.get(6)?,
+            })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
-    
-    pub fn get_last_successful_history(&self, package: &str) -> Result<Option<HistoryEvent>, DbError> {
+
+    pub fn get_last_successful_history(
+        &self,
+        package: &str,
+    ) -> Result<Option<HistoryEvent>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, timestamp, action, package, version_from, version_to, success 
-             FROM history WHERE package = ?1 AND success = 1 ORDER BY timestamp DESC LIMIT 1"
+             FROM history WHERE package = ?1 AND success = 1 ORDER BY timestamp DESC LIMIT 1",
         )?;
-         let mut rows = stmt.query_map(params![package], |row| {
-             Ok(HistoryEvent {
-                 id: row.get(0)?,
-                 timestamp: row.get(1)?,
-                 action: row.get(2)?,
-                 package: row.get(3)?,
-                 version_from: row.get(4)?,
-                 version_to: row.get(5)?,
-                 success: row.get(6)?,
-             })
+        let mut rows = stmt.query_map(params![package], |row| {
+            Ok(HistoryEvent {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                action: row.get(2)?,
+                package: row.get(3)?,
+                version_from: row.get(4)?,
+                version_to: row.get(5)?,
+                success: row.get(6)?,
+            })
         })?;
-        
+
         if let Some(res) = rows.next() {
             Ok(Some(res?))
         } else {
@@ -541,9 +566,9 @@ impl StateDb {
 
     /// Get all active files for a package
     pub fn get_package_files(&self, package: &str) -> Result<Vec<InstalledFile>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT path, package, blake3 FROM files WHERE package = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path, package, blake3 FROM files WHERE package = ?1")?;
 
         let files = stmt.query_map(params![package], |row| {
             Ok(InstalledFile {
@@ -558,7 +583,9 @@ impl StateDb {
 
     /// Find which package owns a file
     pub fn find_file_owner(&self, path: &str) -> Result<Option<String>, DbError> {
-        let mut stmt = self.conn.prepare("SELECT package FROM files WHERE path = ?1")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT package FROM files WHERE path = ?1")?;
         let mut rows = stmt.query(params![path])?;
 
         if let Some(row) = rows.next()? {
@@ -588,7 +615,7 @@ mod tests {
         assert!(packages[0].active);
         assert_eq!(packages[1].name, "ripgrep");
     }
-    
+
     #[test]
     fn test_versions() {
         let dir = tempdir().unwrap();
@@ -605,7 +632,7 @@ mod tests {
         let pkg = db.get_package("jq").unwrap().unwrap();
         assert_eq!(pkg.version, "1.7");
         assert!(pkg.active);
-        
+
         // Check both exist
         let versions = db.list_package_versions("jq").unwrap();
         assert_eq!(versions.len(), 2);
@@ -622,7 +649,8 @@ mod tests {
         let db = StateDb::open_at(&dir.path().join("state.db")).unwrap();
 
         db.install_package("neovim", "0.10.0", "abc123").unwrap();
-        db.add_file("/usr/local/bin/nvim", "neovim", "file123").unwrap();
+        db.add_file("/usr/local/bin/nvim", "neovim", "file123")
+            .unwrap();
 
         let owner = db.find_file_owner("/usr/local/bin/nvim").unwrap();
         assert_eq!(owner, Some("neovim".to_string()));
@@ -634,7 +662,8 @@ mod tests {
         let db = StateDb::open_at(&dir.path().join("state.db")).unwrap();
 
         db.install_package("neovim", "0.10.0", "abc123").unwrap();
-        db.add_file("/usr/local/bin/nvim", "neovim", "file123").unwrap();
+        db.add_file("/usr/local/bin/nvim", "neovim", "file123")
+            .unwrap();
 
         let files = db.remove_package("neovim").unwrap();
         assert_eq!(files, vec!["/usr/local/bin/nvim"]);

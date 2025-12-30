@@ -1,70 +1,128 @@
-# apl - A Package Layer
+# APL
 
-> **A fast binary package manager for macOS.**  
-> Like brew, but faster.
+A package manager for macOS.
 
 ## Installation
 
 ```bash
-curl -sL https://raw.githubusercontent.com/jpmacdonald/distill/main/install.sh | sh
+curl -fsSL https://apl.dev/install.sh | sh
 ```
 
-## Quick Start
+Or build from source:
 
 ```bash
-apl update              # Fetch latest package index
-apl install bat fd jq   # Install packages
-apl list                # Show installed packages
+git clone https://github.com/user/apl.git
+cd apl
+cargo build --release
+cp target/release/apl ~/.local/bin/
 ```
 
-## Commands
+## Usage
 
-### Core
+### Install packages
+
 ```bash
-apl install <pkg>           # Install latest
-apl install <pkg>@<version> # Install specific version
-apl remove <pkg>            # Uninstall
-apl list                    # Show installed
-apl search <query>          # Find packages
-apl update                  # Sync index
-apl upgrade                 # Upgrade all
-apl clean                   # Remove cached files
+apl install ripgrep neovim
 ```
 
-### Power User
+### Remove packages
+
 ```bash
-apl switch <pkg>@<version>  # Switch active version
-apl rollback <pkg>          # Undo last change
-apl history <pkg>           # View changes
-apl run <pkg>               # Run without installing
-apl info <pkg>              # Package details
-apl lock                    # Generate apl.lock
+apl remove ripgrep
 ```
 
-### Developer
+### List installed packages
+
 ```bash
-apl package new <name>      # Create package template
-apl package check <file>    # Validate package
-apl generate-index          # Build index.bin
-apl hash <file>             # Compute BLAKE3
-apl completions <shell>     # Shell completions
+apl list
 ```
 
-## Options
+### Search for packages
 
-- `--dry-run` - Show what would happen
-- `-q, --quiet` - Suppress output
+```bash
+apl search editor
+```
 
-## Architecture
+### View package information
+
+```bash
+apl info neovim
+```
+
+### Update the package index
+
+```bash
+apl update
+```
+
+### Upgrade installed packages
+
+```bash
+apl upgrade
+```
+
+## Configuration
+
+APL stores all data in `~/.apl/`:
 
 ```
 ~/.apl/
-├── bin/        # Symlinks to binaries
-├── cache/      # Downloaded files
-├── index.bin   # Package index
-└── state.db    # SQLite state
+├── bin/          # Symlinks to installed binaries
+├── store/        # Installed packages (versioned)
+├── cache/        # Downloaded archives
+├── index.bin     # Package index
+└── state.db      # Installation database
 ```
 
----
+Add `~/.apl/bin` to your PATH:
 
-MIT License
+```bash
+export PATH="$HOME/.apl/bin:$PATH"
+```
+
+## Shell Completions
+
+APL supports completions for bash, zsh, fish, elvish, and powershell.
+
+```bash
+# Zsh
+apl completions zsh > ~/.zfunc/_apl
+
+# Bash
+apl completions bash > /etc/bash_completion.d/apl
+
+# Fish
+apl completions fish > ~/.config/fish/completions/apl.fish
+```
+
+## Package Format
+
+Packages are defined in TOML:
+
+```toml
+[package]
+name = "ripgrep"
+version = "14.1.1"
+description = "Line-oriented search tool"
+type = "cli"
+
+[source]
+url = "https://github.com/BurntSushi/ripgrep/releases/..."
+blake3 = "abc123..."
+
+[binary.arm64]
+url = "https://github.com/BurntSushi/ripgrep/releases/..."
+blake3 = "def456..."
+
+[install]
+bin = ["rg"]
+```
+
+## Requirements
+
+- macOS 14.0 or later
+- Apple Silicon or Intel processor
+
+## License
+
+MIT

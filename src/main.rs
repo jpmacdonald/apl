@@ -51,7 +51,7 @@ enum Commands {
         yes: bool,
     },
     /// Switch active version of a package
-    Switch {
+    Use {
         /// Package spec (e.g. jq@1.6)
         spec: String,
     },
@@ -72,7 +72,8 @@ enum Commands {
         /// Package name
         package: String,
     },
-    /// Compute BLAKE3 hash of a file (for formula authoring)
+    /// Compute BLAKE3 hash of a file (for package authoring)
+    #[command(hide = true)]
     Hash {
         /// Files to hash
         #[arg(required = true)]
@@ -85,14 +86,14 @@ enum Commands {
         /// Search query
         query: String,
     },
-    /// Generate index.bin from formulas directory
-    #[command(name = "generate-index")]
+    /// Generate index.bin from packages directory
+    #[command(name = "generate-index", hide = true)]
     GenerateIndex {
-        /// Directory containing formula files
-        #[arg(default_value = "formulas")]
-        formulas_dir: PathBuf,
-        /// Output file
-        #[arg(default_value = "index.bin")]
+        /// Directory containing package files
+        #[arg(default_value = "packages")]
+        packages_dir: PathBuf,
+        /// Output path for index.bin
+        #[arg(short, long, default_value = "index.bin")]
         output: PathBuf,
     },
     /// Remove orphaned CAS blobs and temp files
@@ -103,14 +104,12 @@ enum Commands {
         #[arg(
             long,
             env = "APL_INDEX_URL",
-            default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/gh-pages/index.bin"
+            default_value = "https://raw.githubusercontent.com/jpmacdonald/apl/main/index.bin"
         )]
         url: String,
-    },
-    /// Upgrade installed packages to latest versions
-    Upgrade {
-        /// Specific packages to upgrade (or all if empty)
-        packages: Vec<String>,
+        /// Also upgrade all installed packages to latest versions
+        #[arg(long, short = 'a')]
+        all: bool,
     },
     /// Check status of installed packages
     Status,
@@ -125,7 +124,8 @@ enum Commands {
         shell: clap_complete::Shell,
     },
     /// Update apl itself to the latest version
-    SelfUpdate,
+    #[command(name = "update-self")]
+    UpdateSelf,
     /// Run a package without installing it globally
     Run {
         /// Package name
@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
         Commands::Remove { packages, all, yes } => {
             cmd::remove::remove(&packages, all, yes, dry_run).await
         }
-        Commands::Switch { spec } => cmd::switch::switch(&spec, dry_run),
+        Commands::Use { spec } => cmd::r#use::use_package(&spec, dry_run),
         Commands::History { package } => cmd::history::history(&package),
         Commands::Rollback { package } => cmd::rollback::rollback(&package, dry_run).await,
         Commands::List => cmd::list::list(),
@@ -192,12 +192,12 @@ async fn main() -> Result<()> {
         Commands::Lock => cmd::lock::lock(dry_run, false),
         Commands::Search { query } => cmd::search::search(&query),
         Commands::GenerateIndex {
-            formulas_dir,
+            packages_dir,
             output,
-        } => cmd::generate_index::generate_index(&formulas_dir, &output),
+        } => cmd::generate_index::generate_index(&packages_dir, &output),
         Commands::Clean => cmd::clean::clean(dry_run),
-        Commands::Update { url } => cmd::update::update(&url, dry_run).await,
-        Commands::Upgrade { packages } => cmd::upgrade::upgrade(&packages, dry_run).await,
+        Commands::Update { url, all } => cmd::update::update(&url, all, dry_run).await,
+
         Commands::Status => cmd::status::status(),
         Commands::Package { command } => match command {
             PackageCommands::New { name, output_dir } => cmd::package::new(&name, &output_dir),
@@ -210,7 +210,7 @@ async fn main() -> Result<()> {
             cmd::completions::completions(shell);
             Ok(())
         }
-        Commands::SelfUpdate => cmd::self_update::self_update(dry_run).await,
+        Commands::UpdateSelf => cmd::self_update::self_update(dry_run).await,
         Commands::Run { package, args } => {
             println!("🚀 Preparing to run '{package}'...");
             cmd::run::run(&package, &args, dry_run).await

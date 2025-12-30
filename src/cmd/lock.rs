@@ -52,7 +52,7 @@ pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
         if let Some(idx) = &index {
             if let Some(entry) = idx.find(&pkg.name) {
                 if let Some(release) = entry.find_version(&pkg.version) {
-                    if let Some(bottle) = release.bottles.iter().find(|b| b.arch == current_arch) {
+                    if let Some(bottle) = release.binaries.iter().find(|b| b.arch == current_arch) {
                         url = bottle.url.clone();
                         // Verify hash matches what we have installed (sanity check)
                         if bottle.blake3 != blake3 && !silent {

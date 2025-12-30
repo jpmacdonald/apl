@@ -9,7 +9,6 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 use std::io::{Stdout, Write, stdout};
-use std::sync::{Arc, Mutex};
 
 // ============================================================================
 // Design System Constants
@@ -34,15 +33,18 @@ const TABLE_WIDTH: usize = 70;
 // Helper Functions
 // ============================================================================
 
-/// Format bytes for display matching mockup (KB/MB)
+/// Format bytes for display matching mockup (KB/MB/GB)
 pub fn format_size(bytes: u64) -> String {
     let kb = bytes as f64 / 1024.0;
-    if kb >= 1024.0 {
-        format!("{:.1} MB", kb / 1024.0)
+    let mb = kb / 1024.0;
+    if mb >= 1024.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else if kb >= 1024.0 {
+        format!("{mb:.1} MB")
     } else if kb >= 1.0 {
-        format!("{:.1} KB", kb)
+        format!("{kb:.1} KB")
     } else {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     }
 }
 
@@ -50,7 +52,7 @@ pub fn format_size(bytes: u64) -> String {
 fn write_at(stdout: &mut Stdout, row: u16, col: u16, text: &str, color: Color) {
     let _ = stdout.queue(cursor::MoveTo(col, row));
     let _ = stdout.queue(SetForegroundColor(color));
-    print!("{}", text);
+    print!("{text}");
     let _ = stdout.queue(SetForegroundColor(Color::Reset));
     let _ = stdout.flush();
 }
@@ -143,8 +145,8 @@ impl TableOutput {
         // Header
         println!(
             "   {} {} {} {}",
-            format!("{:<14}", name_header).dark_grey(),
-            format!("{:<11}", ver_header).dark_grey(),
+            format!("{name_header:<14}").dark_grey(),
+            format!("{ver_header:<11}").dark_grey(),
             format!("{:<11}", "SIZE").dark_grey(),
             "STATUS".dark_grey()
         );
@@ -316,11 +318,14 @@ impl TableOutput {
     }
 
     /// Set package to done state. Returns true if package was in table.
-    pub fn set_done(&mut self, name: &str, detail: &str) -> bool {
+    pub fn set_done(&mut self, name: &str, detail: &str, size: Option<u64>) -> bool {
         if let Some(pkg) = self.packages.iter_mut().find(|p| p.name == name) {
             pkg.state = PackageState::Done {
                 detail: detail.to_string(),
             };
+            if let Some(s) = size {
+                pkg.size = s;
+            }
             self.render_package_by_name(name);
             true
         } else {
@@ -403,7 +408,7 @@ impl TableOutput {
             };
 
             let _ = self.stdout.queue(SetForegroundColor(Color::Red));
-            print!("{}", dot);
+            print!("{dot}");
             let _ = self.stdout.queue(SetForegroundColor(Color::Reset));
             print!("  ");
             let _ = self.stdout.queue(SetForegroundColor(Color::Cyan));
@@ -625,16 +630,12 @@ impl TableOutput {
                     &mut self.stdout,
                     row,
                     COL_PROGRESS,
-                    &format!("{} {:>3}% {}", action, pct, dl),
+                    &format!("{action} {pct:>3}% {dl}"),
                     Color::Cyan,
                 );
             }
             PackageState::Installing => {
-                let msg = if self.mode == TableMode::Update {
-                    "installing"
-                } else {
-                    "installing"
-                };
+                let msg = "installing";
                 write_at(&mut self.stdout, row, COL_PROGRESS, msg, Color::Yellow);
             }
             PackageState::Done { detail } => {
@@ -648,7 +649,7 @@ impl TableOutput {
                     &mut self.stdout,
                     row,
                     COL_PROGRESS,
-                    &format!("FAILED: {}", reason),
+                    &format!("FAILED: {reason}"),
                     Color::Red,
                 );
             }
@@ -663,19 +664,34 @@ impl Default for TableOutput {
 }
 
 // ============================================================================
-// CliOutput - Thread-safe wrapper for backward compatibility
+// CliOutput - Public API for UI operations (Actor-based)
 // ============================================================================
 
+use super::ui_actor::{UiActor, UiEvent};
+
+/// Thread-safe output handler using actor model
 #[derive(Clone)]
 pub struct CliOutput {
-    inner: Arc<Mutex<TableOutput>>,
+    sender: std::sync::mpsc::Sender<UiEvent>,
 }
 
 impl CliOutput {
+    /// Create a new output handler (spawns UI actor thread)
     pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(TableOutput::new())),
-        }
+        let actor = UiActor::spawn();
+        let sender = actor.sender();
+
+        // Store actor in thread-local to ensure it lives long enough
+        // The actor will shut down when all senders are dropped
+        std::thread::spawn(move || {
+            let _keeper = actor;
+            // Actor lives until this thread ends (when all senders dropped)
+            loop {
+                std::thread::park();
+            }
+        });
+
+        Self { sender }
     }
 
     /// Legacy: Create with PackageProgress (ignored, for compatibility)
@@ -691,37 +707,61 @@ impl CliOutput {
 
     /// Print table header for install operations
     pub fn section_table(&self) {
-        self.inner.lock().unwrap().print_header_install();
+        // TableOutput will handle this internally
+        println!();
+        println!(
+            "   {} {} {} {}",
+            format!("{:<14}", "PACKAGE").dark_grey(),
+            format!("{:<11}", "VERSION").dark_grey(),
+            format!("{:<11}", "SIZE").dark_grey(),
+            "STATUS".dark_grey()
+        );
+        println!("{}", "─".repeat(TABLE_WIDTH).dark_grey());
     }
 
     /// Print table header for list operations
     pub fn section_table_list(&self) {
-        self.inner.lock().unwrap().print_header_list();
+        println!();
+        println!(
+            "   {:<14} {:<11} {:<11} {}",
+            "PACKAGE".dark_grey(),
+            "VERSION".dark_grey(),
+            "SIZE".dark_grey(),
+            "INSTALLED".dark_grey()
+        );
+        println!("{}", "─".repeat(TABLE_WIDTH).dark_grey());
     }
 
     /// Success message (footer)
     pub fn success(&self, msg: &str) {
-        self.inner.lock().unwrap().print_success(msg);
+        use crossterm::style::Stylize;
+        println!();
+        println!("{} {}", STATUS_OK.green(), msg.green());
     }
 
     /// Info message
     pub fn info(&self, msg: &str) {
+        use crossterm::style::Stylize;
         println!("  {} {}", STATUS_PENDING.dark_grey(), msg);
     }
 
     /// Warning message (footer)
     pub fn warning(&self, msg: &str) {
-        self.inner.lock().unwrap().print_warn(msg);
+        use crossterm::style::Stylize;
+        println!();
+        println!("{} {}", STATUS_WARN.yellow(), msg.yellow());
     }
 
     /// Error message (footer)
     pub fn error(&self, msg: &str) {
-        self.inner.lock().unwrap().print_error(msg);
+        use crossterm::style::Stylize;
+        println!();
+        println!("{} {}", STATUS_ERR.red(), msg.red());
     }
 
     /// Hint message
     pub fn hint(&self, msg: &str) {
-        println!("  💡 {}", msg);
+        println!("  💡 {msg}");
     }
 
     /// Summary footer with timing
@@ -747,6 +787,11 @@ impl CliOutput {
         self.success(&msg);
     }
 
+    /// Print success summary footer
+    pub fn success_summary(&self, message: &str) {
+        self.success(message);
+    }
+
     /// Print error summary footer (alias for error)
     pub fn error_summary(&self, message: &str) {
         self.error(message);
@@ -754,82 +799,89 @@ impl CliOutput {
 
     /// Add package to table (for install flow)
     pub fn add_package(&self, name: &str, version: &str) {
-        self.inner.lock().unwrap().add_package(name, version, 0);
+        let _ = self.sender.send(UiEvent::AddPackage {
+            name: name.to_string(),
+            version: version.to_string(),
+        });
     }
 
     /// Print footer for list command
-    pub fn print_list_footer(&self, message: &str, success: bool, color: Option<Color>) {
-        self.inner
-            .lock()
-            .unwrap()
-            .print_footer(message, success, color);
+    pub fn print_list_footer(&self, message: &str, success: bool, _color: Option<Color>) {
+        if success {
+            self.success(message);
+        } else {
+            self.warning(message);
+        }
     }
 
     /// Prepare standalone inline row
-    pub fn prepare_standalone(&self, msg: &str) {
-        self.inner.lock().unwrap().prepare_standalone(msg);
+    pub fn prepare_standalone(&self, _msg: &str) {
+        // Not supported in actor model yet - would need new event type
     }
 
     /// Update standalone inline row
-    pub fn update_standalone(&self, msg: &str) {
-        self.inner.lock().unwrap().update_standalone(msg);
+    pub fn update_standalone(&self, _msg: &str) {
+        // Not supported in actor model yet
     }
 
     /// Finish standalone inline row
     pub fn finish_standalone(&self, msg: &str, status: StandaloneStatus) {
-        self.inner.lock().unwrap().finish_standalone(msg, status);
+        use crossterm::style::Stylize;
+        match status {
+            StandaloneStatus::Ok => println!("{} {}", STATUS_OK.green(), msg),
+            StandaloneStatus::Warn => println!("{} {}", STATUS_WARN.yellow(), msg),
+            StandaloneStatus::Err => println!("{} {}", STATUS_ERR.red(), msg),
+        }
     }
 
     /// Set downloading with size
     pub fn set_downloading(&self, name: &str, _version: &str, total: u64) {
-        self.inner.lock().unwrap().set_downloading(name, total);
+        let _ = self.sender.send(UiEvent::Progress {
+            name: name.to_string(),
+            bytes_downloaded: 0,
+            total_bytes: total,
+        });
     }
 
     /// Update download progress
     pub fn update_download(&self, name: &str, current: u64) {
-        self.inner.lock().unwrap().update_progress(name, current);
+        let _ = self.sender.send(UiEvent::Progress {
+            name: name.to_string(),
+            bytes_downloaded: current,
+            total_bytes: 0, // Will be ignored by actor
+        });
     }
 
     /// Set installing state
-    pub fn set_installing(&self, name: &str, _version: &str) {
-        self.inner.lock().unwrap().set_installing(name);
+    pub fn set_installing(&self, name: &str, version: &str) {
+        let _ = self.sender.send(UiEvent::SetInstalling {
+            name: name.to_string(),
+            version: version.to_string(),
+        });
     }
 
     /// Mark as done
-    pub fn done(&self, name: &str, version: &str, detail: &str) {
-        let found = self.inner.lock().unwrap().set_done(name, detail);
-        if !found {
-            // Standalone output for packages not in table
-            use crossterm::style::Stylize;
-            println!(
-                "{} {:<14} {:<11} {}",
-                STATUS_OK.green(),
-                name.cyan(),
-                version.dark_grey(),
-                detail.green()
-            );
-        }
+    pub fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>) {
+        let _ = self.sender.send(UiEvent::Done {
+            name: name.to_string(),
+            version: version.to_string(),
+            status: detail.to_string(),
+            size_bytes: size,
+        });
     }
 
     /// Alias for done
     pub fn finish_ok(&self, name: &str, version: &str, detail: &str) {
-        self.done(name, version, detail);
+        self.done(name, version, detail, None);
     }
 
     /// Mark as failed
     pub fn finish_err(&self, name: &str, version: &str, reason: &str) {
-        let found = self.inner.lock().unwrap().set_failed(name, reason);
-        if !found {
-            // Standalone output for packages not in table
-            use crossterm::style::Stylize;
-            println!(
-                "{} {:<14} {:<11} {}",
-                STATUS_ERR.red(),
-                name.cyan(),
-                version.dark_grey(),
-                reason.red()
-            );
-        }
+        let _ = self.sender.send(UiEvent::Fail {
+            name: name.to_string(),
+            version: version.to_string(),
+            error: reason.to_string(),
+        });
     }
 
     /// Alias for finish_err
@@ -839,35 +891,24 @@ impl CliOutput {
 
     /// Verbose message (for switch operations)
     pub fn verbose(&self, msg: &str) {
-        println!("  {}", msg);
+        println!("  {msg}");
     }
 
     /// Pre-allocate packages (used by install pipeline)
-    pub fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.prepare_pipeline(packages);
+    pub fn prepare_pipeline(&self, _packages: &[(String, Option<String>)]) {
+        // In actor model, packages are added dynamically via AddPackage events
+        // No pre-allocation needed
     }
 
-    /// Pre-allocate packages for UPDATE pipeline
-    pub fn prepare_update_pipeline(&self, packages: &[(String, String, String)]) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.prepare_update_pipeline(packages);
+    /// Prepare upgrade pipeline
+    pub fn prepare_upgrade_pipeline(&self, _items: &[(String, String, String)]) {
+        // Not needed in actor model
     }
 
-    /// Start a background task to refresh the UI (for animations)
+    /// Start ticker thread for animations
     pub fn start_tick(&self) -> tokio::task::JoinHandle<()> {
-        let inner = self.inner.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_millis(250));
-            loop {
-                interval.tick().await;
-                let mut table = match inner.lock() {
-                    Ok(t) => t,
-                    Err(_) => break,
-                };
-                table.tick();
-            }
-        })
+        // Spawn a task that does nothing (animations handled by actor)
+        tokio::spawn(async {})
     }
 }
 
@@ -914,9 +955,9 @@ pub fn print_list_row(name: &str, version: &str, size: u64, status: &str, symbol
     };
 
     // Pad strings BEFORE styling to get correct alignment
-    let name_padded = format!("{:<width$}", name, width = NAME_WIDTH);
-    let version_padded = format!("{:<width$}", version, width = VERSION_WIDTH);
-    let size_padded = format!("{:<width$}", size_str, width = SIZE_WIDTH);
+    let name_padded = format!("{name:<NAME_WIDTH$}");
+    let version_padded = format!("{version:<VERSION_WIDTH$}");
+    let size_padded = format!("{size_str:<SIZE_WIDTH$}");
 
     // Apply color to symbol based on content
     let symbol_styled = match symbol {

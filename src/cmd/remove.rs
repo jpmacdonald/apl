@@ -22,9 +22,13 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         if !yes && !dry_run {
             use std::io::Write;
             print!(
-                "{} Are you sure you want to remove all {} packages? [y/N] ",
-                "⚠".yellow(),
-                all_packages.len()
+                "{}",
+                format!(
+                    "{} Are you sure you want to remove all {} packages? [y/N] ",
+                    "⚠",
+                    all_packages.len()
+                )
+                .yellow()
             );
             std::io::stdout().flush()?;
 
@@ -74,7 +78,7 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         let files = db.get_package_files(&pkg).unwrap_or_default();
 
         if dry_run {
-            output.done(&pkg, &version, "(dry run)");
+            output.done(&pkg, &version, "(dry run)", None);
             continue;
         }
 
@@ -93,6 +97,15 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
                     std::fs::remove_file(path)
                 };
             }
+
+            // Cleanup from Store
+            if let Some(apl_store) = apl::try_apl_home().map(|h| h.join("store")) {
+                let pkg_store = apl_store.join(&pkg_name).join(&version_clone);
+                if pkg_store.exists() {
+                    let _ = std::fs::remove_dir_all(pkg_store);
+                }
+            }
+
             (pkg_name, version_clone)
         }));
     }
@@ -103,7 +116,7 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
     for (name, version) in results.into_iter().flatten() {
         let _ = db.remove_package(&name);
         let _ = db.add_history(&name, "remove", Some(&version), None, true);
-        output.done(&name, &version, "unlinked from bin");
+        output.done(&name, &version, "unlinked from bin", None);
         remove_count += 1;
     }
 

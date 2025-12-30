@@ -1,10 +1,8 @@
 //! Rollback command
 
-use crate::cmd::install::finalize_switch;
 use anyhow::{Context, Result, bail};
-use apl::cas::Cas;
 use apl::db::StateDb;
-use apl::io::output::CliOutput;
+// use apl::io::output::CliOutput; // Not needed if switch handles output
 
 /// Rollback a package to its previous state
 pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
@@ -44,10 +42,8 @@ pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
 
     println!("Rolling back {pkg_name} to {target_version}...");
 
-    // Execute switch
-    let cas = Cas::new()?;
-    let output = CliOutput::new();
-    finalize_switch(&cas, &db, pkg_name, &target_version, dry_run, &output)?;
+    // Execute switch using the shared logic
+    crate::cmd::r#use::use_version(pkg_name, &target_version, dry_run)?;
 
     Ok(())
 }

@@ -16,6 +16,5 @@ pub mod run;
 pub mod search;
 pub mod self_update;
 pub mod status;
-pub mod switch;
 pub mod update;
-pub mod upgrade;
+pub mod r#use;

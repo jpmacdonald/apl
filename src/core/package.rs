@@ -99,6 +99,19 @@ pub struct Package {
     pub install: InstallSpec,
     #[serde(default)]
     pub hints: Hints,
+    #[serde(default)]
+    pub build: Option<BuildSpec>,
+}
+
+/// Build instructions (from source)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BuildSpec {
+    /// Build-time dependencies (e.g. cmake, ninja)
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+    /// Build script (runs in sysroot)
+    #[serde(default)]
+    pub script: String,
 }
 
 /// Installation specification
@@ -162,9 +175,6 @@ impl std::str::FromStr for Package {
 }
 
 // Type aliases for backwards compatibility during migration
-pub type Formula = Package;
-pub type Bottle = Binary;
-pub type FormulaError = PackageError;
 
 #[cfg(test)]
 mod tests {

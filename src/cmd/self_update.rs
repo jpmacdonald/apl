@@ -15,7 +15,7 @@ pub async fn self_update(_dry_run: bool) -> Result<()> {
     output.prepare_standalone("Checking for APL updates...");
     sleep(Duration::from_millis(800)).await;
     output.finish_standalone(
-        &format!("Update available: {} → {}", current_version, next_version),
+        &format!("Update available: {current_version} → {next_version}"),
         apl::io::output::StandaloneStatus::Warn,
     );
     println!();
@@ -23,7 +23,7 @@ pub async fn self_update(_dry_run: bool) -> Result<()> {
     // 2. Download
     let total = 8500;
     let mut current = 0;
-    output.prepare_standalone(&format!("Downloading apl v{}... 0% 0 KB", next_version));
+    output.prepare_standalone(&format!("Downloading apl v{next_version}... 0% 0 KB"));
 
     while current < total {
         current += 500;
@@ -38,7 +38,7 @@ pub async fn self_update(_dry_run: bool) -> Result<()> {
     }
 
     output.finish_standalone(
-        &format!("Downloaded apl v{}", next_version),
+        &format!("Downloaded apl v{next_version}"),
         apl::io::output::StandaloneStatus::Ok,
     );
 
@@ -48,7 +48,7 @@ pub async fn self_update(_dry_run: bool) -> Result<()> {
     sleep(Duration::from_millis(1000)).await;
     ticker.abort();
     output.finish_standalone(
-        &format!("Installed apl v{}", next_version),
+        &format!("Installed apl v{next_version}"),
         apl::io::output::StandaloneStatus::Ok,
     );
 
@@ -60,7 +60,7 @@ pub async fn self_update(_dry_run: bool) -> Result<()> {
     println!(
         "{} {}",
         apl::io::output::STATUS_OK.green(),
-        format!("APL has been updated to v{}", next_version).green()
+        format!("APL has been updated to v{next_version}").green()
     );
     println!(
         "  {}",

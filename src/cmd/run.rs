@@ -31,9 +31,8 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     .await?
     .context(format!("Could not find or download package '{pkg_name}'"))?;
 
-    // 2. Extract to temp (we keep _temp_dir alive to preserve the files)
-    let extract_dir = prepared.download_path.parent().unwrap().join("extracted");
-    let extracted = apl::extractor::extract_auto(&prepared.download_path, &extract_dir)?;
+    // 2. Already Extracted (by prepare_download_new)
+    let extract_dir = prepared.extracted_path;
 
     // Identify the binary to run (first in bin_list or package name)
     let bin_name = prepared
@@ -42,24 +41,29 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
         .cloned()
         .unwrap_or_else(|| prepared.name.clone());
 
-    let is_raw = extracted.len() == 1
-        && apl::extractor::detect_format(&prepared.download_path)
-            == apl::extractor::ArchiveFormat::RawBinary;
-
-    // Find the binary path directly in the extracted files (no CAS)
-    let bin_path = extracted
-        .iter()
-        .find(|f| {
-            if is_raw {
+    // Find the binary path in the extracted files
+    let bin_path = walkdir::WalkDir::new(&extract_dir)
+        .into_iter()
+        .flatten()
+        .find(|entry| {
+            if !entry.file_type().is_file() {
+                return false;
+            }
+            let fname = entry.file_name().to_string_lossy();
+            if fname == bin_name {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(meta) = entry.metadata() {
+                        return meta.permissions().mode() & 0o111 != 0;
+                    }
+                }
                 return true;
             }
-            let fname = f.relative_path.file_name().unwrap().to_string_lossy();
-            fname == bin_name || f.relative_path.to_string_lossy() == bin_name
+            false
         })
-        .map(|f| f.absolute_path.clone())
-        .context(format!(
-            "Could not find binary '{bin_name}' in package archive"
-        ))?;
+        .map(|e| e.path().to_owned())
+        .ok_or_else(|| anyhow::anyhow!("Could not find binary '{bin_name}' in package archive"))?;
 
     // 3. Ensure executable and run
     #[cfg(unix)]

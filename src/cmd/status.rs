@@ -79,7 +79,7 @@ pub fn status() -> Result<()> {
     println!(
         "  {} {}",
         format!("{:<18}", "Index:").dark_grey(),
-        format!("{} (up to date)", index_date).green()
+        format!("{index_date} (up to date)").green()
     );
     println!(
         "  {} {}",

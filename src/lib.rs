@@ -13,11 +13,10 @@ pub use core::package;
 pub use core::resolver;
 pub use io::download as downloader;
 pub use io::extract as extractor;
-pub use store::cas;
+// pub use store::cas;
 pub use store::db;
 
 // Backwards compatibility
-pub use core::package as formula;
 
 use dirs::home_dir;
 use std::path::PathBuf;
@@ -35,19 +34,31 @@ pub fn apl_home() -> PathBuf {
     try_apl_home().expect("Could not determine home directory")
 }
 
-/// Content-addressable store path: ~/.apl/cache
-pub fn cas_path() -> PathBuf {
-    apl_home().join("cache")
-}
+// public cas_path removed
 
 /// SQLite database path: ~/.apl/state.db
 pub fn db_path() -> PathBuf {
     apl_home().join("state.db")
 }
 
+/// Package store path: ~/.apl/store
+pub fn store_path() -> PathBuf {
+    apl_home().join("store")
+}
+
 /// Binary installation target: ~/.apl/bin
 pub fn bin_path() -> PathBuf {
     apl_home().join("bin")
+}
+
+/// Cache path: ~/.apl/cache
+pub fn cache_path() -> PathBuf {
+    apl_home().join("cache")
+}
+
+/// Temp path: ~/.apl/tmp (guaranteed same volume as store)
+pub fn tmp_path() -> PathBuf {
+    apl_home().join("tmp")
 }
 
 /// Architecture constants

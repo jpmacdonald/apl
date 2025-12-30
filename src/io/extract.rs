@@ -224,6 +224,26 @@ pub fn extract_auto(
     }
 }
 
+/// Detect if a directory has a single top-level directory and strip it by moving contents up.
+pub fn strip_components(dir: &Path) -> io::Result<()> {
+    let entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+
+    // If there is exactly one entry and it's a directory, move its contents up
+    if entries.len() == 1 && entries[0].file_type()?.is_dir() {
+        let top_level = entries[0].path();
+        let sub_entries: Vec<_> = fs::read_dir(&top_level)?.filter_map(|e| e.ok()).collect();
+
+        for entry in sub_entries {
+            let target = dir.join(entry.file_name());
+            fs::rename(entry.path(), target)?;
+        }
+
+        fs::remove_dir(top_level)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

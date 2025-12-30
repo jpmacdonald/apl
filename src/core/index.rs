@@ -3,7 +3,7 @@
 //! Compact package registry fetched from CDN.
 
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -21,9 +21,9 @@ pub enum IndexError {
     VersionMismatch(u32, u32),
 }
 
-/// Bottle info in the index
+/// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexBottle {
+pub struct IndexBinary {
     /// Architecture (e.g., "aarch64-apple-darwin")
     pub arch: String,
     /// Download URL
@@ -32,16 +32,32 @@ pub struct IndexBottle {
     pub blake3: String,
 }
 
+/// Source artifact info
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IndexSource {
+    pub url: String,
+    pub blake3: String,
+}
+
 /// Compact release info (one version)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexRelease {
+pub struct VersionInfo {
     /// Version string
     pub version: String,
-    /// Available bottles with URLs
-    pub bottles: Vec<IndexBottle>,
+    /// Available binaries with URLs
+    pub binaries: Vec<IndexBinary>,
+    /// Source info (if available)
+    #[serde(default)]
+    pub source: Option<IndexSource>,
     /// Runtime dependencies (names only)
     #[serde(default)]
     pub deps: Vec<String>,
+    /// Build dependencies (names only)
+    #[serde(default)]
+    pub build_deps: Vec<String>,
+    /// Build script
+    #[serde(default)]
+    pub build_script: String,
     /// Binary names to link
     #[serde(default)]
     pub bin: Vec<String>,
@@ -61,21 +77,27 @@ pub struct IndexEntry {
     /// Package description
     #[serde(default)]
     pub description: String,
+    /// Package homepage
+    #[serde(default)]
+    pub homepage: String,
     /// Package type ("cli" or "app")
     #[serde(default)]
+    #[serde(rename = "type")]
     pub type_: String,
     /// All available releases (sorted by version descending)
-    pub releases: Vec<IndexRelease>,
+    pub releases: Vec<VersionInfo>,
 }
 
 impl IndexEntry {
     /// Get the latest release
-    pub fn latest(&self) -> &IndexRelease {
-        self.releases.first().expect("Entry must have at least one release")
+    pub fn latest(&self) -> &VersionInfo {
+        self.releases
+            .first()
+            .expect("Entry must have at least one release")
     }
 
     /// Find a specific version
-    pub fn find_version(&self, version: &str) -> Option<&IndexRelease> {
+    pub fn find_version(&self, version: &str) -> Option<&VersionInfo> {
         self.releases.iter().find(|r| r.version == version)
     }
 }
@@ -83,7 +105,7 @@ impl IndexEntry {
 /// Package index (binary format)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageIndex {
-    /// Index format version (Bumped to 2 for multi-version support)
+    /// Index format version (Bumped to 4 for source support)
     pub version: u32,
     /// Unix timestamp of last update
     pub updated_at: i64,
@@ -95,26 +117,37 @@ impl PackageIndex {
     /// Create a new empty index
     pub fn new() -> Self {
         Self {
-            version: 3,
+            version: 4,
             updated_at: 0,
             packages: Vec::new(),
         }
     }
 
-    /// Load index from a zstd-compressed postcard file
+    /// Load index (auto-detects ZSTD or Raw) via MMAP
     pub fn load(path: &Path) -> Result<Self, IndexError> {
-        let compressed = fs::read(path)?;
-        let decompressed = zstd::decode_all(compressed.as_slice())?;
-        Ok(postcard::from_bytes(&decompressed)?)
+        let file = fs::File::open(path)?;
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+
+        // Check ZSTD magic bytes (Little Endian: 0xFD2FB528 -> 28 B5 2F FD)
+        if mmap.len() >= 4
+            && mmap[0] == 0x28
+            && mmap[1] == 0xB5
+            && mmap[2] == 0x2F
+            && mmap[3] == 0xFD
+        {
+            let decompressed = zstd::decode_all(&mmap[..])?;
+            return postcard::from_bytes(&decompressed)
+                .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint));
+        }
+
+        // Postcard header check (version defined in from_bytes)
+        Self::from_bytes(&mmap)
     }
 
-    /// Save index to a zstd-compressed postcard file
+    /// Save index to a RAW postcard file (uncompressed for MMAP speed)
     pub fn save(&self, path: &Path) -> Result<(), IndexError> {
         let buf = postcard::to_allocvec(self)?;
-        let file = fs::File::create(path)?;
-        let mut encoder = zstd::stream::Encoder::new(file, 3)?;
-        encoder.write_all(&buf)?;
-        encoder.finish()?;
+        fs::write(path, &buf)?;
         Ok(())
     }
 
@@ -131,7 +164,7 @@ impl PackageIndex {
         struct IndexHeader {
             version: u32,
         }
-        
+
         let header: IndexHeader = postcard::from_bytes(data)
             .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?; // Placeholder if header fails
 
@@ -153,11 +186,21 @@ impl PackageIndex {
     }
 
     /// Add a single release to a package
-    pub fn upsert_release(&mut self, name: &str, description: &str, type_: &str, release: IndexRelease) {
+    pub fn upsert_release(
+        &mut self,
+        name: &str,
+        description: &str,
+        type_: &str,
+        release: VersionInfo,
+    ) {
         if let Some(entry) = self.packages.iter_mut().find(|e| e.name == name) {
             entry.description = description.to_string();
             entry.type_ = type_.to_string();
-            if let Some(existing) = entry.releases.iter_mut().find(|r| r.version == release.version) {
+            if let Some(existing) = entry
+                .releases
+                .iter_mut()
+                .find(|r| r.version == release.version)
+            {
                 *existing = release;
             } else {
                 entry.releases.push(release);
@@ -168,6 +211,7 @@ impl PackageIndex {
             self.packages.push(IndexEntry {
                 name: name.to_string(),
                 description: description.to_string(),
+                homepage: String::new(),
                 type_: type_.to_string(),
                 releases: vec![release],
             });
@@ -200,20 +244,22 @@ mod tests {
         index.upsert(IndexEntry {
             name: "neovim".to_string(),
             description: "Vim-fork focused on extensibility".to_string(),
+            homepage: "https://neovim.io".to_string(),
             type_: "cli".to_string(),
-            releases: vec![IndexRelease {
+            releases: vec![VersionInfo {
                 version: "0.10.0".to_string(),
-                bottles: vec![
-                    IndexBottle {
-                        arch: "aarch64-apple-darwin".to_string(),
-                        url: "https://example.com/nvim.tar.zst".to_string(),
-                        blake3: "abc123".to_string(),
-                    },
-                ],
+                binaries: vec![IndexBinary {
+                    arch: "aarch64-apple-darwin".to_string(),
+                    url: "https://example.com/nvim.tar.zst".to_string(),
+                    blake3: "abc123".to_string(),
+                }],
                 deps: vec!["libuv".to_string()],
+                build_deps: vec![],
+                build_script: String::new(),
                 bin: vec!["nvim".to_string()],
                 hints: String::new(),
                 app: None,
+                source: None,
             }],
         });
 
@@ -228,21 +274,27 @@ mod tests {
     #[test]
     fn test_upsert_release() {
         let mut index = PackageIndex::new();
-        let release1 = IndexRelease {
+        let release1 = VersionInfo {
             version: "1.0.0".to_string(),
-            bottles: vec![],
+            binaries: vec![],
             deps: vec![],
+            build_deps: vec![],
+            build_script: String::new(),
             bin: vec![],
             hints: String::new(),
             app: None,
+            source: None,
         };
-        let release2 = IndexRelease {
+        let release2 = VersionInfo {
             version: "1.1.0".to_string(),
-            bottles: vec![],
+            binaries: vec![],
             deps: vec![],
+            build_deps: vec![],
+            build_script: String::new(),
             bin: vec![],
             hints: String::new(),
             app: None,
+            source: None,
         };
 
         index.upsert_release("test", "Test description", "cli", release1);
@@ -258,7 +310,7 @@ mod tests {
         let mut index = PackageIndex::new();
         index.version = 1; // Force old version
         let bytes = postcard::to_allocvec(&index).unwrap();
-        
+
         let result = PackageIndex::from_bytes(&bytes);
         assert!(result.is_err());
         if let Err(IndexError::VersionMismatch(found, expected)) = result {
@@ -277,18 +329,26 @@ mod tests {
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;
         index.updated_at = 1234567890;
-        index.upsert_release("ripgrep", "Fast grep", "cli", IndexRelease {
-            version: "14.0.0".to_string(),
-            bottles: vec![IndexBottle {
-                arch: "aarch64-apple-darwin".to_string(),
-                url: "https://example.com/rg".to_string(),
-                blake3: "rg123".to_string(),
-            }],
-            deps: vec![],
-            bin: vec![],
-            hints: String::new(),
-            app: None,
-        });
+        index.upsert_release(
+            "ripgrep",
+            "Fast grep",
+            "cli",
+            VersionInfo {
+                version: "14.0.0".to_string(),
+                binaries: vec![IndexBinary {
+                    arch: "aarch64-apple-darwin".to_string(),
+                    url: "https://example.com/rg".to_string(),
+                    blake3: "rg123".to_string(),
+                }],
+                deps: vec![],
+                build_deps: vec![],
+                build_script: String::new(),
+                bin: vec![],
+                hints: String::new(),
+                app: None,
+                source: None,
+            },
+        );
 
         index.save(&path).unwrap();
         let loaded = PackageIndex::load(&path).unwrap();

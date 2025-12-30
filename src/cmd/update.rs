@@ -6,8 +6,8 @@ use apl::index::PackageIndex;
 use reqwest::Client;
 use std::sync::Arc;
 
-/// Update package index from CDN
-pub async fn update(url: &str, dry_run: bool) -> Result<()> {
+/// Update package index from CDN, optionally upgrading all packages
+pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
     let index_path = apl_home().join("index.bin");
     let output = apl::io::output::CliOutput::new();
 
@@ -70,8 +70,8 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
 
     output.finish_standalone("Index updated", apl::io::output::StandaloneStatus::Ok);
 
-    // Save compressed data to disk
-    std::fs::write(&index_path, &bytes)?;
+    // Save RAW (decompressed) data to disk for fast MMAP loading
+    std::fs::write(&index_path, &decompressed)?;
 
     // 2. Show updates table
     let db = apl::db::StateDb::open()?;
@@ -87,8 +87,9 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         }
     }
 
-    if !update_list.is_empty() {
-        output.prepare_update_pipeline(&update_list);
+    if !update_list.is_empty() && upgrade_all {
+        // Prepare table (no-op in actor model, but keep API call)
+        output.prepare_pipeline(&[]);
 
         let ticker = output.start_tick();
         let total_updates = update_list.len();
@@ -114,7 +115,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         // For now, let's simulate the progress bars to match the mockup visual.
 
         let start_time = std::time::Instant::now();
-        let speeds = vec![2, 3, 4];
+        let speeds = [2, 3, 4];
 
         let mut handles = Vec::new();
         let output = Arc::new(output); // CliOutput is already a wrapper around Arc<Mutex>
@@ -143,8 +144,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
                 // Mock install
                 output.set_installing(&name, &new_ver);
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-                output.done(&name, &new_ver, "updated");
+                output.done(&name, &new_ver, "updated", None);
             }));
         }
 

@@ -3,7 +3,7 @@
 //! Scans a directory for .toml files and builds an index.bin
 
 use anyhow::Result;
-use apl::index::{IndexBottle, PackageIndex};
+use apl::index::{IndexBinary, PackageIndex, VersionInfo};
 use apl::package::PackageType;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,23 +29,33 @@ pub fn generate_index(packages_dir: &Path, output: &Path) -> Result<()> {
         if path.extension().is_some_and(|ext| ext == "toml") {
             let pkg = apl::package::Package::from_file(&path)?;
 
-            let binaries: Vec<IndexBottle> = pkg
+            let binaries: Vec<IndexBinary> = pkg
                 .binary
                 .iter()
-                .map(|(arch, binary)| IndexBottle {
+                .map(|(arch, binary)| IndexBinary {
                     arch: arch.clone(),
                     url: binary.url.clone(),
                     blake3: binary.blake3.clone(),
                 })
                 .collect();
 
-            let release = apl::core::index::IndexRelease {
+            let release = VersionInfo {
                 version: pkg.package.version.clone(),
-                bottles: binaries,
+                binaries,
                 deps: pkg.dependencies.runtime.clone(),
+                build_deps: pkg.dependencies.build.clone(),
+                build_script: pkg
+                    .build
+                    .as_ref()
+                    .map(|b| b.script.clone())
+                    .unwrap_or_default(),
                 bin: pkg.install.bin.clone(),
                 hints: pkg.hints.post_install.clone(),
                 app: pkg.install.app.clone(),
+                source: Some(apl::index::IndexSource {
+                    url: pkg.source.url.clone(),
+                    blake3: pkg.source.blake3.clone(),
+                }),
             };
 
             let type_str = match pkg.package.type_ {
