@@ -134,6 +134,7 @@ impl TableOutput {
     /// This pre-prints the rows to ensure the terminal scrolls if needed
     /// and anchors the base_row for stable relative positioning.
     pub fn prepare_pipeline(&mut self, items: &[(String, Option<String>)]) {
+        let _ = self.stdout.execute(cursor::Hide);
         self.mode = TableMode::Standard;
         println!();
         let (name_header, ver_header) = ("PACKAGE", "VERSION");
@@ -178,6 +179,7 @@ impl TableOutput {
 
     /// Prepare pipeline for UPDATE command (different column layout)
     pub fn prepare_update_pipeline(&mut self, items: &[(String, String, String)]) {
+        let _ = self.stdout.execute(cursor::Hide);
         self.mode = TableMode::Update;
         println!();
 
@@ -297,7 +299,6 @@ impl TableOutput {
 
     /// Update download progress
     pub fn update_progress(&mut self, name: &str, current: u64) {
-        self.frame += 1;
         if let Some(pkg) = self.packages.iter_mut().find(|p| p.name == name) {
             if let PackageState::Downloading { total, .. } = pkg.state {
                 pkg.state = PackageState::Downloading { current, total };
@@ -308,7 +309,6 @@ impl TableOutput {
 
     /// Set package to installing state
     pub fn set_installing(&mut self, name: &str) {
-        self.frame += 1;
         if let Some(pkg) = self.packages.iter_mut().find(|p| p.name == name) {
             pkg.state = PackageState::Installing;
         }
@@ -441,6 +441,7 @@ impl TableOutput {
 
     /// Generic footer drawer
     fn draw_footer(&mut self, message: &str, icon: &str, icon_color: Color, text_color: Color) {
+        let _ = self.stdout.execute(cursor::Show);
         // Move past all package rows
         let footer_row = self.base_row + self.packages.len() as u16;
         let _ = self.stdout.execute(cursor::MoveTo(0, footer_row));

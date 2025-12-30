@@ -25,7 +25,7 @@ pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
             // If last action was install (with no previous version), rollback means removing
             if event.action == "install" {
                 println!("Last action was fresh install of {pkg_name}. Removing...");
-                crate::cmd::remove::remove(&[pkg_name.to_string()], dry_run).await?;
+                crate::cmd::remove::remove(&[pkg_name.to_string()], false, false, dry_run).await?;
                 return Ok(());
             }
             bail!(

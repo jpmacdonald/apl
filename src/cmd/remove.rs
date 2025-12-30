@@ -3,18 +3,48 @@
 use anyhow::{Context, Result};
 use apl::db::StateDb;
 use apl::io::output::CliOutput;
+use crossterm::style::Stylize;
 use futures::future::join_all;
 
 /// Remove one or more packages
-pub async fn remove(packages: &[String], dry_run: bool) -> Result<()> {
+pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
 
     let output = CliOutput::new();
 
+    let packages_to_remove = if all {
+        let all_packages = db.list_packages()?;
+        if all_packages.is_empty() {
+            output.error_summary("No packages installed");
+            return Ok(());
+        }
+
+        if !yes && !dry_run {
+            use std::io::Write;
+            print!(
+                "{} Are you sure you want to remove all {} packages? [y/N] ",
+                "⚠".yellow(),
+                all_packages.len()
+            );
+            std::io::stdout().flush()?;
+
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                output.error("Operation cancelled");
+                return Ok(());
+            }
+        }
+
+        all_packages.into_iter().map(|p| p.name).collect()
+    } else {
+        packages.to_vec()
+    };
+
     let mut task_list = Vec::new();
 
     // 1. Resolve all packages first
-    for pkg_name in packages {
+    for pkg_name in &packages_to_remove {
         if let Ok(Some(info)) = db.get_package(pkg_name) {
             task_list.push((pkg_name.clone(), Some(info.version)));
         } else {

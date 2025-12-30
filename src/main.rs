@@ -41,8 +41,14 @@ enum Commands {
     /// Remove a package
     Remove {
         /// Package name(s)
-        #[arg(required = true)]
+        #[arg(required_unless_present = "all")]
         packages: Vec<String>,
+        /// Remove all installed packages
+        #[arg(long, short = 'a', conflicts_with = "packages")]
+        all: bool,
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
     /// Switch active version of a package
     Switch {
@@ -174,7 +180,9 @@ async fn main() -> Result<()> {
             locked,
             verbose,
         } => cmd::install::install(&packages, dry_run, locked, verbose).await,
-        Commands::Remove { packages } => cmd::remove::remove(&packages, dry_run).await,
+        Commands::Remove { packages, all, yes } => {
+            cmd::remove::remove(&packages, all, yes, dry_run).await
+        }
         Commands::Switch { spec } => cmd::switch::switch(&spec, dry_run),
         Commands::History { package } => cmd::history::history(&package),
         Commands::Rollback { package } => cmd::rollback::rollback(&package, dry_run).await,
