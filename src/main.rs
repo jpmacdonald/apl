@@ -94,7 +94,11 @@ enum Commands {
     /// Update package index from CDN
     Update {
         /// CDN URL for index
-        #[arg(long, env = "APL_INDEX_URL", default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/gh-pages/index.bin")]
+        #[arg(
+            long,
+            env = "APL_INDEX_URL",
+            default_value = "https://raw.githubusercontent.com/jpmacdonald/distill/gh-pages/index.bin"
+        )]
         url: String,
     },
     /// Upgrade installed packages to latest versions
@@ -102,6 +106,8 @@ enum Commands {
         /// Specific packages to upgrade (or all if empty)
         packages: Vec<String>,
     },
+    /// Check status of installed packages
+    Status,
     /// Package management commands
     Package {
         #[command(subcommand)]
@@ -141,7 +147,7 @@ pub enum PackageCommands {
     },
     /// Bump a package version
     Bump {
-        /// Package file to bump
+        /// Package file to check
         path: PathBuf,
         /// New version
         #[arg(long)]
@@ -163,72 +169,43 @@ async fn main() -> Result<()> {
     let dry_run = cli.dry_run;
 
     match cli.command {
-        Commands::Install { packages, locked, verbose } => {
-            cmd::install::install(&packages, dry_run, locked, verbose).await
-        }
-        Commands::Remove { packages } => {
-            cmd::remove::remove(&packages, dry_run).await
-        }
-        Commands::Switch { spec } => {
-            cmd::switch::switch(&spec, dry_run)
-        }
-        Commands::History { package } => {
-            cmd::history::history(&package)
-        }
-        Commands::Rollback { package } => {
-            cmd::rollback::rollback(&package, dry_run).await
-        }
-        Commands::List => {
-            cmd::list::list()
-        }
-        Commands::Info { package } => {
-            cmd::info::info(&package)
-        }
-        Commands::Hash { files } => {
-            cmd::hash::hash(&files)
-        }
-        Commands::Lock => {
-            cmd::lock::lock(dry_run, false)
-        }
-        Commands::Search { query } => {
-            cmd::search::search(&query)
-        }
-        Commands::GenerateIndex { formulas_dir, output } => {
-            cmd::generate_index::generate_index(&formulas_dir, &output)
-        }
-        Commands::Clean => {
-            cmd::clean::clean(dry_run)
-        }
-        Commands::Update { url } => {
-            cmd::update::update(&url, dry_run).await
-        }
-        Commands::Upgrade { packages } => {
-            cmd::upgrade::upgrade(&packages, dry_run).await
-        }
-        Commands::Package { command } => {
-            match command {
-                PackageCommands::New { name, output_dir } => {
-                    cmd::package::new(&name, &output_dir)
-                }
-                PackageCommands::Check { path } => {
-                    cmd::package::check(&path)
-                }
-                PackageCommands::Bump { path, version, url } => {
-                    cmd::package::bump(&path, &version, &url).await
-                }
+        Commands::Install {
+            packages,
+            locked,
+            verbose,
+        } => cmd::install::install(&packages, dry_run, locked, verbose).await,
+        Commands::Remove { packages } => cmd::remove::remove(&packages, dry_run).await,
+        Commands::Switch { spec } => cmd::switch::switch(&spec, dry_run),
+        Commands::History { package } => cmd::history::history(&package),
+        Commands::Rollback { package } => cmd::rollback::rollback(&package, dry_run).await,
+        Commands::List => cmd::list::list(),
+        Commands::Info { package } => cmd::info::info(&package),
+        Commands::Hash { files } => cmd::hash::hash(&files),
+        Commands::Lock => cmd::lock::lock(dry_run, false),
+        Commands::Search { query } => cmd::search::search(&query),
+        Commands::GenerateIndex {
+            formulas_dir,
+            output,
+        } => cmd::generate_index::generate_index(&formulas_dir, &output),
+        Commands::Clean => cmd::clean::clean(dry_run),
+        Commands::Update { url } => cmd::update::update(&url, dry_run).await,
+        Commands::Upgrade { packages } => cmd::upgrade::upgrade(&packages, dry_run).await,
+        Commands::Status => cmd::status::status(),
+        Commands::Package { command } => match command {
+            PackageCommands::New { name, output_dir } => cmd::package::new(&name, &output_dir),
+            PackageCommands::Check { path } => cmd::package::check(&path),
+            PackageCommands::Bump { path, version, url } => {
+                cmd::package::bump(&path, &version, &url).await
             }
-        }
+        },
         Commands::Completions { shell } => {
             cmd::completions::completions(shell);
             Ok(())
         }
-        Commands::SelfUpdate => {
-            cmd::self_update::self_update(dry_run).await
-        }
+        Commands::SelfUpdate => cmd::self_update::self_update(dry_run).await,
         Commands::Run { package, args } => {
-            println!("🚀 Preparing to run '{}'...", package);
+            println!("🚀 Preparing to run '{package}'...");
             cmd::run::run(&package, &args, dry_run).await
         }
     }
 }
-

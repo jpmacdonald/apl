@@ -1,37 +1,39 @@
 //! Switch command to change active package version
 
+use crate::cmd::install::{finalize_switch, perform_ux_batch_checks};
 use anyhow::{Context, Result, bail};
+use apl::cas::Cas;
 use apl::core::version::PackageSpec;
 use apl::db::StateDb;
-use apl::cas::Cas;
-use apl::io::output::InstallOutput;
-use crate::cmd::install::finalize_switch;
+use apl::io::output::CliOutput;
 
 /// Switch the active version of a package
 pub fn switch(pkg_spec: &str, dry_run: bool) -> Result<()> {
     // Parse input (can be "name@version" or just "name" if we supported interactive, but for now strict)
     let spec = PackageSpec::parse(pkg_spec)?;
-    let version = spec.version()
+    let version = spec
+        .version()
         .map(|v| v.to_string())
         .context("Version is required for switch (e.g., 'apl switch jq@1.6')")?;
-    
+
     let db = StateDb::open().context("Failed to open state database")?;
-    
+
     // Check if valid package
     // Note: get_package_version returns information if that SPECIFIC version is installed
     let pkg = db.get_package_version(&spec.name, &version)?;
-    
+
     match pkg {
         Some(p) => {
             if p.active {
                 println!("✓ {} {} is already active", p.name, p.version);
                 return Ok(());
             }
-            
+
             // Proceed to switch
             let cas = Cas::new()?;
-            let output = InstallOutput::new(false);
+            let output = CliOutput::new();
             finalize_switch(&cas, &db, &p.name, &p.version, dry_run, &output)?;
+            perform_ux_batch_checks(&[p.name.clone()], &output);
         }
         None => {
             // Check if package is installed at all (maybe user made typo in version)
@@ -39,12 +41,21 @@ pub fn switch(pkg_spec: &str, dry_run: bool) -> Result<()> {
             if versions.is_empty() {
                 bail!("Package '{}' is not installed.", spec.name);
             } else {
-                let available = versions.iter().map(|v| v.version.as_str()).collect::<Vec<_>>().join(", ");
-                bail!("Version '{}' of '{}' is not installed.\nInstalled versions: {}", 
-                    version, spec.name, available);
+                let available = versions
+                    .iter()
+                    .map(|v| v.version.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!(
+                    "Version '{}' of '{}' is not installed.\nInstalled versions: {}",
+                    version,
+                    spec.name,
+                    available
+                );
             }
         }
     }
-    
+
+    println!();
     Ok(())
 }

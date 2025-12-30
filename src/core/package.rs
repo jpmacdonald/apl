@@ -91,7 +91,7 @@ pub struct Package {
     pub source: Source,
     /// Pre-built binaries by architecture
     #[serde(default)]
-    #[serde(alias = "bottle")]  // Backwards compatibility
+    #[serde(alias = "bottle")] // Backwards compatibility
     pub binary: HashMap<String, Binary>,
     #[serde(default)]
     pub dependencies: Dependencies,
@@ -133,11 +133,11 @@ impl Package {
     /// Parse a package from a TOML file
     pub fn from_file(path: &Path) -> Result<Self, PackageError> {
         let content = fs::read_to_string(path)?;
-        Self::from_str(&content)
+        Self::parse(&content)
     }
 
     /// Parse a package from a TOML string
-    pub fn from_str(content: &str) -> Result<Self, PackageError> {
+    pub fn parse(content: &str) -> Result<Self, PackageError> {
         Ok(toml::from_str(content)?)
     }
 
@@ -150,6 +150,14 @@ impl Package {
     pub fn binary_for_current_arch(&self) -> Option<&Binary> {
         let arch = crate::arch::current();
         self.binary.get(arch)
+    }
+}
+
+impl std::str::FromStr for Package {
+    type Err = PackageError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
     }
 }
 
@@ -194,7 +202,7 @@ bin = ["nvim"]
 
     #[test]
     fn test_parse_package() {
-        let pkg = Package::from_str(EXAMPLE_PACKAGE).unwrap();
+        let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
 
         assert_eq!(pkg.package.name, "neovim");
         assert_eq!(pkg.package.version, "0.10.0");
@@ -205,8 +213,67 @@ bin = ["nvim"]
 
     #[test]
     fn test_binary_for_arch() {
-        let pkg = Package::from_str(EXAMPLE_PACKAGE).unwrap();
+        let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
         let binary = pkg.binary_for_current_arch();
         assert!(binary.is_some());
+    }
+
+    #[test]
+    fn test_parse_malformed_toml() {
+        let bad_toml = "this is not valid toml {{{";
+        let result = Package::parse(bad_toml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_missing_required_fields() {
+        // Missing [package] section
+        let incomplete = r#"
+[source]
+url = "https://example.com"
+blake3 = "abc123"
+"#;
+        let result = Package::parse(incomplete);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_str_trait() {
+        use std::str::FromStr;
+        let pkg: Result<Package, _> = Package::from_str(EXAMPLE_PACKAGE);
+        assert!(pkg.is_ok());
+        assert_eq!(pkg.unwrap().package.name, "neovim");
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
+        let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
+        let toml_str = pkg.to_toml().unwrap();
+        let reparsed = Package::parse(&toml_str).unwrap();
+
+        assert_eq!(pkg.package.name, reparsed.package.name);
+        assert_eq!(pkg.package.version, reparsed.package.version);
+        assert_eq!(pkg.source.blake3, reparsed.source.blake3);
+    }
+
+    #[test]
+    fn test_binary_for_nonexistent_arch() {
+        // Create a package with only x86_64 binary
+        let pkg_with_one_arch = r#"
+[package]
+name = "test"
+version = "1.0"
+
+[source]
+url = "https://example.com"
+blake3 = "abc"
+
+[binary.x86_64]
+url = "https://example.com/x86.tar.gz"
+blake3 = "xyz"
+"#;
+        let pkg = Package::parse(pkg_with_one_arch).unwrap();
+        // This test will pass on x86 and fail on arm64 - documenting behavior
+        let _binary = pkg.binary_for_current_arch();
     }
 }

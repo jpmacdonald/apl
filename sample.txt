@@ -1,0 +1,32 @@
+Analysis of sampling apl (pid 12237) every 1 millisecond
+Process:         apl [12237]
+Path:            /Users/USER/*/apl
+Load Address:    0x1008f4000
+Identifier:      apl
+Version:         ???
+Code Type:       ARM64
+Parent Process:  launchd [1]
+Target Type:     live task
+
+Date/Time:       2025-12-29 12:04:12.597 -0500
+Launch Time:     2025-12-29 11:59:03.105 -0500
+OS Version:      macOS 26.3 (25D5087f)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         96K
+Physical footprint (peak):  96K
+Idle exit:                  untracked
+----
+
+Call graph:
+    886 Thread_5794589: Main Thread   DispatchQueue_<multiple>
+      886 _dyld_start  (in dyld) + 0  [0x1013e09c0]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        _dyld_start  (in dyld)        886
+
+Binary images description not available
+

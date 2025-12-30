@@ -1,18 +1,21 @@
-use anyhow::{Result, bail, Context};
 use crate::core::index::PackageIndex;
+use anyhow::{Context, Result, bail};
 use std::collections::HashSet;
 
 /// Resolves dependencies for a set of packages and returns them in installation order.
-pub fn resolve_dependencies(
-    pkg_names: &[String],
-    index: &PackageIndex,
-) -> Result<Vec<String>> {
+pub fn resolve_dependencies(pkg_names: &[String], index: &PackageIndex) -> Result<Vec<String>> {
     let mut resolved_order = Vec::new();
     let mut visited = HashSet::new();
     let mut visiting = HashSet::new();
 
     for name in pkg_names {
-        resolve_recursive(name, index, &mut resolved_order, &mut visited, &mut visiting)?;
+        resolve_recursive(
+            name,
+            index,
+            &mut resolved_order,
+            &mut visited,
+            &mut visiting,
+        )?;
     }
 
     Ok(resolved_order)
@@ -30,13 +33,14 @@ fn resolve_recursive(
     }
 
     if visiting.contains(name) {
-        bail!("Circular dependency detected involving package: {}", name);
+        bail!("Circular dependency detected involving package: {name}");
     }
 
     visiting.insert(name.to_string());
 
-    let entry = index.find(name)
-        .with_context(|| format!("Package '{}' not found in index", name))?;
+    let entry = index
+        .find(name)
+        .with_context(|| format!("Package '{name}' not found in index"))?;
 
     let latest = entry.latest();
     for dep in &latest.deps {
@@ -101,10 +105,22 @@ mod tests {
 
         let resolved = resolve_dependencies(&["a".into()], &index).unwrap();
         // d must come before b and c. b and c must come before a.
-        assert!(resolved.iter().position(|x| x == "d").unwrap() < resolved.iter().position(|x| x == "b").unwrap());
-        assert!(resolved.iter().position(|x| x == "d").unwrap() < resolved.iter().position(|x| x == "c").unwrap());
-        assert!(resolved.iter().position(|x| x == "b").unwrap() < resolved.iter().position(|x| x == "a").unwrap());
-        assert!(resolved.iter().position(|x| x == "c").unwrap() < resolved.iter().position(|x| x == "a").unwrap());
+        assert!(
+            resolved.iter().position(|x| x == "d").unwrap()
+                < resolved.iter().position(|x| x == "b").unwrap()
+        );
+        assert!(
+            resolved.iter().position(|x| x == "d").unwrap()
+                < resolved.iter().position(|x| x == "c").unwrap()
+        );
+        assert!(
+            resolved.iter().position(|x| x == "b").unwrap()
+                < resolved.iter().position(|x| x == "a").unwrap()
+        );
+        assert!(
+            resolved.iter().position(|x| x == "c").unwrap()
+                < resolved.iter().position(|x| x == "a").unwrap()
+        );
     }
 
     #[test]
@@ -116,6 +132,11 @@ mod tests {
 
         let result = resolve_dependencies(&["a".into()], &index);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
     }
 }

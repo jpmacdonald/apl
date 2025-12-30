@@ -1,38 +1,42 @@
 //! Info command
 
 use anyhow::{Context, Result, bail};
+use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
-use apl::apl_home;
 
 /// Show info about a specific package
 pub fn info(package: &str) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
-    
+
     // Check if installed
     let installed = db.get_package(package)?;
-    
+
     // Check index for more info
     let index_path = apl_home().join("index.bin");
     let index_entry = if index_path.exists() {
-        PackageIndex::load(&index_path).ok().and_then(|idx| idx.find(package).cloned())
+        PackageIndex::load(&index_path)
+            .ok()
+            .and_then(|idx| idx.find(package).cloned())
     } else {
         None
     };
-    
+
+    let output = apl::io::output::CliOutput::new();
+
     if installed.is_none() && index_entry.is_none() {
-        bail!("Package '{}' not found", package);
+        bail!("Package '{package}' not found");
     }
-    
-    println!("📦 {}", package);
-    
+
+    output.section(&format!("Package {package}"));
+
     if let Some(entry) = &index_entry {
         let latest = entry.latest();
         println!("  Latest Version: {}", latest.version);
         if !entry.description.is_empty() {
             println!("  Description: {}", entry.description);
         }
-        
+
         // Show versions
         let version_list: Vec<String> = entry.releases.iter().map(|r| r.version.clone()).collect();
         println!("  Available Versions: {}", version_list.join(", "));
@@ -44,7 +48,7 @@ pub fn info(package: &str) -> Result<()> {
             println!("  Binaries: {}", latest.bin.join(", "));
         }
     }
-    
+
     if let Some(pkg) = &installed {
         println!("  Status: Installed ({})", pkg.version);
         let files = db.get_package_files(package)?;
@@ -57,6 +61,6 @@ pub fn info(package: &str) -> Result<()> {
     } else {
         println!("  Status: Not installed");
     }
-    
+
     Ok(())
 }

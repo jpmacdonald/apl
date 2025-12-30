@@ -2,27 +2,32 @@
 
 use anyhow::{Context, Result};
 use apl::db::StateDb;
-use apl::lockfile::{Lockfile, LockedPackage};
+use apl::lockfile::{LockedPackage, Lockfile};
 
 /// Generate apl.lock from installed packages
 pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     let packages = db.list_packages()?;
-    
+
+    let output = apl::io::output::CliOutput::new();
+
     if packages.is_empty() && !silent {
-        println!("No packages installed. generating empty lockfile.");
+        output.info("No packages installed. generating empty lockfile.");
     }
-    
+
     let lock_path = std::env::current_dir()?.join("apl.lock");
-    
+
     if dry_run {
-        println!("Would generate apl.lock with {} packages:", packages.len());
+        output.info(&format!(
+            "Would generate apl.lock with {} packages:",
+            packages.len()
+        ));
         for pkg in &packages {
             println!("  {} {}", pkg.name, pkg.version);
         }
         return Ok(());
     }
-    
+
     // Load index to look up URLs
     let index_path = apl::apl_home().join("index.bin");
     let index = if index_path.exists() {
@@ -32,7 +37,7 @@ pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
     };
 
     if index.is_none() && !silent {
-        println!("⚠ Warning: No index found. Lockfile will contain empty URLs.");
+        output.warning("No index found. Lockfile will contain empty URLs.");
     }
 
     // Build lockfile from installed packages
@@ -51,7 +56,10 @@ pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
                         url = bottle.url.clone();
                         // Verify hash matches what we have installed (sanity check)
                         if bottle.blake3 != blake3 && !silent {
-                            println!("⚠ Warning: Installed hash for {} disagrees with index", pkg.name);
+                            output.warning(&format!(
+                                "Installed hash for {} disagrees with index",
+                                pkg.name
+                            ));
                         }
                     }
                 }
@@ -66,19 +74,22 @@ pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
             arch: current_arch.to_string(),
         });
     }
-    
+
     let lockfile = Lockfile {
         version: 1,
         generated_at: chrono_lite_now(),
         packages: locked_packages,
     };
-    
+
     lockfile.save(&lock_path)?;
-    
+
     if !silent {
-        println!("✓ Generated apl.lock with {} packages", lockfile.packages.len());
+        output.success(&format!(
+            "Generated apl.lock with {} packages",
+            lockfile.packages.len()
+        ));
     }
-    
+
     Ok(())
 }
 
@@ -89,5 +100,5 @@ fn chrono_lite_now() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    format!("{}", secs)
+    format!("{secs}")
 }

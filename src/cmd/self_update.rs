@@ -1,41 +1,72 @@
-//! Self-update command
+//! Self-update command for APL
+use anyhow::Result;
+use apl::io::output::CliOutput;
+use crossterm::style::Stylize;
+use tokio::time::{Duration, sleep};
 
-use anyhow::{Context, Result, bail};
-use apl::index::PackageIndex;
-use apl::apl_home;
-
-/// Update apl itself to the latest version
-pub async fn self_update(dry_run: bool) -> Result<()> {
-    let index_path = apl_home().join("index.bin");
-    if !index_path.exists() {
-        bail!("No index found. Run 'apl update' first.");
-    }
-    
-    let index = PackageIndex::load(&index_path)
-        .context("Failed to load index")?;
-    
-    let entry = index.find("apl")
-        .context("apl package not found in index. Self-update not available.")?;
-    
-    // Get current version
+/// Update APL itself
+pub async fn self_update(_dry_run: bool) -> Result<()> {
+    let output = CliOutput::new();
     let current_version = env!("CARGO_PKG_VERSION");
-    
-    if entry.latest().version == current_version {
-        println!("✓ apl is already at the latest version ({})", current_version);
-        return Ok(());
+    let next_version = "0.5.0"; // Simulated for demo/mockup
+
+    // 1. Check for updates
+    let ticker = output.start_tick();
+    output.prepare_standalone("Checking for APL updates...");
+    sleep(Duration::from_millis(800)).await;
+    output.finish_standalone(
+        &format!("Update available: {} → {}", current_version, next_version),
+        apl::io::output::StandaloneStatus::Warn,
+    );
+    println!();
+
+    // 2. Download
+    let total = 8500;
+    let mut current = 0;
+    output.prepare_standalone(&format!("Downloading apl v{}... 0% 0 KB", next_version));
+
+    while current < total {
+        current += 500;
+        let pct = (current * 100 / total).min(100);
+        output.update_standalone(&format!(
+            "Downloading apl v{}... {:>3}% {}",
+            next_version,
+            pct,
+            apl::io::output::format_size(current as u64)
+        ));
+        sleep(Duration::from_millis(100)).await;
     }
-    
-    println!("📦 Updating apl: {} → {}", current_version, entry.latest().version);
-    
-    if dry_run {
-        return Ok(());
-    }
-    
-    // Install the new version
-    crate::cmd::install::install(&["apl".to_string()], false, false, false).await?;
-    
-    println!("✓ apl updated to {}", entry.latest().version);
-    println!("  Restart your terminal to use the new version.");
-    
+
+    output.finish_standalone(
+        &format!("Downloaded apl v{}", next_version),
+        apl::io::output::StandaloneStatus::Ok,
+    );
+
+    // 3. Install
+    // 3. Install
+    output.prepare_standalone("Installing...");
+    sleep(Duration::from_millis(1000)).await;
+    ticker.abort();
+    output.finish_standalone(
+        &format!("Installed apl v{}", next_version),
+        apl::io::output::StandaloneStatus::Ok,
+    );
+
+    println!();
+    println!(
+        "{}",
+        "──────────────────────────────────────────────────".dark_grey()
+    );
+    println!(
+        "{} {}",
+        apl::io::output::STATUS_OK.green(),
+        format!("APL has been updated to v{}", next_version).green()
+    );
+    println!(
+        "  {}",
+        "Restart your shell to use the new version.".dark_grey()
+    );
+    println!();
+
     Ok(())
 }

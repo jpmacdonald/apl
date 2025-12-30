@@ -7,26 +7,32 @@ pub mod io;
 pub mod store;
 
 // Re-exports for convenience
-pub use core::package;
 pub use core::index;
 pub use core::lockfile;
+pub use core::package;
 pub use core::resolver;
-pub use store::cas;
-pub use store::db;
 pub use io::download as downloader;
 pub use io::extract as extractor;
+pub use store::cas;
+pub use store::db;
 
 // Backwards compatibility
 pub use core::package as formula;
 
-use std::path::PathBuf;
 use dirs::home_dir;
+use std::path::PathBuf;
+
+/// Try to get the apl home directory, returning None if home directory cannot be determined.
+pub fn try_apl_home() -> Option<PathBuf> {
+    home_dir().map(|h| h.join(".apl"))
+}
 
 /// Default apl home directory: ~/.apl
+///
+/// # Panics
+/// Panics if the home directory cannot be determined.
 pub fn apl_home() -> PathBuf {
-    home_dir()
-        .expect("Could not determine home directory")
-        .join(".apl")
+    try_apl_home().expect("Could not determine home directory")
 }
 
 /// Content-addressable store path: ~/.apl/cache

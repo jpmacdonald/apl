@@ -7,8 +7,8 @@ use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
-use zstd::stream::Decoder as ZstdDecoder;
 use zip::ZipArchive;
+use zstd::stream::Decoder as ZstdDecoder;
 
 #[derive(Error, Debug)]
 pub enum ExtractError {
@@ -34,105 +34,117 @@ pub struct ExtractedFile {
 }
 
 /// Extract a tar.zst archive to a destination directory
-pub fn extract_tar_zst(archive_path: &Path, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
+pub fn extract_tar_zst(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
     let reader = BufReader::new(file);
     let zstd_decoder = ZstdDecoder::new(reader)?;
-    
+
     extract_tar(zstd_decoder, dest_dir)
 }
 
 /// Extract a tar.gz archive to a destination directory
-pub fn extract_tar_gz(archive_path: &Path, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
+pub fn extract_tar_gz(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
     let reader = BufReader::new(file);
     let gz_decoder = flate2::read::GzDecoder::new(reader);
-    
+
     extract_tar(gz_decoder, dest_dir)
 }
 
 /// Extract a tar archive from a reader
 fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
     fs::create_dir_all(dest_dir)?;
-    
+
     let mut archive = tar::Archive::new(reader);
     let mut extracted_files = Vec::new();
-    
+
     for entry in archive.entries()? {
         let mut entry = entry?;
         let entry_path = entry.path()?;
-        
+
         // Skip directories
         if entry.header().entry_type().is_dir() {
             continue;
         }
-        
+
         // Handle archives with a top-level directory (e.g., "neovim-0.10.0/bin/nvim")
         // by optionally stripping the first component
-        let relative_path: PathBuf = entry_path
-            .components()
-            .skip(0) // Keep full path for now; can strip if needed
-            .collect();
-        
+        let relative_path: PathBuf = entry_path.components().collect();
+
         // Create parent directories
         let absolute_path = dest_dir.join(&relative_path);
-        
+
         // Sanitize path to prevent Zip Slip
         if !absolute_path.starts_with(dest_dir) {
             return Err(ExtractError::Archive(format!(
-                "Invalid path in archive: {}", 
+                "Invalid path in archive: {}",
                 relative_path.display()
             )));
         }
-        
+
         if let Some(parent) = absolute_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        
+
         // Extract the file
         entry.unpack(&absolute_path)?;
-        
+
         // Check if executable (Unix mode has execute bit)
-        let is_executable = entry.header().mode().map(|m| m & 0o111 != 0).unwrap_or(false);
-        
+        let is_executable = entry
+            .header()
+            .mode()
+            .map(|m| m & 0o111 != 0)
+            .unwrap_or(false);
+
         extracted_files.push(ExtractedFile {
             relative_path,
             absolute_path,
             is_executable,
         });
     }
-    
+
     Ok(extracted_files)
 }
 
 /// Extract a zip archive
-pub fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
+pub fn extract_zip(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
     let mut archive = ZipArchive::new(file).map_err(|e| ExtractError::Archive(e.to_string()))?;
-    
+
     fs::create_dir_all(dest_dir)?;
     let mut extracted_files = Vec::new();
-    
+
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i).map_err(|e| ExtractError::Archive(e.to_string()))?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| ExtractError::Archive(e.to_string()))?;
         let relative_path = match file.enclosed_name() {
-             Some(path) => path.to_owned(),
-             None => continue,
+            Some(path) => path.to_owned(),
+            None => continue,
         };
-        
+
         if file.is_dir() {
-             fs::create_dir_all(dest_dir.join(&relative_path))?;
-             continue;
+            fs::create_dir_all(dest_dir.join(&relative_path))?;
+            continue;
         }
-        
+
         let absolute_path = dest_dir.join(&relative_path);
         if let Some(p) = absolute_path.parent() {
             fs::create_dir_all(p)?;
         }
-        
+
         let mut outfile = File::create(&absolute_path)?;
         io::copy(&mut file, &mut outfile)?;
-        
+
         #[cfg(unix)]
         let is_executable = if let Some(mode) = file.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
@@ -143,21 +155,21 @@ pub fn extract_zip(archive_path: &Path, dest_dir: &Path) -> Result<Vec<Extracted
         };
         #[cfg(not(unix))]
         let is_executable = false;
-        
+
         extracted_files.push(ExtractedFile {
             relative_path,
             absolute_path,
             is_executable,
         });
     }
-    
+
     Ok(extracted_files)
 }
 
 /// Detect archive format from file extension
 pub fn detect_format(path: &Path) -> ArchiveFormat {
     let path_str = path.to_string_lossy().to_lowercase();
-    
+
     if path_str.ends_with(".tar.zst") || path_str.ends_with(".tzst") {
         ArchiveFormat::TarZst
     } else if path_str.ends_with(".tar.gz") || path_str.ends_with(".tgz") {
@@ -182,7 +194,10 @@ pub enum ArchiveFormat {
 }
 
 /// Extract an archive, auto-detecting format
-pub fn extract_auto(archive_path: &Path, dest_dir: &Path) -> Result<Vec<ExtractedFile>, ExtractError> {
+pub fn extract_auto(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<Vec<ExtractedFile>, ExtractError> {
     match detect_format(archive_path) {
         ArchiveFormat::TarZst => extract_tar_zst(archive_path, dest_dir),
         ArchiveFormat::TarGz => extract_tar_gz(archive_path, dest_dir),
@@ -194,11 +209,12 @@ pub fn extract_auto(archive_path: &Path, dest_dir: &Path) -> Result<Vec<Extracte
         ArchiveFormat::RawBinary => {
             // For raw binaries, just copy the file
             fs::create_dir_all(dest_dir)?;
-            let filename = archive_path.file_name()
+            let filename = archive_path
+                .file_name()
                 .ok_or_else(|| ExtractError::Archive("Invalid filename".to_string()))?;
             let dest_path = dest_dir.join(filename);
             fs::copy(archive_path, &dest_path)?;
-            
+
             Ok(vec![ExtractedFile {
                 relative_path: PathBuf::from(filename),
                 absolute_path: dest_path,
@@ -215,7 +231,10 @@ mod tests {
 
     #[test]
     fn test_detect_format() {
-        assert_eq!(detect_format(Path::new("foo.tar.zst")), ArchiveFormat::TarZst);
+        assert_eq!(
+            detect_format(Path::new("foo.tar.zst")),
+            ArchiveFormat::TarZst
+        );
         assert_eq!(detect_format(Path::new("foo.tar.gz")), ArchiveFormat::TarGz);
         assert_eq!(detect_format(Path::new("foo.tgz")), ArchiveFormat::TarGz);
         assert_eq!(detect_format(Path::new("foo")), ArchiveFormat::RawBinary);
@@ -226,11 +245,47 @@ mod tests {
         let dir = tempdir().unwrap();
         let src = dir.path().join("mybin");
         fs::write(&src, b"binary content").unwrap();
-        
+
         let dest = dir.path().join("extracted");
         let files = extract_auto(&src, &dest).unwrap();
-        
+
         assert_eq!(files.len(), 1);
         assert!(files[0].absolute_path.exists());
+    }
+
+    #[test]
+    fn test_detect_format_case_insensitive() {
+        assert_eq!(
+            detect_format(Path::new("FOO.TAR.ZST")),
+            ArchiveFormat::TarZst
+        );
+        assert_eq!(detect_format(Path::new("bar.TAR.GZ")), ArchiveFormat::TarGz);
+        assert_eq!(detect_format(Path::new("BAZ.ZIP")), ArchiveFormat::Zip);
+    }
+
+    #[test]
+    fn test_detect_format_tar() {
+        assert_eq!(detect_format(Path::new("archive.tar")), ArchiveFormat::Tar);
+    }
+
+    #[test]
+    fn test_detect_format_tzst() {
+        assert_eq!(
+            detect_format(Path::new("archive.tzst")),
+            ArchiveFormat::TarZst
+        );
+    }
+
+    #[test]
+    fn test_extracted_file_paths() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("testbin");
+        fs::write(&src, b"#!/bin/sh\necho hello").unwrap();
+
+        let dest = dir.path().join("out");
+        let files = extract_auto(&src, &dest).unwrap();
+
+        assert_eq!(files[0].relative_path.to_str(), Some("testbin"));
+        assert!(files[0].absolute_path.starts_with(dest));
     }
 }
