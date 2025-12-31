@@ -18,6 +18,8 @@ jobs:
         run: cargo build --release
         
       - name: Update Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./target/release/update_packages
         
       - name: Commit changes
