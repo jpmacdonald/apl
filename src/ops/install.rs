@@ -7,6 +7,7 @@ use std::time::Instant;
 use crate::core::relinker::Relinker;
 use crate::core::version::PackageSpec;
 use crate::db::StateDb;
+use crate::io::dmg;
 use crate::package::{Package, PackageInfo, PackageType};
 use crate::ui::Output;
 use crate::{apl_home, bin_path, store_path};
@@ -722,23 +723,49 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo> {
     }
 
     // Find the .app in extraction dir
-    let extracted_app_path = if pkg.extracted_path.extension().map_or(false, |e| e == "app") {
-        pkg.extracted_path.clone()
+    // Find the .app in extraction dir or DMG
+    // We must keep 'mount' alive until we copy the .app out
+    let (_mount, search_path) = if pkg
+        .extracted_path
+        .to_string_lossy()
+        .to_lowercase()
+        .ends_with(".dmg")
+    {
+        // Mount DMG
+        let mount = dmg::attach(&pkg.extracted_path)?;
+        let path = mount.path.clone();
+        (Some(mount), path)
     } else {
-        // Search for .app in extracted dir
+        (None, pkg.extracted_path.clone())
+    };
+
+    let extracted_app_path = if search_path.extension().map_or(false, |e| e == "app") {
+        search_path.clone()
+    } else {
+        // Search for .app in extracted dir (or mount point)
         let mut found = None;
-        for entry in walkdir::WalkDir::new(&pkg.extracted_path)
+        for entry in walkdir::WalkDir::new(&search_path)
             .min_depth(1)
             .max_depth(3)
         {
             if let Ok(e) = entry {
+                // Skip hidden files/dirs (like .Trashes on DMG)
+                if e.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
+
                 if e.path().extension().map_or(false, |ext| ext == "app") {
                     found = Some(e.path().to_path_buf());
                     break;
                 }
             }
         }
-        found.ok_or_else(|| anyhow::anyhow!("No .app bundle found in extracted archive"))?
+        found.ok_or_else(|| {
+            anyhow::anyhow!(
+                "No .app bundle found in extraction path: {}",
+                search_path.display()
+            )
+        })?
     };
 
     let target_app_path = applications_dir.join(app_name);
