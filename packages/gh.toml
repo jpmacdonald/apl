@@ -1,0 +1,25 @@
+[package]
+name = "cli"
+version = "2.83.2"
+description = ""
+homepage = "https://github.com/cli/cli"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_macOS_arm64.zip"
+blake3 = "7822d101eed0c4655f55ea502b4993626829c90edb99ba32ae6d9c51411757b0"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["cli"]
+
+[hints]
+post_install = ""

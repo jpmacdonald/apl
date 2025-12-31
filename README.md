@@ -61,6 +61,22 @@ apl update
 apl upgrade
 ```
 
+## Registry Maintenance
+
+## Registry Maintenance
+
+For APL maintainers, the `apl-pkg` tool handles the package lifecycle (adding, updating, and indexing).
+
+See the [Maintainer's Guide](docs/maintainer_guide.md) and [Registry Architecture](docs/registry_architecture.md).
+
+```bash
+# Add a new package
+cargo run --release --bin apl-pkg -- add owner/repo
+
+# Update all packages and regenerate index
+cargo run --release --bin apl-pkg -- update
+```
+
 ## Configuration
 
 APL stores all data in `~/.apl/`:

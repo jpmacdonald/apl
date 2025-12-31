@@ -5,6 +5,7 @@
 pub mod core;
 pub mod io;
 pub mod ops;
+pub mod registry;
 pub mod store;
 pub mod ui;
 

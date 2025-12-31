@@ -1,16 +1,16 @@
 [package]
 name = "lazygit"
-version = "0.44.1"
+version = "0.57.0"
 description = "A simple terminal UI for git commands"
 type = "cli"
 
 [source]
-url = "https://github.com/jesseduffield/lazygit/releases/download/v0.44.1/lazygit_0.44.1_Darwin_arm64.tar.gz"
-blake3 = "0eae5d480e1378c0b5d4a765dbe8699bd874a4ce56891182291ae33e4941188c"
+url = "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_darwin_arm64.tar.gz"
+blake3 = "5e7a34f0465ee0108203c14277841f15299a83a0f9afc4f0aa66488ba5ff4392"
 
 [binary.arm64]
-url = "https://github.com/jesseduffield/lazygit/releases/download/v0.44.1/lazygit_0.44.1_Darwin_arm64.tar.gz"
-blake3 = "0eae5d480e1378c0b5d4a765dbe8699bd874a4ce56891182291ae33e4941188c"
+url = "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_darwin_arm64.tar.gz"
+blake3 = "5e7a34f0465ee0108203c14277841f15299a83a0f9afc4f0aa66488ba5ff4392"
 
 [install]
 bin = ["lazygit"]

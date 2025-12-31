@@ -1,0 +1,25 @@
+[package]
+name = "procs"
+version = "0.14.10"
+description = ""
+homepage = "https://github.com/dalance/procs"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/dalance/procs/releases/download/v0.14.10/procs-v0.14.10-aarch64-mac.zip"
+blake3 = "4215cb2f2620f7c0658b644e9afbd844c32cd14593c38938167ba65f8fb19acb"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["procs"]
+
+[hints]
+post_install = ""

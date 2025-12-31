@@ -1,0 +1,25 @@
+[package]
+name = "duf"
+version = "0.9.1"
+description = ""
+homepage = "https://github.com/muesli/duf"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/muesli/duf/releases/download/v0.9.1/duf_0.9.1_darwin_arm64.tar.gz"
+blake3 = "6077fe4cc9d4c56b2caf0369c12d8e104ff6174845e6a71d3320643093b9ecff"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["duf"]
+
+[hints]
+post_install = ""

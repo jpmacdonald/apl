@@ -1,15 +1,15 @@
 [package]
 name = "fzf"
 version = "0.67.0"
-description = "A command-line fuzzy finder"
+description = ""
 homepage = "https://github.com/junegunn/fzf"
-license = "MIT"
+license = ""
 type = "cli"
 
 [source]
 url = "https://github.com/junegunn/fzf/releases/download/v0.67.0/fzf-0.67.0-darwin_arm64.tar.gz"
-blake3 = ""
-strip_components = 0
+blake3 = "656a37e09d1f5fef45801debb60e609c5cf0bef8e822e1f1a89fc2ab4e399310"
+strip_components = 1
 
 [binary]
 

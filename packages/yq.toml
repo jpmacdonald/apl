@@ -1,0 +1,25 @@
+[package]
+name = "yq"
+version = "4.50.1"
+description = ""
+homepage = "https://github.com/mikefarah/yq"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64.tar.gz"
+blake3 = "e6b500707fe7476ee2eabfd8f92baea981d481a117e17f1736a0958c6a774710"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["yq"]
+
+[hints]
+post_install = ""
