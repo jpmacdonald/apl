@@ -57,7 +57,7 @@
 //! // Update progress
 //! output.downloading("ripgrep", "14.1.0", 1024, 4096);
 //! output.installing("ripgrep", "14.1.0");
-//! output.done("ripgrep", "14.1.0", "installed");
+//! output.done("ripgrep", "14.1.0", "installed", None);
 //!
 //! // Show summary
 //! output.success_summary("2 packages installed");

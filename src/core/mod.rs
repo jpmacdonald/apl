@@ -2,7 +2,6 @@
 
 pub mod builder;
 pub mod index;
-pub mod lockfile;
 pub mod package;
 pub mod relinker;
 pub mod resolver;

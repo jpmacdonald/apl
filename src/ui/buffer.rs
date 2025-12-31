@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_buffer_creation() {
-        let buffer = OutputBuffer::default();
+        let _buffer = OutputBuffer::default();
         // Just verify it can be created
         assert!(true);
     }

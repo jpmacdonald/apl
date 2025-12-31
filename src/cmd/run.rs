@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
-use crate::cmd::install::prepare_download_new;
 use apl::apl_home;
+use apl::ops::install::prepare_download_new;
 use apl::ui::Output;
 
 /// Run a package transiently without global installation
@@ -19,17 +19,9 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     // Add package to progress tracker
     // Removed: output.add_package(pkg_name, "");
 
-    let prepared = prepare_download_new(
-        &client,
-        pkg_name,
-        None,
-        false,
-        None,
-        index.as_ref(),
-        &output,
-    )
-    .await?
-    .context(format!("Could not find or download package '{pkg_name}'"))?;
+    let prepared = prepare_download_new(&client, pkg_name, None, false, index.as_ref(), &output)
+        .await?
+        .context(format!("Could not find or download package '{pkg_name}'"))?;
 
     // 2. Already Extracted (by prepare_download_new)
     let extract_dir = prepared.extracted_path;

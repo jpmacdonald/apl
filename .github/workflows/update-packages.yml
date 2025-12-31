@@ -18,14 +18,7 @@ jobs:
         run: cargo build --release
         
       - name: Update Packages
-        run: |
-          # Example for bat
-          ./target/release/apl package bump packages/bat.toml --version $(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//') --url "https://github.com/sharkdp/bat/releases/download/v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')/bat-v$(curl -s https://api.github.com/repos/sharkdp/bat/releases/latest | jq -r .tag_name | sed 's/^v//')-aarch64-apple-darwin.tar.gz"
-          
-          # Add more packages here
-          
-      - name: Regenerate Index
-        run: ./target/release/apl generate-index packages index.bin
+        run: ./target/release/update_packages
         
       - name: Commit changes
         run: |
@@ -34,3 +27,12 @@ jobs:
           git add packages/*.toml index.bin
           git commit -m "chore: automated package updates" || echo "No changes to commit"
           git push
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: index
+          files: index.bin
+          body: "Package index - auto-updated"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

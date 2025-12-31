@@ -1,0 +1,32 @@
+[package]
+name = "tree"
+version = "2.2.1"
+description = "Display directories as trees (with optional color/HTML output)"
+homepage = "https://oldmanprogrammer.net/source.php?dir=projects/tree"
+license = "MIT"
+type = "cli"
+
+[source]
+url = "https://github.com/Old-Man-Programmer/tree/archive/refs/tags/2.2.1.tar.gz"
+blake3 = "3f6044615ad1e423e7a27db71f338b2e7a217e302bf3313710130762b56ad3f7"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["tree"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""
+
+[build]
+dependencies = []
+script = "make && mkdir -p $PREFIX/bin && install tree $PREFIX/bin/"

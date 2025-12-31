@@ -97,7 +97,7 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
+pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
     // fs_extra is robust for recursive directory copying
     fs_extra::dir::copy(
         src,

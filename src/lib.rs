@@ -4,12 +4,13 @@
 
 pub mod core;
 pub mod io;
+pub mod ops;
 pub mod store;
 pub mod ui;
 
 // Re-exports for convenience
 pub use core::index;
-pub use core::lockfile;
+// pub use core::lockfile;
 pub use core::package;
 pub use core::resolver;
 pub use io::download as downloader;

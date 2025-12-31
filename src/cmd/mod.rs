@@ -2,13 +2,11 @@
 
 pub mod clean;
 pub mod completions;
-pub mod generate_index;
 pub mod hash;
 pub mod history;
 pub mod info;
 pub mod install;
 pub mod list;
-pub mod lock;
 pub mod package;
 pub mod remove;
 pub mod rollback;

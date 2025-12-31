@@ -32,8 +32,6 @@ enum Commands {
         #[arg(required = true)]
         packages: Vec<String>,
         /// Only install packages pinned in apl.lock
-        #[arg(long)]
-        locked: bool,
         /// Show verbose output (DMG mounting, file counts, etc.)
         #[arg(short, long)]
         verbose: bool,
@@ -79,22 +77,10 @@ enum Commands {
         #[arg(required = true)]
         files: Vec<PathBuf>,
     },
-    /// Generate or update apl.lock from installed packages
-    Lock,
     /// Search available packages
     Search {
         /// Search query
         query: String,
-    },
-    /// Generate index.bin from packages directory
-    #[command(name = "generate-index", hide = true)]
-    GenerateIndex {
-        /// Directory containing package files
-        #[arg(default_value = "packages")]
-        packages_dir: PathBuf,
-        /// Output path for index.bin
-        #[arg(short, long, default_value = "index.bin")]
-        output: PathBuf,
     },
     /// Remove orphaned CAS blobs and temp files
     Clean,
@@ -177,11 +163,9 @@ async fn main() -> Result<()> {
     let dry_run = cli.dry_run;
 
     match cli.command {
-        Commands::Install {
-            packages,
-            locked,
-            verbose,
-        } => cmd::install::install(&packages, dry_run, locked, verbose).await,
+        Commands::Install { packages, verbose } => {
+            cmd::install::install(&packages, dry_run, verbose).await
+        }
         Commands::Remove { packages, all, yes } => {
             cmd::remove::remove(&packages, all, yes, dry_run).await
         }
@@ -191,12 +175,7 @@ async fn main() -> Result<()> {
         Commands::List => cmd::list::list(),
         Commands::Info { package } => cmd::info::info(&package),
         Commands::Hash { files } => cmd::hash::hash(&files),
-        Commands::Lock => cmd::lock::lock(dry_run, false),
         Commands::Search { query } => cmd::search::search(&query),
-        Commands::GenerateIndex {
-            packages_dir,
-            output,
-        } => cmd::generate_index::generate_index(&packages_dir, &output),
         Commands::Clean => cmd::clean::clean(dry_run),
         Commands::Update { url } => cmd::update::update(&url, dry_run).await,
         Commands::Upgrade { packages } => cmd::upgrade::upgrade(&packages, dry_run).await,

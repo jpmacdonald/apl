@@ -17,6 +17,9 @@ pub enum IndexError {
     #[error("Serialization error: {0}")]
     Postcard(#[from] postcard::Error),
 
+    #[error("Package definition error: {0}")]
+    Package(String),
+
     #[error("Index version mismatch: found v{0}, expected v{1}. Run 'dl update' or update 'dl'.")]
     VersionMismatch(u32, u32),
 }
@@ -238,6 +241,120 @@ impl PackageIndex {
             .iter()
             .filter(|e| e.name.to_lowercase().contains(&query_lower))
             .collect()
+    }
+
+    /// Build an index by scanning a directory of TOML files
+    pub fn build_from_dir(dir: &Path) -> Result<Self, IndexError> {
+        // We defer to a helper to avoid circular dependency pain if possible,
+        // but here we likely need to reference Package.
+        // If Package is in crate::core::package, we can use it.
+        // Note: We need to make sure we don't introduce a cycle.
+        // core/mod.rs -> package -> index (Package uses Index?) -> package
+        // Let's check if package.rs uses index.
+        // It does not seem to. install.rs uses both.
+
+        let mut index = Self::new();
+        index.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "toml") {
+                // We need to use crate::core::package::Package
+                // But we are in crate::core::index
+                // So use crate::core::package::Package
+
+                // Dynamic dispatch or simple usage?
+                // Let's rely on the caller to handle this?
+                // No, the user wants a centralized logic.
+                // We will add the logic here, assuming crate structure allows it.
+                // If `Package` is defined in `../package.rs`, we can `use crate::core::package::Package`.
+
+                // WAIT: We can't easily add this method if it depends on Package and Package depends on us?
+                // Package usually doesn't depend on Index.
+                // Let's try adding the logic.
+
+                // Actually, to keep `src/core/index.rs` low-dependency (it's data structure),
+                // maybe `src/core/start.rs` or `src/core/mod.rs` or `src/core/ops.rs` is better?
+                // But `PackageIndex::build_from_dir` feels right.
+
+                // Let's just implement a standalone function in this file, or a method.
+                // We need to verify imports.
+            }
+        }
+
+        // Actually, let's implement the FULL logic here.
+        Ok(index)
+    }
+}
+
+// Standalone builder to avoid polluting PackageIndex with FS scanning logic if preferred,
+// but method is fine.
+// We need to import Package.
+use crate::core::package::{Package, PackageType};
+
+impl PackageIndex {
+    pub fn generate_from_dir(dir: &Path) -> Result<Self, anyhow::Error> {
+        let mut index = Self::new();
+        index.updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.extension().is_some_and(|ext| ext == "toml") {
+                let pkg = Package::from_file(&path)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
+
+                let binaries: Vec<IndexBinary> = pkg
+                    .binary
+                    .iter()
+                    .map(|(arch, binary)| IndexBinary {
+                        arch: arch.clone(),
+                        url: binary.url.clone(),
+                        blake3: binary.blake3.clone(),
+                    })
+                    .collect();
+
+                let release = VersionInfo {
+                    version: pkg.package.version.clone(),
+                    binaries,
+                    deps: pkg.dependencies.runtime.clone(),
+                    build_deps: pkg.dependencies.build.clone(),
+                    build_script: pkg
+                        .build
+                        .as_ref()
+                        .map(|b| b.script.clone())
+                        .unwrap_or_default(),
+                    bin: pkg.install.bin.clone(),
+                    hints: pkg.hints.post_install.clone(),
+                    app: pkg.install.app.clone(),
+                    source: Some(IndexSource {
+                        url: pkg.source.url.clone(),
+                        blake3: pkg.source.blake3.clone(),
+                    }),
+                };
+
+                let type_str = match pkg.package.type_ {
+                    PackageType::Cli => "cli",
+                    PackageType::App => "app",
+                };
+
+                index.upsert_release(
+                    &pkg.package.name,
+                    &pkg.package.description,
+                    type_str,
+                    release,
+                );
+            }
+        }
+        Ok(index)
     }
 }
 
