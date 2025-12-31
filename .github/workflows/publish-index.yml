@@ -11,6 +11,8 @@ on:
 jobs:
   publish:
     runs-on: macos-latest
+    permissions:
+      contents: write  # Required for creating/updating releases
     steps:
       - uses: actions/checkout@v4
       
