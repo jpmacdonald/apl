@@ -312,6 +312,15 @@ impl PackageIndex {
                 let pkg = Package::from_file(&path)
                     .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
 
+                // VALIDATION: Fail fast on invalid versions
+                if pkg.package.version.is_empty() || pkg.package.version == "0.0.0" {
+                    anyhow::bail!(
+                        "Package '{}' has invalid version '{}'. This indicates the package was not properly populated. Fix the package or remove it before generating the index.",
+                        pkg.package.name,
+                        pkg.package.version
+                    );
+                }
+
                 let binaries: Vec<IndexBinary> = pkg
                     .binary
                     .iter()

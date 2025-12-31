@@ -27,13 +27,16 @@ async fn main() -> Result<()> {
     let packages_dir = std::env::current_dir()?.join("packages");
     let output_path = std::env::current_dir()?.join("index.bin");
 
-    // Setup generic client
-    let mut headers = header::HeaderMap::new();
+    // Build HTTP client with GitHub token for higher rate limits
+    // Unauthenticated: 60 req/hour
+    // Authenticated: 5000 req/hour
+    let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
-        header::USER_AGENT,
-        header::HeaderValue::from_static("apl-updater"),
+        reqwest::header::USER_AGENT,
+        reqwest::header::HeaderValue::from_static("apl-package-manager"),
     );
 
+    // Add GitHub token if available (from env or CI)
     if let Ok(token) = std::env::var("GITHUB_TOKEN") {
         println!("🔑 Using GITHUB_TOKEN for authentication");
         headers.insert(
