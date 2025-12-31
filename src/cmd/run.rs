@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use reqwest::Client;
 
 use apl::apl_home;
-use apl::ops::install::prepare_download_new;
+use apl::ops::install::prepare_download;
 use apl::ui::Output;
 
 /// Run a package transiently without global installation
@@ -14,13 +14,11 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     // 1. Resolve and download
     let output = Output::new();
     let index_path = apl_home().join("index.bin");
-    let index = apl::index::PackageIndex::load(&index_path).ok();
+    let index = apl::core::index::PackageIndex::load(&index_path).ok();
 
-    // Add package to progress tracker
-    // Removed: output.add_package(pkg_name, "");
-
-    let prepared = prepare_download_new(&client, pkg_name, None, false, index.as_ref(), &output)
-        .await?
+    let prepared = prepare_download(&client, pkg_name, None, index.as_ref(), &output)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?
         .context(format!("Could not find or download package '{pkg_name}'"))?;
 
     // 2. Already Extracted (by prepare_download_new)

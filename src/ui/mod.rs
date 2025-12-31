@@ -68,6 +68,7 @@ pub mod buffer;
 pub mod list;
 pub mod output;
 pub mod progress;
+pub mod reporter;
 pub mod table;
 pub mod theme;
 
@@ -75,4 +76,5 @@ pub mod theme;
 pub mod engine;
 pub use engine::RelativeFrame;
 pub use output::Output;
+pub use reporter::Reporter;
 pub use theme::Theme;

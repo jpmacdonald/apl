@@ -120,8 +120,10 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
     // Extract package names and call install
     let package_names: Vec<String> = to_upgrade.iter().map(|(name, _, _)| name.clone()).collect();
 
-    // Call the install command to actually perform the upgrades
-    crate::cmd::install::install(&package_names, false, false).await?;
+    // Call the install logic directly, reusing our existing reporter
+    apl::ops::install::install_packages(&output, &package_names, false, false)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }

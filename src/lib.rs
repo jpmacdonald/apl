@@ -1,6 +1,6 @@
 //! apl - A Package Layer
 //!
-//! A fast, minimal package manager for macOS CLI tools.
+//! Fast, minimal package manager for macOS CLI tools.
 
 pub mod core;
 pub mod io;
@@ -20,12 +20,12 @@ pub use store::db;
 use dirs::home_dir;
 use std::path::PathBuf;
 
-/// Try to get the apl home directory, returning None if home directory cannot be determined.
+/// Returns the primary configuration directory, or None if the user's home cannot be resolved.
 pub fn try_apl_home() -> Option<PathBuf> {
     home_dir().map(|h| h.join(".apl"))
 }
 
-/// Default apl home directory: ~/.apl
+/// Returns the canonical APL home directory (`~/.apl`).
 ///
 /// # Panics
 /// Panics if the home directory cannot be determined.
@@ -85,3 +85,9 @@ pub mod arch {
         }
     }
 }
+
+/// Magic bytes for ZSTD compression (Little Endian: 0xFD2FB528 -> 28 B5 2F FD)
+pub const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+
+/// User Agent string
+pub const USER_AGENT: &str = concat!("apl/", env!("CARGO_PKG_VERSION"));

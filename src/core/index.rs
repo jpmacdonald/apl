@@ -1,6 +1,6 @@
-//! Binary index using postcard + zstd
+//! Index definition and serialization via Postcard/Zstd.
 //!
-//! Compact package registry fetched from CDN.
+//! Low-overhead binary package registry format.
 
 use std::fs;
 use std::io;
@@ -126,18 +126,20 @@ impl PackageIndex {
         }
     }
 
-    /// Load index (auto-detects ZSTD or Raw) via MMAP
+    /// Memory-maps and deserializes the index, auto-detecting Zstd compression.
     pub fn load(path: &Path) -> Result<Self, IndexError> {
         let file = fs::File::open(path)?;
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
-        // Check ZSTD magic bytes (Little Endian: 0xFD2FB528 -> 28 B5 2F FD)
-        if mmap.len() >= 4
-            && mmap[0] == 0x28
-            && mmap[1] == 0xB5
-            && mmap[2] == 0x2F
-            && mmap[3] == 0xFD
-        {
+        // Implementation Note: Memory Mapping and Zero-Copy
+        //
+        // Instead of reading the file into a `Vec<u8>` (heap allocation), we use `mmap`.
+        // This maps the file directly into process memory. The OS handles paging it in/out.
+        // `postcard::from_bytes` then deserializes structs pointing *directly* to this memory
+        // where possible (borrowing), avoiding string copies.
+        //
+        // This makes startup for large indices (10k+ packages) nearly instantaneous.
+        if mmap.len() >= 4 && mmap[0..4] == crate::ZSTD_MAGIC {
             let decompressed = zstd::decode_all(&mmap[..])?;
             return postcard::from_bytes(&decompressed)
                 .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint));
@@ -147,14 +149,14 @@ impl PackageIndex {
         Self::from_bytes(&mmap)
     }
 
-    /// Save index to a RAW postcard file (uncompressed for MMAP speed)
+    /// Serializes to an uncompressed Postcard file, optimized for MMAP usage.
     pub fn save(&self, path: &Path) -> Result<(), IndexError> {
         let buf = postcard::to_allocvec(self)?;
         fs::write(path, &buf)?;
         Ok(())
     }
 
-    /// Save index as a ZSTD-compressed postcard file (for distribution)
+    /// Serializes and compresses the index for network distribution.
     pub fn save_compressed(&self, path: &Path) -> Result<(), IndexError> {
         let buf = postcard::to_allocvec(self)?;
         let compressed = zstd::encode_all(&buf[..], 3)?;
@@ -241,129 +243,6 @@ impl PackageIndex {
             .iter()
             .filter(|e| e.name.to_lowercase().contains(&query_lower))
             .collect()
-    }
-
-    /// Build an index by scanning a directory of TOML files
-    pub fn build_from_dir(dir: &Path) -> Result<Self, IndexError> {
-        // We defer to a helper to avoid circular dependency pain if possible,
-        // but here we likely need to reference Package.
-        // If Package is in crate::core::package, we can use it.
-        // Note: We need to make sure we don't introduce a cycle.
-        // core/mod.rs -> package -> index (Package uses Index?) -> package
-        // Let's check if package.rs uses index.
-        // It does not seem to. install.rs uses both.
-
-        let mut index = Self::new();
-        index.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "toml") {
-                // We need to use crate::core::package::Package
-                // But we are in crate::core::index
-                // So use crate::core::package::Package
-
-                // Dynamic dispatch or simple usage?
-                // Let's rely on the caller to handle this?
-                // No, the user wants a centralized logic.
-                // We will add the logic here, assuming crate structure allows it.
-                // If `Package` is defined in `../package.rs`, we can `use crate::core::package::Package`.
-
-                // WAIT: We can't easily add this method if it depends on Package and Package depends on us?
-                // Package usually doesn't depend on Index.
-                // Let's try adding the logic.
-
-                // Actually, to keep `src/core/index.rs` low-dependency (it's data structure),
-                // maybe `src/core/start.rs` or `src/core/mod.rs` or `src/core/ops.rs` is better?
-                // But `PackageIndex::build_from_dir` feels right.
-
-                // Let's just implement a standalone function in this file, or a method.
-                // We need to verify imports.
-            }
-        }
-
-        // Actually, let's implement the FULL logic here.
-        Ok(index)
-    }
-}
-
-// Standalone builder to avoid polluting PackageIndex with FS scanning logic if preferred,
-// but method is fine.
-// We need to import Package.
-use crate::core::package::{Package, PackageType};
-
-impl PackageIndex {
-    pub fn generate_from_dir(dir: &Path) -> Result<Self, anyhow::Error> {
-        let mut index = Self::new();
-        index.updated_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.extension().is_some_and(|ext| ext == "toml") {
-                let pkg = Package::from_file(&path)
-                    .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
-
-                // VALIDATION: Fail fast on invalid versions
-                if pkg.package.version.is_empty() || pkg.package.version == "0.0.0" {
-                    anyhow::bail!(
-                        "Package '{}' has invalid version '{}'. This indicates the package was not properly populated. Fix the package or remove it before generating the index.",
-                        pkg.package.name,
-                        pkg.package.version
-                    );
-                }
-
-                let binaries: Vec<IndexBinary> = pkg
-                    .binary
-                    .iter()
-                    .map(|(arch, binary)| IndexBinary {
-                        arch: arch.clone(),
-                        url: binary.url.clone(),
-                        blake3: binary.blake3.clone(),
-                    })
-                    .collect();
-
-                let release = VersionInfo {
-                    version: pkg.package.version.clone(),
-                    binaries,
-                    deps: pkg.dependencies.runtime.clone(),
-                    build_deps: pkg.dependencies.build.clone(),
-                    build_script: pkg
-                        .build
-                        .as_ref()
-                        .map(|b| b.script.clone())
-                        .unwrap_or_default(),
-                    bin: pkg.install.bin.clone(),
-                    hints: pkg.hints.post_install.clone(),
-                    app: pkg.install.app.clone(),
-                    source: Some(IndexSource {
-                        url: pkg.source.url.clone(),
-                        blake3: pkg.source.blake3.clone(),
-                    }),
-                };
-
-                let type_str = match pkg.package.type_ {
-                    PackageType::Cli => "cli",
-                    PackageType::App => "app",
-                };
-
-                index.upsert_release(
-                    &pkg.package.name,
-                    &pkg.package.description,
-                    type_str,
-                    release,
-                );
-            }
-        }
-        Ok(index)
     }
 }
 

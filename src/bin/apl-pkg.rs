@@ -2,8 +2,15 @@
 //! Usage: cargo run --bin apl-pkg -- <command> [args]
 
 use anyhow::{Context, Result};
+use apl::arch::ARM64;
+use apl::index::{IndexBinary, IndexSource, PackageIndex, VersionInfo};
+use apl::package::{
+    ArtifactFormat, Binary, Dependencies, Hints, InstallSpec, Package, PackageInfo, PackageType,
+    Source,
+};
 use apl::registry::{build_github_client, github};
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -22,8 +29,8 @@ enum Commands {
         /// GitHub repositories in owner/repo format
         repos: Vec<String>,
     },
-    /// Update all existing packages or a specific one
-    Update {
+    /// Synchronize all existing packages or a specific one (formerly 'update')
+    Sync {
         /// Optional specific package to update
         #[arg(short, long)]
         package: Option<String>,
@@ -53,8 +60,8 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Update { package } => {
-            println!("Updating packages...");
+        Commands::Sync { package } => {
+            println!("Syncing packages...");
             let mut updated_count = 0;
 
             for entry in fs::read_dir(&packages_dir)? {
@@ -95,13 +102,21 @@ async fn main() -> Result<()> {
                 let path = entry.path();
                 if path.extension().is_some_and(|e| e == "toml") {
                     let content = fs::read_to_string(&path)?;
-                    let pkg: serde_json::Value = toml::from_str(&content)?; // Just check basic structure
-                    let name = pkg["package"]["name"].as_str().unwrap_or("unknown");
-                    let version = pkg["package"]["version"].as_str().unwrap_or("");
-
-                    if version == "0.0.0" || version.is_empty() {
-                        eprintln!("   {}: Invalid version '{}'", name, version);
-                        errors += 1;
+                    // Parse into full Package struct to validate schema
+                    match Package::parse(&content) {
+                        Ok(pkg) => {
+                            if pkg.package.version == "0.0.0" || pkg.package.version.is_empty() {
+                                eprintln!(
+                                    "   {}: Invalid version '{}'",
+                                    pkg.package.name, pkg.package.version
+                                );
+                                errors += 1;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("   {}: Invalid TOML structure: {}", path.display(), e);
+                            errors += 1;
+                        }
                     }
                 }
             }
@@ -121,10 +136,79 @@ async fn main() -> Result<()> {
 
 fn cli_index(packages_dir: &Path, index_path: &Path) -> Result<()> {
     println!("Regenerating index...");
-    let index = apl::index::PackageIndex::generate_from_dir(packages_dir)?;
+    let index = generate_index_from_dir(packages_dir)?;
     index.save_compressed(index_path)?;
     println!("   Done: {}", index_path.display());
     Ok(())
+}
+
+fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
+    let mut index = PackageIndex::new();
+    index.updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            let pkg = Package::from_file(&path)
+                .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", path.display(), e))?;
+
+            // VALIDATION: Fail fast on invalid versions
+            if pkg.package.version.is_empty() || pkg.package.version == "0.0.0" {
+                anyhow::bail!(
+                    "Package '{}' has invalid version '{}'. This indicates the package was not properly populated. Fix the package or remove it before generating the index.",
+                    pkg.package.name,
+                    pkg.package.version
+                );
+            }
+
+            let binaries: Vec<IndexBinary> = pkg
+                .binary
+                .iter()
+                .map(|(arch, binary)| IndexBinary {
+                    arch: arch.clone(),
+                    url: binary.url.clone(),
+                    blake3: binary.blake3.clone(),
+                })
+                .collect();
+
+            let release = VersionInfo {
+                version: pkg.package.version.clone(),
+                binaries,
+                deps: pkg.dependencies.runtime.clone(),
+                build_deps: pkg.dependencies.build.clone(),
+                build_script: pkg
+                    .build
+                    .as_ref()
+                    .map(|b| b.script.clone())
+                    .unwrap_or_default(),
+                bin: pkg.install.bin.clone(),
+                hints: pkg.hints.post_install.clone(),
+                app: pkg.install.app.clone(),
+                source: Some(IndexSource {
+                    url: pkg.source.url.clone(),
+                    blake3: pkg.source.blake3.clone(),
+                }),
+            };
+
+            let type_str = match pkg.package.type_ {
+                PackageType::Cli => "cli",
+                PackageType::App => "app",
+            };
+
+            index.upsert_release(
+                &pkg.package.name,
+                &pkg.package.description,
+                type_str,
+                release,
+            );
+        }
+    }
+    Ok(index)
 }
 
 async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Result<()> {
@@ -156,64 +240,62 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
 
     // Determine format from asset name
     let format = if asset.name.ends_with(".tar.gz") {
-        "tar.gz"
+        ArtifactFormat::TarGz
     } else if asset.name.ends_with(".tar.zst") || asset.name.ends_with(".tzst") {
-        "tar.zst"
+        ArtifactFormat::TarZst
     } else if asset.name.ends_with(".tar.xz") || asset.name.ends_with(".tar") {
-        "tar"
+        ArtifactFormat::Tar
     } else if asset.name.ends_with(".zip") {
-        "zip"
+        ArtifactFormat::Zip
     } else if asset.name.ends_with(".dmg") {
-        "dmg"
+        ArtifactFormat::Dmg
     } else if asset.name.ends_with(".pkg") {
-        "pkg"
+        ArtifactFormat::Pkg
     } else {
-        "binary"
+        ArtifactFormat::Binary
     };
 
-    let toml_content = format!(
-        r#"[package]
-name = "{}"
-version = "{}"
-description = ""
-homepage = "https://github.com/{}"
-license = ""
-type = "cli"
-
-[source]
-url = "{}"
-blake3 = "{}"
-format = "{}"
-strip_components = {}
-
-[binary.arm64]
-url = "{}"
-blake3 = "{}"
-format = "{}"
-
-[dependencies]
-runtime = []
-build = []
-optional = []
-
-[install]
-bin = ["{}"]
-
-[hints]
-post_install = ""
-"#,
-        repo_name,
-        version,
-        repo,
-        asset.browser_download_url,
-        hash,
-        format,
-        strip_components,
-        asset.browser_download_url,
-        hash,
-        format,
-        repo_name
+    let mut binary_map = HashMap::new();
+    // Assuming ARM64 for now as default, maybe detect based on asset name in future if needed
+    binary_map.insert(
+        ARM64.to_string(),
+        Binary {
+            url: asset.browser_download_url.clone(),
+            blake3: hash.clone(),
+            format: format.clone(),
+            arch: ARM64.to_string(),
+            macos: "14.0".to_string(),
+        },
     );
+
+    let package = Package {
+        package: PackageInfo {
+            name: repo_name.to_string(),
+            version: version.to_string(),
+            description: "".to_string(),
+            homepage: format!("https://github.com/{}", repo),
+            license: "".to_string(),
+            type_: PackageType::Cli,
+        },
+        source: Source {
+            url: asset.browser_download_url.clone(),
+            blake3: hash.clone(),
+            format: format.clone(),
+            strip_components: strip_components,
+        },
+        binary: binary_map,
+        dependencies: Dependencies::default(),
+        install: InstallSpec {
+            bin: vec![repo_name.to_string()],
+            ..Default::default()
+        },
+        hints: Hints {
+            post_install: "".to_string(),
+        },
+        build: None,
+    };
+
+    let toml_content = package.to_toml()?;
 
     let toml_path = out_dir.join(format!("{}.toml", repo_name));
     fs::write(&toml_path, toml_content)?;

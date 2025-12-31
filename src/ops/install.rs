@@ -1,18 +1,18 @@
-use anyhow::{Context, Result};
-use reqwest::Client;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+use reqwest::Client;
 
 use crate::core::relinker::Relinker;
 use crate::core::version::PackageSpec;
 use crate::db::StateDb;
 use crate::io::dmg;
 use crate::package::{ArtifactFormat, InstallStrategy, Package, PackageInfo, PackageType};
-use crate::ui::Output;
-use crate::{apl_home, bin_path, store_path};
+use crate::ui::Reporter;
+use crate::{apl_home, bin_path, ops::InstallError, store_path};
 
-/// Prepared package ready for finalization
+/// Intermediate package state post-download, pending installation commit.
 pub struct PreparedPackage {
     pub name: String,
     pub version: String,
@@ -24,100 +24,96 @@ pub struct PreparedPackage {
     pub _temp_dir: Option<tempfile::TempDir>,
 }
 
+/// # Implementation Note: Installation Task Graph
+///
+/// We separate the concept of "what the user asked for" from "what we need to do".
+/// 1. `Download`: The package is missing or needs an upgrade.
+/// 2. `Switch`: The version is already unpacked in `~/.apl/store`, just update symlinks.
+/// 3. `AlreadyInstalled`: Identical version is already active. No-op (but we report it).
+///
+/// This separation allows us to be efficient (don't re-download) and concurrent (downloads happen in parallel).
 enum InstallTask {
-    Download(String, Option<String>), // name, requested_version
-    Switch(String, String),           // name, target_version
-    AlreadyInstalled(String, String), // name, version
+    Download(String, Option<String>),
+    Switch(String, String),
+    AlreadyInstalled(String, String),
 }
 
-/// Install one or more packages (parallel downloads, sequential install)
-pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool) -> Result<()> {
-    use crate::index::PackageIndex;
-
-    let output = Output::new();
-    let db = StateDb::open().context("Failed to open state database")?;
-
-    // Load index for resolution
-    let index_path = apl_home().join("index.bin");
-    let index = if index_path.exists() {
-        PackageIndex::load(&index_path).ok()
-    } else {
-        None
-    };
-
-    // Parse package specs for @version syntax
+async fn resolve_and_filter_packages<R: Reporter>(
+    packages: &[String],
+    index: Option<&crate::core::index::PackageIndex>,
+    reporter: &R,
+) -> Result<(Vec<String>, Vec<PackageSpec>), InstallError> {
     let specs: Vec<PackageSpec> = packages
         .iter()
         .map(|p| PackageSpec::parse(p))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<anyhow::Result<Vec<_>>>()
+        .map_err(|e| InstallError::Validation(e.to_string()))?;
 
-    // Validate existence in index before resolving
-    // EXCEPT for local file paths (*.toml) which bypass the index
     let mut valid_names = Vec::new();
-    if let Some(index_ref) = &index {
+    if let Some(index_ref) = index {
         for spec in &specs {
-            // Local file paths or packages in index are valid
-            if std::path::Path::new(&spec.name).exists() || index_ref.find(&spec.name).is_some() {
+            if Path::new(&spec.name).exists() || index_ref.find(&spec.name).is_some() {
                 valid_names.push(spec.name.clone());
             } else {
-                output.failed(&spec.name, "", "Package not found in index");
+                reporter.failed(&spec.name, "", "Package not found in index");
             }
         }
     } else {
         valid_names = specs.iter().map(|s| s.name.clone()).collect();
     }
 
-    // Stop if nothing valid (but failures above will still show)
     if valid_names.is_empty() && !specs.is_empty() {
-        // Give indicatif a moment to render failures
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        anyhow::bail!("No valid packages found to install");
+        return Err(InstallError::Validation(
+            "No valid packages found to install".to_string(),
+        ));
     }
 
-    // Resolve dependencies for VALID packages only
-    // Local file paths bypass the resolver entirely
-    let (local_file_names, index_names): (Vec<String>, Vec<String>) = valid_names
-        .into_iter()
-        .partition(|n| std::path::Path::new(n).exists());
+    let (local_file_names, index_names): (Vec<String>, Vec<String>) =
+        valid_names.into_iter().partition(|n| Path::new(n).exists());
 
     let mut resolved_names = if index_names.is_empty() {
         Vec::new()
     } else {
-        let index_ref = index
-            .as_ref()
-            .context("No index found. Run 'dl update' first.")?;
+        let index_ref = index.ok_or_else(|| {
+            InstallError::Validation("No index found. Run 'apl update' first.".to_string())
+        })?;
 
-        let mut resolved = crate::resolver::resolve_dependencies(&index_names, index_ref)?;
+        let mut resolved = crate::resolver::resolve_dependencies(&index_names, index_ref)
+            .map_err(|e| InstallError::Other(e.to_string()))?;
 
-        // Ensure strictly unique list
         resolved.sort();
         resolved.dedup();
         resolved
     };
 
-    // Prepend local file paths to resolved names
     for local in local_file_names {
         resolved_names.push(local);
     }
 
+    Ok((resolved_names, specs))
+}
+
+fn plan_install_tasks(
+    resolved_names: &[String],
+    specs: &[PackageSpec],
+    index: Option<&crate::core::index::PackageIndex>,
+    db: &StateDb,
+) -> Result<Vec<InstallTask>, InstallError> {
     let mut tasks = Vec::new();
     let mut processed_names = std::collections::HashSet::new();
 
-    // Determine what to do for each resolved package
-    for name in &resolved_names {
-        if processed_names.contains(name) {
+    for name in resolved_names {
+        if !processed_names.insert(name.clone()) {
             continue;
         }
-        processed_names.insert(name.clone());
 
-        // Find if any spec explicitly requested this package (to get version)
         let requested_version = specs
             .iter()
             .find(|s| &s.name == name)
             .and_then(|s| s.version().map(|v| v.to_string()));
 
-        // Determine target version from index (or latest)
-        let target_version = if let Some(index_ref) = &index {
+        let target_version = if let Some(index_ref) = index {
             if let Some(entry) = index_ref.find(name) {
                 match &requested_version {
                     Some(v) if v == "latest" => entry.latest().version.clone(),
@@ -135,43 +131,67 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
                 .unwrap_or_else(|| "latest".to_string())
         };
 
-        // Check DB for this specific version
         if let Ok(Some(installed)) = db.get_package_version(name, &target_version) {
             if installed.active {
                 tasks.push(InstallTask::AlreadyInstalled(name.clone(), target_version));
                 continue;
             } else {
-                // It's installed (inactive), so we Switch
                 tasks.push(InstallTask::Switch(name.clone(), target_version));
                 continue;
             }
         }
 
-        // Not installed (or version mismatch), so Download
         tasks.push(InstallTask::Download(name.clone(), Some(target_version)));
     }
+
+    Ok(tasks)
+}
+
+/// Resolves, downloads, and installs a set of packages.
+pub async fn install_packages<R: Reporter + Clone + 'static>(
+    reporter: &R,
+    packages: &[String],
+    dry_run: bool,
+    _verbose: bool,
+) -> Result<(), InstallError> {
+    use crate::core::index::PackageIndex;
+
+    let db = StateDb::open().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
+
+    let index_path = apl_home().join("index.bin");
+    let index = if index_path.exists() {
+        PackageIndex::load(&index_path).ok()
+    } else {
+        None
+    };
+
+    // Phase 1: Logic - Resolve Dependencies
+    let (resolved_names, specs) =
+        resolve_and_filter_packages(packages, index.as_ref(), reporter).await?;
+
+    // Phase 2: Planning - Determine Actions
+    let tasks = plan_install_tasks(&resolved_names, &specs, index.as_ref(), &db)?;
 
     if tasks.is_empty() {
         return Ok(());
     }
 
-    // Prepare unified pipeline list
-    let mut table_items: Vec<(String, Option<String>)> = Vec::new();
-    for task in &tasks {
-        match task {
-            InstallTask::Download(n, v) => table_items.push((n.clone(), v.clone())),
-            InstallTask::AlreadyInstalled(n, v) => table_items.push((n.clone(), Some(v.clone()))),
-            InstallTask::Switch(n, v) => table_items.push((n.clone(), Some(v.clone()))),
-        }
-    }
+    let table_items: Vec<(String, Option<String>)> = tasks
+        .iter()
+        .map(|t| match t {
+            InstallTask::Download(n, v) => (n.clone(), v.clone()),
+            InstallTask::AlreadyInstalled(n, v) => (n.clone(), Some(v.clone())),
+            InstallTask::Switch(n, v) => (n.clone(), Some(v.clone())),
+        })
+        .collect();
 
-    // Unified Pipeline
-    output.prepare_pipeline(&table_items);
+    reporter.prepare_pipeline(&table_items);
 
     let client = Client::builder()
         .tcp_nodelay(true)
         .pool_max_idle_per_host(20)
-        .build()?;
+        .build()
+        .map_err(|e| InstallError::Download(crate::io::download::DownloadError::Http(e)))?;
 
     let start_time = Instant::now();
     let install_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -179,44 +199,38 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
     let index_arc = Arc::new(index);
     let db_arc = Arc::new(Mutex::new(db));
 
-    // Handle AlreadyInstalled and Switch tasks first (synchronously update UI)
     let mut already_installed_count = 0;
     for task in &tasks {
         match task {
             InstallTask::AlreadyInstalled(name, version) => {
                 let size = if !dry_run {
-                    let db_guard = db_arc
+                    db_arc
                         .lock()
-                        .map_err(|_| anyhow::anyhow!("Database lock poisoned"))
-                        .ok();
-                    // We just ignore the error here since it's just for size display
-                    db_guard
-                        .and_then(|db| db.get_package_version(name, version).ok().flatten())
+                        .map_err(|_| InstallError::Lock("StateDb poisoned".to_string()))?
+                        .get_package_version(name, version)
+                        .ok()
+                        .flatten()
                         .map(|p| p.size_bytes)
                 } else {
                     None
                 };
-                output.done(name, version, "installed", size);
+                reporter.done(name, version, "installed", size);
                 already_installed_count += 1;
             }
             InstallTask::Switch(name, version) => {
-                output.installing(name, version);
+                reporter.installing(name, version);
                 if !dry_run {
-                    match crate::ops::switch::switch_version(name, version, dry_run) {
-                        Ok(_) => {
-                            install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        Err(e) => output.failed(name, version, &e.to_string()),
-                    }
+                    crate::ops::switch::switch_version(name, version, dry_run, reporter)
+                        .map_err(|e| InstallError::Other(e.to_string()))?;
+                    install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 } else {
-                    output.done(name, version, "(dry run)", None);
+                    reporter.done(name, version, "(dry run)", None);
                 }
             }
-            _ => {} // Downloads handled below
+            _ => {}
         }
     }
 
-    // Process Downloads (parallel)
     let to_download: Vec<(String, Option<String>)> = tasks
         .iter()
         .filter_map(|t| match t {
@@ -226,49 +240,53 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
         .collect();
 
     if !to_download.is_empty() {
-        let mut set: tokio::task::JoinSet<Result<Option<String>>> = tokio::task::JoinSet::new();
+        let mut set: tokio::task::JoinSet<Result<Option<String>, InstallError>> =
+            tokio::task::JoinSet::new();
 
-        for (name, version) in to_download.clone() {
+        for (name, version) in to_download {
             let client = client.clone();
             let index = index_arc.clone();
-            let output = output.clone();
+            let reporter = reporter.clone();
             let db_arc = db_arc.clone();
             let install_count = install_count.clone();
 
+            // Implementation Note: Parallel Downloads
+            //
+            // We use `JoinSet` here to run downloads concurrently. The concurrency limit
+            // is implicitly controlled by the reqwest connection pool (set to 20 earlier).
+            // Each task is independent; they don't share state except via the DB (which is locked)
+            // and the filesystem (which they write to unique temp dirs).
             set.spawn(async move {
-                // 1. Fetching (under "Fetching" section)
-                let pkg_opt = prepare_download_new(
+                let pkg_opt = prepare_download(
                     &client,
                     &name,
                     version.as_deref(),
-                    dry_run,
                     index.as_ref().as_ref(),
-                    &output,
+                    &reporter,
                 )
                 .await?;
 
                 if let Some(pkg) = pkg_opt {
                     if dry_run {
-                        output.done(&name, &pkg.version, "installed", None);
+                        reporter.done(&name, &pkg.version, "installed", None);
                         return Ok(None);
                     }
 
-                    // 2. Installing
-                    output.installing(&name, &pkg.version);
+                    reporter.installing(&name, &pkg.version);
 
-                    let info =
-                        tokio::task::spawn_blocking(move || perform_local_install(pkg)).await??;
+                    let info = tokio::task::spawn_blocking(move || perform_local_install(pkg))
+                        .await
+                        .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
-                    // 3. Commit (Lock DB)
                     let result = {
                         let db = db_arc
                             .lock()
-                            .map_err(|_| anyhow::anyhow!("Database lock poisoned"))?;
-                        commit_installation_new(&db, &info, &output)
+                            .map_err(|_| InstallError::Lock("StateDb poisoned".to_string()))?;
+                        commit_installation(&db, &info, &reporter)
                     };
 
                     if result.is_ok() {
-                        output.done(
+                        reporter.done(
                             &name,
                             &info.package.version,
                             "installed",
@@ -285,60 +303,52 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
             });
         }
 
-        // Wait for all tasks
         while let Some(res) = set.join_next().await {
             match res {
                 Ok(Ok(Some(_))) => {}
                 Ok(Ok(None)) => {}
-                Ok(Err(e)) => eprintln!("  ✘ Task failed: {e}"),
-                Err(e) => eprintln!("  ✘ Task panicked: {e}"),
+                Ok(Err(e)) => reporter.error(&format!("Install failed: {e}")),
+                Err(e) => reporter.error(&format!("Internal error: {e}")),
             }
         }
     }
 
-    // Final Summary
     let count = install_count.load(std::sync::atomic::Ordering::Relaxed);
     if count > 0 {
-        output.summary(count, "installed", start_time.elapsed().as_secs_f64());
-        // Sync UI actor
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        reporter.summary(count, "installed", start_time.elapsed().as_secs_f64());
     } else if already_installed_count > 0 {
-        output.summary_plain(already_installed_count, "already installed");
-        // Sync UI actor
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        reporter.summary_plain(already_installed_count, "already installed");
     }
 
-    // Shadowing and path checks at the very end
     let all_installed: Vec<String> = tasks
         .iter()
         .map(|t| match t {
-            InstallTask::Download(n, _) => n.clone(),
-            InstallTask::Switch(n, _) => n.clone(),
-            InstallTask::AlreadyInstalled(n, _) => n.clone(),
+            InstallTask::Download(n, _)
+            | InstallTask::Switch(n, _)
+            | InstallTask::AlreadyInstalled(n, _) => n.clone(),
         })
         .collect();
-    perform_ux_batch_checks(&all_installed, &output);
+
+    perform_ux_checks(&all_installed, reporter);
 
     Ok(())
 }
 
-/// Prepare a package download (new PackageProgress API)
-pub async fn prepare_download_new(
+/// Resolves version requirements and retrieves the matching binary or source artifact.
+pub async fn prepare_download<R: Reporter + Clone + 'static>(
     client: &Client,
     pkg_name: &str,
     requested_version: Option<&str>,
-    _dry_run: bool,
-    index: Option<&crate::index::PackageIndex>,
-    output: &Output,
-) -> Result<Option<PreparedPackage>> {
+    index: Option<&crate::core::index::PackageIndex>,
+    reporter: &R,
+) -> Result<Option<PreparedPackage>, InstallError> {
     use crate::package::{Binary, Dependencies, Hints, InstallSpec, Source};
 
-    let package_path = PathBuf::from(pkg_name);
+    let package_path = Path::new(pkg_name);
 
-    // Resolution logic
     let (binary_url, binary_hash, package_def, is_source) = if package_path.exists() {
-        let package_def = Package::from_file(&package_path)?;
-        // Try binary first, fallback to source
+        let package_def = Package::from_file(package_path)
+            .map_err(|e| InstallError::Validation(e.to_string()))?;
         if let Some(bottle) = package_def.binary_for_current_arch() {
             (
                 bottle.url.clone(),
@@ -354,22 +364,25 @@ pub async fn prepare_download_new(
                 true,
             )
         } else {
-            anyhow::bail!("Package has no binary for current arch and no source defined.");
+            return Err(InstallError::Validation(format!(
+                "Package {pkg_name} has no binary for this arch and no source."
+            )));
         }
     } else {
-        let index_ref = index.context(format!(
-            "Package '{pkg_name}' not found and no index found."
-        ))?;
+        let index_ref = index.ok_or_else(|| {
+            InstallError::Validation(format!("Index missing, cannot find {pkg_name}"))
+        })?;
         let entry = index_ref
             .find(pkg_name)
-            .context(format!("Package '{pkg_name}' not found in index"))?;
+            .ok_or_else(|| InstallError::Validation(format!("Package {pkg_name} not found")))?;
+
         let release = if let Some(v) = requested_version {
             if v == "latest" {
                 entry.latest()
             } else {
                 entry
                     .find_version(v)
-                    .context(format!("Version '{v}' not found"))?
+                    .ok_or_else(|| InstallError::Validation(format!("Version {v} not found")))?
             }
         } else {
             entry.latest()
@@ -386,7 +399,9 @@ pub async fn prepare_download_new(
         } else if let Some(src) = &release.source {
             (src.url.clone(), src.blake3.clone(), true)
         } else {
-            anyhow::bail!("No binary for {pkg_name} on {current_arch} and no source available.");
+            return Err(InstallError::Validation(format!(
+                "No binary/source available for {pkg_name} on {current_arch}"
+            )));
         };
 
         let mut binary_map = std::collections::HashMap::new();
@@ -396,9 +411,9 @@ pub async fn prepare_download_new(
                 Binary {
                     url: url.clone(),
                     blake3: hash.clone(),
-                    format: ArtifactFormat::Binary, // Default for resolved index entries if unknown, but usually from index
+                    format: ArtifactFormat::Binary,
                     arch: current_arch.to_string(),
-                    macos: "14.0".to_string(),
+                    macos: "11.0".to_string(),
                 },
             );
         }
@@ -410,25 +425,25 @@ pub async fn prepare_download_new(
                 description: entry.description.clone(),
                 homepage: String::new(),
                 license: String::new(),
-                type_: match entry.type_.as_str() {
-                    "app" => PackageType::App,
-                    _ => PackageType::Cli,
+                type_: if entry.type_ == "app" {
+                    PackageType::App
+                } else {
+                    PackageType::Cli
                 },
             },
-            source: if is_source {
-                Source {
-                    url: url.clone(),
-                    blake3: hash.clone(),
-                    format: ArtifactFormat::TarGz, // Assume tar.gz for source builds by default
-                    strip_components: 1,           // Assume standard tarballs
-                }
-            } else {
-                Source {
-                    url: String::new(),
-                    blake3: String::new(),
-                    format: ArtifactFormat::Binary,
-                    strip_components: 0,
-                }
+            source: Source {
+                url: if is_source {
+                    url.clone()
+                } else {
+                    String::new()
+                },
+                blake3: if is_source {
+                    hash.clone()
+                } else {
+                    String::new()
+                },
+                format: ArtifactFormat::TarGz,
+                strip_components: 1,
             },
             binary: binary_map,
             dependencies: Dependencies {
@@ -453,10 +468,7 @@ pub async fn prepare_download_new(
                 app: release.app.clone(),
             },
             hints: Hints {
-                post_install: match release.hints.as_str() {
-                    "" => String::new(),
-                    s => s.to_string(),
-                },
+                post_install: release.hints.clone(),
             },
             build: if is_source {
                 Some(crate::package::BuildSpec {
@@ -470,86 +482,55 @@ pub async fn prepare_download_new(
         (url, hash, package_def, is_source)
     };
 
-    let tmp_dir_path = crate::tmp_path();
-    if !tmp_dir_path.exists() {
-        std::fs::create_dir_all(&tmp_dir_path).ok();
-    }
-
+    let tmp_path = crate::tmp_path();
+    std::fs::create_dir_all(&tmp_path).map_err(InstallError::Io)?;
     let temp_dir = tempfile::Builder::new()
-        .prefix("apl-dl-")
-        .tempdir_in(tmp_dir_path)?;
+        .prefix("apl-")
+        .tempdir_in(tmp_path)
+        .map_err(InstallError::Io)?;
 
-    // Determine artifact filename from URL
-    let url_filename = binary_url.split('/').next_back().unwrap_or("download");
-
-    // Determine format from package definition - MANDATORY
     let pkg_format = if is_source {
         package_def.source.format.clone()
     } else {
         package_def
             .binary_for_current_arch()
             .map(|b| b.format.clone())
-            .context(format!(
-                "No binary defined for current architecture in package '{}'",
-                pkg_name
-            ))?
+            .ok_or_else(|| InstallError::Validation("No binary format found".to_string()))?
     };
 
-    let archive_format = match pkg_format {
-        ArtifactFormat::TarGz => crate::io::extract::ArchiveFormat::TarGz,
-        ArtifactFormat::TarZst => crate::io::extract::ArchiveFormat::TarZst,
-        ArtifactFormat::Tar => crate::io::extract::ArchiveFormat::Tar,
-        ArtifactFormat::Zip => crate::io::extract::ArchiveFormat::Zip,
-        ArtifactFormat::Dmg => crate::io::extract::ArchiveFormat::RawBinary, // DMG is treated as file download
-        ArtifactFormat::Pkg => crate::io::extract::ArchiveFormat::RawBinary, // Pkg is treated as file download
-        ArtifactFormat::Binary => crate::io::extract::ArchiveFormat::RawBinary,
-    };
-
-    // Check type - MUST use strategy
     let strategy = package_def.install.strategy.clone();
-    let is_app = strategy == InstallStrategy::App;
-
-    let is_dmg = archive_format == crate::io::extract::ArchiveFormat::RawBinary
-        && (pkg_format == ArtifactFormat::Dmg || binary_url.to_lowercase().ends_with(".dmg"));
+    let is_dmg = (strategy == InstallStrategy::App || strategy == InstallStrategy::Pkg)
+        && (pkg_format == ArtifactFormat::Dmg
+            || binary_url.to_lowercase().ends_with(".dmg")
+            || binary_url.to_lowercase().ends_with(".pkg"));
 
     let download_or_extract_path: PathBuf;
 
-    if (is_app || package_def.install.strategy == InstallStrategy::Pkg)
-        && (is_dmg || binary_url.to_lowercase().ends_with(".pkg"))
-    {
-        // App in a DMG: Download file directly (will be mounted later)
-        let dest_file = temp_dir.path().join(url_filename);
-
-        match crate::io::download::download_and_verify_mp(
+    if is_dmg {
+        let dest_file = temp_dir
+            .path()
+            .join(binary_url.split('/').last().unwrap_or("pkg.dmg"));
+        crate::io::download::download_and_verify_mp(
             client,
             pkg_name,
             &package_def.package.version,
             &binary_url,
             &dest_file,
             &binary_hash,
-            output,
+            reporter,
         )
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                output.failed(pkg_name, &package_def.package.version, &e.to_string());
-                return Err(e.into());
-            }
-        }
+        .await?;
         download_or_extract_path = dest_file;
     } else {
-        // CLI or App in Zip/Tar: Use Pipelined Download & Extract
         let cache_file = crate::cache_path().join(&binary_hash);
-        // Create cache dir if missing
         if let Some(p) = cache_file.parent() {
-            tokio::fs::create_dir_all(p).await.ok();
+            std::fs::create_dir_all(p).ok();
         }
 
         let extract_dir = temp_dir.path().join("extracted");
-        tokio::fs::create_dir_all(&extract_dir).await?;
+        std::fs::create_dir_all(&extract_dir).map_err(InstallError::Io)?;
 
-        match crate::io::download::download_and_extract(
+        crate::io::download::download_and_extract(
             client,
             pkg_name,
             &package_def.package.version,
@@ -557,21 +538,14 @@ pub async fn prepare_download_new(
             &cache_file,
             &extract_dir,
             &binary_hash,
-            output,
+            reporter,
         )
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                output.failed(pkg_name, &package_def.package.version, &e.to_string());
-                return Err(e.into());
-            }
-        }
-        download_or_extract_path = extract_dir;
+        .await?;
 
-        // Apply strip_components if needed (mostly for source builds)
+        download_or_extract_path = extract_dir;
         if is_source && package_def.source.strip_components > 0 {
-            crate::io::extract::strip_components(&download_or_extract_path)?;
+            crate::io::extract::strip_components(&download_or_extract_path)
+                .map_err(|e| InstallError::Other(e.to_string()))?;
         }
     }
 
@@ -581,31 +555,28 @@ pub async fn prepare_download_new(
         extracted_path: download_or_extract_path,
         bin_list: package_def.install.bin.clone(),
         package_def: Some(package_def),
-        blake3: binary_hash.to_string(),
+        blake3: binary_hash,
         build_required: is_source,
         _temp_dir: Some(temp_dir),
     }))
 }
 
-/// Information about a successful local installation to be committed to DB
 struct InstallInfo {
     package: PackageInfo,
     blake3: String,
-    files_to_record: Vec<(String, String)>, // (path, hash)
+    files_to_record: Vec<(String, String)>,
     size_bytes: u64,
 }
 
-/// Perform extraction and linking for a package (Thread Safe)
-fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
-    // Check if it's an .app bundle
+/// Moves artifacts to the final store location and updates symlinks.
+fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
     let package_def = pkg
         .package_def
         .as_ref()
-        .expect("Package definition must be set in PreparedPackage");
-
+        .ok_or_else(|| InstallError::Validation("Missing package definition".to_string()))?;
     let strategy = package_def.install.strategy.clone();
-    let is_app = (package_def.package.type_ == PackageType::App)
-        || (strategy == InstallStrategy::App)
+
+    let is_app = strategy == InstallStrategy::App
         || pkg
             .extracted_path
             .to_string_lossy()
@@ -618,81 +589,41 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
 
     let pkg_store_path = store_path().join(&pkg.name).join(&pkg.version);
     if pkg_store_path.exists() {
-        let _ = std::fs::remove_dir_all(&pkg_store_path);
+        std::fs::remove_dir_all(&pkg_store_path).map_err(InstallError::Io)?;
     }
-    std::fs::create_dir_all(pkg_store_path.parent().unwrap())?;
+    std::fs::create_dir_all(pkg_store_path.parent().unwrap()).map_err(InstallError::Io)?;
 
-    // 1. Move Extracted Dir to Store (Atomic-ish) OR Build
     if pkg.build_required {
-        // Build from Source
-        let sysroot = crate::core::sysroot::Sysroot::new().context("Failed to create sysroot")?;
-        let builder = crate::core::builder::Builder::new(&sysroot);
-
-        let build_spec = package_def
-            .build
-            .as_ref()
-            .context("Build specification missing for source build")?;
-
-        // Check build dependencies are available
-        let missing_deps = check_build_deps(&build_spec.dependencies);
-        if !missing_deps.is_empty() {
-            anyhow::bail!(
-                "Missing build dependencies: {}. Install them first with: apl install {}",
-                missing_deps.join(", "),
-                missing_deps.join(" ")
-            );
-        }
-
-        let log_path = crate::build_log_path(&pkg.name, &pkg.version);
-
-        builder
-            .build(
-                &pkg.extracted_path,
-                &build_spec.script,
-                &pkg_store_path,
-                false, // verbose = false (quiet by default)
-                &log_path,
-            )
-            .context("Source build failed")?;
+        perform_source_build(&pkg, &pkg_store_path, package_def)?;
     } else {
-        // Binary Install: Rename extracted dir to store
-        if let Err(_e) = std::fs::rename(&pkg.extracted_path, &pkg_store_path) {
-            anyhow::bail!(
-                "Failed to move extracted package to store (atomic move failed). Ensure strict volume co-location."
-            );
-        }
+        std::fs::rename(&pkg.extracted_path, &pkg_store_path).map_err(|_| {
+            InstallError::Other("Cross-volume move failed. APL requires store to be on the same volume as temp dir.".to_string())
+        })?;
     }
 
-    // 2. Strip Components (e.g. nvim-osx64/bin/... -> bin/...)
     if !pkg.build_required {
-        let _ = crate::extractor::strip_components(&pkg_store_path);
+        let _ = crate::io::extract::strip_components(&pkg_store_path);
     }
 
-    // 2.5. Relink Mach-O binaries and dylibs for relocatability
     relink_macho_files(&pkg_store_path);
 
-    // 3. Link Binaries
     let mut files_to_record = Vec::new();
-
-    // Determine binaries to link
     let mut bins_to_link = Vec::new();
+
     if !package_def.install.bin.is_empty() {
         for bin_spec in &package_def.install.bin {
-            let (src_name, target_name): (String, String) = if bin_spec.contains(':') {
+            if bin_spec.contains(':') {
                 let parts: Vec<&str> = bin_spec.split(':').collect();
-                (parts[0].to_string(), parts[1].to_string())
+                bins_to_link.push((parts[0].to_string(), parts[1].to_string()));
             } else {
-                // Extract basename for target when no explicit target given
-                let target = std::path::Path::new(bin_spec.as_str())
+                let target = Path::new(bin_spec)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| bin_spec.clone());
-                (bin_spec.clone(), target)
-            };
-            bins_to_link.push((src_name, target_name));
+                bins_to_link.push((bin_spec.clone(), target));
+            }
         }
     } else {
-        // Auto-detect executables in store/bin or root
         let bin_dir = pkg_store_path.join("bin");
         let search_dir = if bin_dir.exists() {
             &bin_dir
@@ -703,9 +634,9 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
             for entry in entries.flatten() {
                 if let Ok(meta) = entry.metadata() {
                     #[cfg(unix)]
-                    {
+                    if meta.is_file() {
                         use std::os::unix::fs::PermissionsExt;
-                        if meta.is_file() && (meta.permissions().mode() & 0o111 != 0) {
+                        if meta.permissions().mode() & 0o111 != 0 {
                             let name = entry.file_name().to_string_lossy().to_string();
                             bins_to_link.push((name.clone(), name));
                         }
@@ -716,14 +647,7 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
     }
 
     for (src_rel, target_name) in bins_to_link {
-        // Find the source file in store
         let src_path = pkg_store_path.join(&src_rel);
-        let src_path = if !src_path.exists() && pkg_store_path.join("bin").join(&src_rel).exists() {
-            pkg_store_path.join("bin").join(&src_rel)
-        } else {
-            src_path
-        };
-
         if !src_path.exists() {
             continue;
         }
@@ -732,29 +656,17 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        // Remove existing file or link
         if target.exists() || target.is_symlink() {
             std::fs::remove_file(&target).ok();
         }
 
-        // Use symlink for Store Model (modern/standard)
         #[cfg(unix)]
-        std::os::unix::fs::symlink(&src_path, &target)
-            .map_err(|e| anyhow::anyhow!("Symlinking failed: {e}"))?;
+        std::os::unix::fs::symlink(&src_path, &target).map_err(InstallError::Io)?;
 
-        let abs_path = target.to_string_lossy().to_string();
-        files_to_record.push((abs_path, "SYMLINK".to_string()));
+        files_to_record.push((target.to_string_lossy().to_string(), "SYMLINK".to_string()));
     }
 
-    // 4. Calculate Size (Recursive Store)
-    let mut size_bytes = 0;
-    for entry in walkdir::WalkDir::new(&pkg_store_path).into_iter().flatten() {
-        if let Ok(meta) = entry.metadata() {
-            if meta.is_file() {
-                size_bytes += meta.len();
-            }
-        }
-    }
+    let size_bytes = calculate_dir_size(&pkg_store_path);
 
     Ok(InstallInfo {
         package: package_def.package.clone(),
@@ -764,152 +676,164 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
     })
 }
 
-/// Perform app bundle installation (Thread Safe for FS, not DB)
-fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo> {
+fn perform_source_build(
+    pkg: &PreparedPackage,
+    store_path: &Path,
+    def: &Package,
+) -> Result<(), InstallError> {
+    let sysroot =
+        crate::core::sysroot::Sysroot::new().map_err(|e| InstallError::Other(e.to_string()))?;
+    let builder = crate::core::builder::Builder::new(&sysroot);
+    let build_spec = def.build.as_ref().ok_or_else(|| {
+        InstallError::Validation("Source build requires [build] section".to_string())
+    })?;
+
+    let missing = check_build_deps(&build_spec.dependencies);
+    if !missing.is_empty() {
+        return Err(InstallError::Validation(format!(
+            "Missing build dependencies: {}",
+            missing.join(", ")
+        )));
+    }
+
+    let log_path = crate::build_log_path(&pkg.name, &pkg.version);
+    builder
+        .build(
+            &pkg.extracted_path,
+            &build_spec.script,
+            store_path,
+            false,
+            &log_path,
+        )
+        .map_err(|e| InstallError::Script(e.to_string()))
+}
+
+fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
     let app_name = pkg
         .package_def
         .as_ref()
         .and_then(|f| f.install.app.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("type='app' requires [install] app='Name.app'"))?;
+        .ok_or_else(|| {
+            InstallError::Validation("type='app' requires [install] app='Name.app'".to_string())
+        })?;
 
     let applications_dir = dirs::home_dir()
         .map(|h| h.join("Applications"))
         .unwrap_or_else(|| PathBuf::from("/Applications"));
+    std::fs::create_dir_all(&applications_dir).map_err(InstallError::Io)?;
 
-    if !applications_dir.exists() {
-        std::fs::create_dir_all(&applications_dir)?;
-    }
-
-    // Find the .app in extraction dir
-    // Find the .app in extraction dir or DMG
-    // We must keep 'mount' alive until we copy the .app out
     let (_mount, search_path) = if pkg
         .extracted_path
         .to_string_lossy()
         .to_lowercase()
         .ends_with(".dmg")
     {
-        // Mount DMG
-        let mount = dmg::attach(&pkg.extracted_path)?;
+        let mount =
+            dmg::attach(&pkg.extracted_path).map_err(|e| InstallError::Other(e.to_string()))?;
         let path = mount.path.clone();
         (Some(mount), path)
     } else {
         (None, pkg.extracted_path.clone())
     };
 
-    let extracted_app_path = if search_path.extension().map_or(false, |e| e == "app") {
-        search_path.clone()
+    let extracted_app = if search_path.extension().map_or(false, |e| e == "app") {
+        search_path
     } else {
-        // Search for .app in extracted dir (or mount point)
         let mut found = None;
         for entry in walkdir::WalkDir::new(&search_path)
             .min_depth(1)
             .max_depth(3)
+            .into_iter()
+            .flatten()
         {
-            if let Ok(e) = entry {
-                // Skip hidden files/dirs (like .Trashes on DMG)
-                if e.file_name().to_string_lossy().starts_with('.') {
-                    continue;
-                }
-
-                if e.path().extension().map_or(false, |ext| ext == "app") {
-                    found = Some(e.path().to_path_buf());
-                    break;
-                }
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            if entry.path().extension().map_or(false, |e| e == "app") {
+                found = Some(entry.path().to_path_buf());
+                break;
             }
         }
         found.ok_or_else(|| {
-            anyhow::anyhow!(
-                "No .app bundle found in extraction path: {}",
-                search_path.display()
-            )
+            InstallError::Validation(format!("No .app found in {}", search_path.display()))
         })?
     };
 
-    let target_app_path = applications_dir.join(app_name);
-
-    if target_app_path.exists() {
-        let _ = std::fs::remove_dir_all(&target_app_path);
+    let target_app = applications_dir.join(app_name);
+    if target_app.exists() {
+        std::fs::remove_dir_all(&target_app).map_err(InstallError::Io)?;
     }
 
-    // Use builder/copy logic for atomic install? Or just move?
-    // Move is faster if same volume
-    if let Err(_) = std::fs::rename(&extracted_app_path, &target_app_path) {
-        // Cross-volume move fallback
-        crate::core::builder::copy_dir_all(&extracted_app_path, &target_app_path)?;
+    if let Err(_) = std::fs::rename(&extracted_app, &target_app) {
+        crate::core::builder::copy_dir_all(&extracted_app, &target_app)
+            .map_err(|e| InstallError::Other(e.to_string()))?;
     }
 
-    // Clean up quarantine attribute
     #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("xattr")
-            .arg("-d")
-            .arg("com.apple.quarantine")
-            .arg(&target_app_path)
-            .output();
-    }
+    let _ = std::process::Command::new("xattr")
+        .args(["-d", "com.apple.quarantine"])
+        .arg(&target_app)
+        .output();
 
+    // Implementation Note: App Bundles
+    //
+    // macOS `.app` bundles are just directories. We must copy them to `/Applications`
+    // instead of linking them. We also strip the "Quarantine" attribute so macOS
+    // allows them to run (otherwise it complains they are from an unidentified developer).
     Ok(InstallInfo {
         package: pkg.package_def.unwrap().package,
         blake3: pkg.blake3,
         files_to_record: vec![(
-            target_app_path.to_string_lossy().to_string(),
+            target_app.to_string_lossy().to_string(),
             "APP_BUNDLE".to_string(),
         )],
-        size_bytes: 0, // Calculate app size? expensive.
+        size_bytes: 0,
     })
 }
 
-/// Commit installation to DB (Thread Safe, requires MutexGuard)
-fn commit_installation_new(db: &StateDb, info: &InstallInfo, _output: &Output) -> Result<()> {
-    // We only track active files (symlinks) for now, artifacts (store files) are implicit in store dir
-    let artifacts: Vec<(String, String)> = Vec::new();
-    let active_files: Vec<(String, String)> = info
-        .files_to_record
-        .iter()
-        .map(|(p, h)| (p.clone(), h.clone()))
-        .collect();
-
+fn commit_installation(
+    db: &StateDb,
+    info: &InstallInfo,
+    _reporter: &impl Reporter,
+) -> Result<(), InstallError> {
     db.install_complete_package(
         &info.package.name,
         &info.package.version,
         &info.blake3,
         info.size_bytes,
-        &artifacts,
-        &active_files,
-    )?;
+        &[],
+        &info.files_to_record,
+    )
+    .map_err(|e| InstallError::Other(e.to_string()))?;
 
     db.add_history(
         &info.package.name,
         "install",
         None,
         Some(&info.package.version),
-        true, // success
-    )?;
-
-    Ok(())
+        true,
+    )
+    .map_err(|e| InstallError::Other(e.to_string()))
 }
 
-pub fn perform_ux_batch_checks(names: &[String], output: &Output) {
-    // 1. PATH check (global)
+pub fn perform_ux_checks(names: &[String], reporter: &impl Reporter) {
     let path_env = std::env::var_os("PATH").unwrap_or_default();
     let bin_dir = bin_path();
     let is_in_path = std::env::split_paths(&path_env).any(|p| p == bin_dir);
 
     if !is_in_path {
-        output.warning(&format!("{} is not in your PATH.", bin_dir.display()));
-        output.info("To use installed binaries, add this to your shell profile:");
-        output.info(&format!("  export PATH=\"{}:$PATH\"", bin_dir.display()));
+        reporter.warning(&format!("{} is not in your PATH.", bin_dir.display()));
+        reporter.info(&format!(
+            "Add this to your shell profile: export PATH=\"{}:$PATH\"",
+            bin_dir.display()
+        ));
     }
 
-    // 2. Shadows check
     for name in names {
-        // Simple check: command -v name
         if let Ok(path) = which::which(name) {
             if !path.starts_with(&bin_dir) {
-                // It's shadowed!
-                output.warning(&format!(
-                    "Command '{}' is shadowed by system version at {}",
+                reporter.warning(&format!(
+                    "'{}' is shadowed by system version at {}",
                     name,
                     path.display()
                 ));
@@ -918,41 +842,41 @@ pub fn perform_ux_batch_checks(names: &[String], output: &Output) {
     }
 }
 
-// Relink Mach-O binaries to point to @rpath or internal libs
-fn relink_macho_files(store_path: &std::path::Path) {
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // Visit all files in store_path
-        for entry in walkdir::WalkDir::new(store_path).into_iter().flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                let is_dylib = path.extension().map_or(false, |e| e == "dylib");
-                let is_exec = path
-                    .metadata()
-                    .map(|m| m.permissions().mode() & 0o111 != 0)
-                    .unwrap_or(false);
+fn calculate_dir_size(path: &Path) -> u64 {
+    walkdir::WalkDir::new(path)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .map(|m| m.len())
+        .sum()
+}
 
-                if is_dylib {
-                    let _ = Relinker::fix_dylib(path);
-                } else if is_exec {
-                    let _ = Relinker::fix_binary(path);
-                }
+fn relink_macho_files(path: &Path) {
+    #[cfg(target_os = "macos")]
+    for entry in walkdir::WalkDir::new(path).into_iter().flatten() {
+        if entry.path().is_file() {
+            let is_dylib = entry.path().extension().map_or(false, |e| e == "dylib");
+            let is_exec = entry
+                .metadata()
+                .map(|m| {
+                    use std::os::unix::fs::PermissionsExt;
+                    m.permissions().mode() & 0o111 != 0
+                })
+                .unwrap_or(false);
+
+            if is_dylib {
+                let _ = Relinker::fix_dylib(entry.path());
+            } else if is_exec {
+                let _ = Relinker::fix_binary(entry.path());
             }
         }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = store_path;
     }
 }
 
 fn check_build_deps(deps: &[String]) -> Vec<String> {
-    let mut missing = Vec::new();
-    for dep in deps {
-        if which::which(dep).is_err() {
-            missing.push(dep.clone());
-        }
-    }
-    missing
+    deps.iter()
+        .filter(|d| which::which(d).is_err())
+        .cloned()
+        .collect()
 }

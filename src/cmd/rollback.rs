@@ -41,10 +41,12 @@ pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
         );
     }
 
-    println!("Rolling back {pkg_name} to {target_version}...");
+    let output = apl::ui::Output::new();
+    output.info(&format!("Rolling back {pkg_name} to {target_version}..."));
 
     // Execute switch using the shared logic
-    crate::cmd::r#use::use_version(pkg_name, &target_version, dry_run)?;
+    apl::ops::switch::switch_version(pkg_name, &target_version, dry_run, &output)
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())
 }

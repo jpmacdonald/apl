@@ -1,6 +1,6 @@
 //! SQLite state database
 //!
-//! Tracks installed packages, versions, and their files.
+//! Manages the SQLite state database for tracking packages, versions, and file artifacts.
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,7 +20,7 @@ pub enum DbError {
     PackageNotFound(String),
 }
 
-/// Installed package record (specific version)
+/// Metadata for a specific package version stored in the database.
 #[derive(Debug, Clone)]
 pub struct Package {
     pub name: String,
@@ -54,7 +54,7 @@ pub struct StateDb {
 }
 
 impl StateDb {
-    /// Open or create the state database
+    /// Opens the default state database, initializing it if necessary.
     pub fn open() -> Result<Self, DbError> {
         let path = db_path();
         if let Some(parent) = path.parent() {
@@ -67,7 +67,14 @@ impl StateDb {
     pub fn open_at(path: &Path) -> Result<Self, DbError> {
         let conn = Connection::open(path)?;
 
-        // Enable WAL mode + Foreign Keys
+        // Implementation Note: WAL and Foreign Keys
+        //
+        // 1. **WAL (Write-Ahead Logging)**: Greatly improves concurrency. Readers don't block writers,
+        //    and writers don't block readers. This is crucial for a CLI that might run multiple
+        //    instances (e.g., `apl install` in two terminals).
+        //
+        // 2. **Foreign Keys**: We enforce referential integrity at the DB level. If you delete a
+        //    package, the DB ensures all its orphans (artifacts, files) are cleaned up or rejected.
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
 
         let db = Self { conn };
@@ -147,7 +154,6 @@ impl StateDb {
     }
 
     fn migrate_v2_to_v3(&self) -> Result<(), DbError> {
-        println!("Enabling history tracking (Schema V3)...");
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,7 +209,6 @@ impl StateDb {
     }
 
     fn migrate_v1_to_v2(&self) -> Result<(), DbError> {
-        println!("Migrating database to V2 (Multi-version support)...");
         // Disable FKs during migration dance
         self.conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
 
@@ -251,12 +256,13 @@ impl StateDb {
             PRAGMA foreign_keys=ON;
             ",
         )?;
-
-        println!("✓ Database migration complete.");
         Ok(())
     }
 
-    /// Record a complete package installation atomically
+    /// Records a complete package installation atomically.
+    ///
+    /// This updates the package version record, artifact links, and current
+    /// active files in a single transaction.
     pub fn install_complete_package(
         &self,
         name: &str,
@@ -266,6 +272,12 @@ impl StateDb {
         artifacts: &[(String, String)],    // (path, blake3)
         active_files: &[(String, String)], // (path, blake3)
     ) -> Result<(), DbError> {
+        // Implementation Note: Atomic Transactions
+        //
+        // We use a single transaction for all 4 distinct write operations.
+        // If the power goes out after step 2, NO changes are persisted.
+        // The database is always in a valid state: either the old package active, or the new one.
+        // Never "half-installed".
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -305,13 +317,12 @@ impl StateDb {
         Ok(())
     }
 
-    /// Record a package installation (sets as ACTIVE)
-    /// Wraps install_package_version with active=true
+    /// Records a package version as active, deactivating any prior versions.
     pub fn install_package(&self, name: &str, version: &str, blake3: &str) -> Result<(), DbError> {
         self.install_package_version(name, version, blake3, true)
     }
 
-    /// Record a specific package installation version
+    /// Inserts or updates a package version record.
     pub fn install_package_version(
         &self,
         name: &str,
@@ -370,7 +381,7 @@ impl StateDb {
         Ok(())
     }
 
-    /// Remove a package completely (all versions) + its files
+    /// Removes all records for a package, returning the list of files to delete from disk.
     pub fn remove_package(&self, name: &str) -> Result<Vec<String>, DbError> {
         // Get active files to remove from disk
         let files = self.get_package_files(name)?;
@@ -391,7 +402,7 @@ impl StateDb {
         Ok(files.into_iter().map(|f| f.path).collect())
     }
 
-    /// Get the ACTIVE version of a package
+    /// Retrieves the currently active version of a package.
     pub fn get_package(&self, name: &str) -> Result<Option<Package>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND active = 1",

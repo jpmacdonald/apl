@@ -1,36 +1,15 @@
-//! Public Output API - Clean interface for commands
+//! Unified UI output interface.
 //!
 //! This module provides the main API that commands use to interact with the UI.
 //! All operations are sent as events to the UI actor for sequential processing.
-//!
-//! # Example
-//!
-//! ```no_run
-//! use apl::ui::Output;
-//!
-//! let output = Output::new();
-//!
-//! // Prepare for installs
-//! output.prepare_pipeline(&[
-//!     ("ripgrep".to_string(), Some("14.1.0".to_string())),
-//! ]);
-//!
-//! // Show progress
-//! output.downloading("ripgrep", "14.1.0", 1024, 4096);
-//! output.installing("ripgrep", "14.1.0");
-//! output.done("ripgrep", "14.1.0", "installed", Some(4096));
-//!
-//! // Summary
-//! output.summary(1, "installed", 2.5);
-//! ```
 
 use super::actor::{UiActor, UiEvent};
 use std::sync::{OnceLock, mpsc};
 
-/// Global singleton actor instance
+/// Singleton instance of the UI actor channel.
 static UI_ACTOR: OnceLock<mpsc::Sender<UiEvent>> = OnceLock::new();
 
-/// Initialize the global UI actor (called once)
+/// Lazily initializes the UI actor and returns a sender handle.
 fn get_actor_sender() -> mpsc::Sender<UiEvent> {
     UI_ACTOR
         .get_or_init(|| {
@@ -45,44 +24,35 @@ fn get_actor_sender() -> mpsc::Sender<UiEvent> {
         .clone()
 }
 
-/// Main output interface for UI operations
-///
-/// This is a lightweight handle that sends events to the UI actor thread.
-/// It's cheap to clone and can be safely shared across threads.
+/// A cloneable handle for sending high-level UI events to the terminal actor.
 #[derive(Clone)]
 pub struct Output {
     sender: mpsc::Sender<UiEvent>,
 }
 
 impl Output {
-    /// Create a new output handle
-    ///
-    /// This uses a global singleton actor, so multiple Output instances
-    /// share the same rendering thread.
+    /// Create a new output handle.
     pub fn new() -> Self {
         Self {
             sender: get_actor_sender(),
         }
     }
 
-    /// Prepare table for a pipeline of packages
-    ///
-    /// This prints the header and reserves visual space for all packages.
-    /// Call this before starting parallel downloads.
+    /// Prepare table for a pipeline of packages.
     pub fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
         let _ = self.sender.send(UiEvent::PreparePipeline {
             items: packages.to_vec(),
         });
     }
 
-    /// Print a simple section header
+    /// Prints a visual section header for an operation phase.
     pub fn section(&self, title: &str) {
         let _ = self.sender.send(UiEvent::PrintHeader {
             title: title.to_string(),
         });
     }
 
-    /// Update package to downloading state
+    /// Reports progress for a file download.
     pub fn downloading(&self, name: &str, version: &str, current: u64, total: u64) {
         let _ = self.sender.send(UiEvent::Downloading {
             name: name.to_string(),
@@ -92,7 +62,7 @@ impl Output {
         });
     }
 
-    /// Update package to installing state
+    /// Transitions a package display to the 'installing' state.
     pub fn installing(&self, name: &str, version: &str) {
         let _ = self.sender.send(UiEvent::Installing {
             name: name.to_string(),
@@ -100,7 +70,7 @@ impl Output {
         });
     }
 
-    /// Update package to removing state
+    /// Transitions a package display to the 'removing' state.
     pub fn removing(&self, name: &str, version: &str) {
         let _ = self.sender.send(UiEvent::Removing {
             name: name.to_string(),
@@ -108,7 +78,7 @@ impl Output {
         });
     }
 
-    /// Mark package as successfully completed
+    /// Signals completion of a package operation.
     pub fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>) {
         let _ = self.sender.send(UiEvent::Done {
             name: name.to_string(),
@@ -118,7 +88,7 @@ impl Output {
         });
     }
 
-    /// Mark package as failed
+    /// Marks a package operation as failed with a visible reason.
     pub fn failed(&self, name: &str, version: &str, reason: &str) {
         let _ = self.sender.send(UiEvent::Failed {
             name: name.to_string(),
@@ -127,27 +97,27 @@ impl Output {
         });
     }
 
-    /// Print info message
+    /// Prints an informational message to the console.
     pub fn info(&self, msg: &str) {
         let _ = self.sender.send(UiEvent::Info(msg.to_string()));
     }
 
-    /// Print success message
+    /// Prints a success message to the console.
     pub fn success(&self, msg: &str) {
         let _ = self.sender.send(UiEvent::Success(msg.to_string()));
     }
 
-    /// Print warning message
+    /// Prints a warning message to the console.
     pub fn warning(&self, msg: &str) {
         let _ = self.sender.send(UiEvent::Warning(msg.to_string()));
     }
 
-    /// Print error message
+    /// Prints an error message to the console.
     pub fn error(&self, msg: &str) {
         let _ = self.sender.send(UiEvent::Error(msg.to_string()));
     }
 
-    /// Print summary with timing info
+    /// Prints a summary of operations including the total elapsed time.
     pub fn summary(&self, count: usize, action: &str, elapsed_secs: f64) {
         let _ = self.sender.send(UiEvent::Summary {
             count,
@@ -156,7 +126,7 @@ impl Output {
         });
     }
 
-    /// Print plain summary without timing
+    /// Displays a summary of operations with item count and status.
     pub fn summary_plain(&self, count: usize, status: &str) {
         let msg = format!(
             "{} package{} {}",
@@ -167,29 +137,79 @@ impl Output {
         self.success(&msg);
     }
 
-    /// Print success summary (convenience alias)
+    /// Convenience for a success summary.
     pub fn success_summary(&self, msg: &str) {
         self.success(msg);
     }
 
-    /// Print error summary (convenience alias)
+    /// Convenience for an error summary.
     pub fn error_summary(&self, msg: &str) {
         self.error(msg);
     }
 
-    /// Block until all pending UI events are processed
+    /// Block until all pending UI events are processed.
     pub fn wait(&self) {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self.sender.send(UiEvent::Sync(tx));
 
-        // Wait for actor to process the sync event
-        // We use block_in_place or just a spin/wait if not in async context,
-        // but since commands are async, we can just block or use a small sleep?
-        // Actually, we can just poll the receiver.
         let mut rx = rx;
         while rx.try_recv().is_err() {
             std::thread::yield_now();
         }
+    }
+}
+
+impl super::reporter::Reporter for Output {
+    fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
+        self.prepare_pipeline(packages);
+    }
+
+    fn section(&self, title: &str) {
+        self.section(title);
+    }
+
+    fn downloading(&self, name: &str, version: &str, current: u64, total: u64) {
+        self.downloading(name, version, current, total);
+    }
+
+    fn installing(&self, name: &str, version: &str) {
+        self.installing(name, version);
+    }
+
+    fn removing(&self, name: &str, version: &str) {
+        self.removing(name, version);
+    }
+
+    fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>) {
+        self.done(name, version, detail, size);
+    }
+
+    fn failed(&self, name: &str, version: &str, reason: &str) {
+        self.failed(name, version, reason);
+    }
+
+    fn info(&self, msg: &str) {
+        self.info(msg);
+    }
+
+    fn success(&self, msg: &str) {
+        self.success(msg);
+    }
+
+    fn warning(&self, msg: &str) {
+        self.warning(msg);
+    }
+
+    fn error(&self, msg: &str) {
+        self.error(msg);
+    }
+
+    fn summary(&self, count: usize, action: &str, elapsed_secs: f64) {
+        self.summary(count, action, elapsed_secs);
+    }
+
+    fn summary_plain(&self, count: usize, status: &str) {
+        self.summary_plain(count, status);
     }
 }
 
@@ -207,7 +227,6 @@ mod tests {
     fn test_output_creation() {
         let output = Output::new();
         output.info("test");
-        // Output will be silently sent to actor
     }
 
     #[test]

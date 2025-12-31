@@ -37,12 +37,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     let bytes = response.bytes().await?;
 
     // Auto-detect ZSTD compression
-    let decompressed = if bytes.len() >= 4
-        && bytes[0] == 0x28
-        && bytes[1] == 0xB5
-        && bytes[2] == 0x2F
-        && bytes[3] == 0xFD
-    {
+    let decompressed = if bytes.len() >= 4 && bytes[0..4] == apl::ZSTD_MAGIC {
         zstd::decode_all(bytes.as_ref()).context("Failed to decompress index")?
     } else {
         bytes.to_vec()

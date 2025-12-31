@@ -4,13 +4,21 @@
 //! All UI operations are channeled through a single thread to prevent
 //! race conditions and output corruption.
 //!
-//! # Benefits
-//!
-//! - **No contention**: Workers never wait for locks
-//! - **Crash safety**: UI stays alive even if workers panic
-//! - **Sequential rendering**: Guaranteed ordering of updates
-//! - **Testability**: Can record/replay events
-
+/// # Implementation Note: The Actor Pattern in UI
+///
+/// We use the "Actor Model" here to bridge the gap between our parallel, async download tasks
+/// and the strictly serial nature of terminal output (stdout).
+///
+/// 1. **Sender (Many)**: Download tasks `clone()` the sender and fire events (Downloading, Done, etc.)
+///    asynchronously. They don't block waiting for the terminal.
+///
+/// 2. **Receiver (One)**: The `UiActor` thread owns the `receiver` and processes events one by one.
+///    This guarantees that two threads never try to write to the console at the exact same time,
+///    which would cause "tearing" or garbled lines.
+///
+/// 3. **State Management**: The Actor is the *exclusive* owner of the `TableRenderer` state.
+///    Because only the actor thread touches the table, we don't need `Mutex<TableRenderer>`
+///    or complex locking in the application logic.
 use super::buffer::OutputBuffer;
 use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
@@ -117,6 +125,9 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
         // Use timeout to drive animations (100ms = 10 FPS)
         match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(UiEvent::PreparePipeline { items }) => {
+                // Implementation Note: Pre-allocation
+                // We reserve screen space for all items immediately.
+                // This prevents the table from "jumping" around as new tasks start.
                 table.prepare_pipeline(&mut buffer, &items);
             }
             Ok(UiEvent::PrintHeader { title }) => {

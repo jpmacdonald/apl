@@ -1,7 +1,7 @@
-//! Mach-O Relinker using install_name_tool
+//! Mach-O path patching utility.
 //!
-//! Ensures binaries are relocatable and use relative paths for libraries.
-//! Strategy:
+//! Patches rpaths and load commands to ensure binaries function portably.
+//! Implementation Details:
 //! 1. Binaries: -add_rpath @executable_path/../lib
 //! 2. Dylibs: -id @rpath/libname.dylib
 
@@ -9,17 +9,28 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
-/// Relinker for Mach-O binaries/dylibs
+/// Utilities for patching Mach-O headers.
+///
+/// # Implementation Note: Mach-O and RPaths
+/// macOS binaries (Mach-O) look for shared libraries (dylibs) using "load commands" embedded in the file header.
+/// Unlike ELF (Linux) which uses `LD_LIBRARY_PATH` or `rpath`, macOS relies heavily on the `@rpath` token.
+///
+/// - **`@rpath`**: A variable placeholder in a dylib's ID (e.g., `@rpath/libssl.dylib`).
+/// - **LC_RPATH**: A load command in the *executable* that defines values for `@rpath` (e.g., `@executable_path/../lib`).
+///
+/// By setting the Dylib ID to start with `@rpath/` and adding a relative `LC_RPATH` to the binary,
+/// we make the package **relocatable**. You can move the entire directory structure anywhere, and the
+/// binary will still find its libraries in `../lib` relative to itself.
 pub struct Relinker;
 
 impl Relinker {
-    /// Fix up a binary to look for libraries in ../lib
+    /// Adds a relative `../lib` rpath to an executable.
     pub fn fix_binary(binary_path: &Path) -> Result<()> {
         Self::run_install_name_tool(binary_path, &["-add_rpath", "@executable_path/../lib"])?;
         Self::resign(binary_path)
     }
 
-    /// Fix up a dylib to have an @rpath ID
+    /// Sets the install ID of a dynamic library to leverage `@rpath`.
     pub fn fix_dylib(dylib_path: &Path) -> Result<()> {
         let name = dylib_path
             .file_name()
@@ -32,20 +43,28 @@ impl Relinker {
         Self::resign(dylib_path)
     }
 
-    /// Change a dependency path in a binary/dylib
+    /// Updates a load command to point to a new location.
     /// e.g. /usr/local/lib/libssl.dylib -> @rpath/libssl.dylib
     pub fn change_dep(path: &Path, old: &str, new: &str) -> Result<()> {
         Self::run_install_name_tool(path, &["-change", old, new])?;
         Self::resign(path)
     }
 
-    /// Helper to run install_name_tool
+    /// Executes `install_name_tool` and handles errors.
     fn run_install_name_tool(path: &Path, args: &[&str]) -> Result<()> {
-        let output = Command::new("install_name_tool")
+        let output = match Command::new("install_name_tool")
             .args(args)
             .arg(path)
             .output()
-            .context("Failed to spawn install_name_tool")?;
+        {
+            Ok(o) => o,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                anyhow::bail!(
+                    "'install_name_tool' not found. Please install Xcode Command Line Tools: xcode-select --install"
+                );
+            }
+            Err(e) => return Err(e).context("Failed to spawn install_name_tool"),
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -55,7 +74,7 @@ impl Relinker {
         Ok(())
     }
 
-    /// Ad-hoc sign a binary/dylib
+    /// Re-applies ad-hoc code signing to validity patched binaries.
     pub fn resign(path: &Path) -> Result<()> {
         let _ = Command::new("codesign")
             .args(&[
