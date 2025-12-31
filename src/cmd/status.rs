@@ -63,68 +63,82 @@ pub fn status() -> Result<()> {
     }
 
     // --- RENDER ---
-    use apl::ui::theme::format_size;
+    use apl::ui::Theme;
     use crossterm::style::Stylize;
 
-    println!();
-    println!("{}", "APL Package Manager".cyan());
-    println!("{}", "─".repeat(40).dark_grey());
-    println!();
+    let theme = Theme::default();
 
+    println!();
+    // Header
+    println!("   {}", "System Status".with(theme.colors.header));
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+
+    // Section 1: Core
     println!(
-        "  {} {}",
-        format!("{:<18}", "Version:").dark_grey(),
-        pkg_version.white()
+        "   {:<18} {}",
+        "Version:".with(theme.colors.secondary),
+        pkg_version.with(theme.colors.version)
     );
     println!(
-        "  {} {}",
-        format!("{:<18}", "Index:").dark_grey(),
-        format!("{index_date} (up to date)").green()
+        "   {:<18} {}",
+        "Index:".with(theme.colors.secondary),
+        if index.is_some() {
+            format!("{} (up to date)", index_date).with(theme.colors.success)
+        } else {
+            "Not found".to_string().with(theme.colors.error)
+        }
     );
     println!(
-        "  {} {}",
-        format!("{:<18}", "Packages:").dark_grey(),
-        format!("{} installed", packages.len()).white()
+        "   {:<18} {}",
+        "Packages:".with(theme.colors.secondary),
+        format!("{} installed", packages.len()).with(theme.colors.version)
     );
     println!(
-        "  {} {}",
-        format!("{:<18}", "Cache:").dark_grey(),
-        format!("{} ({} items)", format_size(total_size), cas_items).white()
+        "   {:<18} {}",
+        "Cache:".with(theme.colors.secondary),
+        format!(
+            "{} ({} items)",
+            apl::ui::theme::format_size(total_size),
+            cas_items
+        )
+        .with(theme.colors.version)
     );
     println!(
-        "  {} {}",
-        format!("{:<18}", "Config:").dark_grey(),
+        "   {:<18} {}",
+        "Config:".with(theme.colors.secondary),
         apl_home()
             .join("config.toml")
             .display()
             .to_string()
-            .dark_grey()
+            .with(theme.colors.secondary)
     );
 
+    // Section 2: Updates (if any)
     if !update_list.is_empty() {
         println!();
         println!(
-            "  {} {}",
-            format!("{:<18}", "Updates:").dark_grey(),
+            "   {:<18} {}",
+            "Updates:".with(theme.colors.secondary),
             format!(
-                "{} package{} have updates available",
+                "{} package{} available",
                 update_list.len(),
                 if update_list.len() == 1 { "" } else { "s" }
             )
-            .yellow()
+            .with(theme.colors.warning)
         );
 
         for (name, old, new) in update_list {
             println!(
-                "                    {} {} {} → {}",
+                "     {} {} {} → {}",
                 "└─".dark_grey(),
-                name.white(),
+                name.with(theme.colors.package_name),
                 old.dark_grey(),
-                new.green()
+                new.with(theme.colors.success)
             );
         }
     }
 
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
     println!();
     Ok(())
 }

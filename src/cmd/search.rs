@@ -15,22 +15,51 @@ pub fn search(query: &str) -> Result<()> {
 
     let results = index.search(query);
 
-    let output = apl::ui::Output::new();
+    let theme = apl::ui::Theme::default();
+    use crossterm::style::Stylize;
 
     if results.is_empty() {
-        output.info(&format!("No packages found matching '{query}'"));
+        println!();
+        println!(
+            "  {} No packages found matching '{}'",
+            theme.icons.info.blue(),
+            query.white()
+        );
+        println!();
         return Ok(());
     }
 
-    output.section(&format!("Packages matching '{query}'"));
+    println!();
+    // Header
+    println!(
+        "   {} {} {}",
+        format!("{:<width$}", "PACKAGE", width = theme.layout.name_width).dark_grey(),
+        format!("{:<width$}", "VERSION", width = theme.layout.version_width).dark_grey(),
+        "DESCRIPTION".dark_grey()
+    );
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+
+    // Rows
     for entry in results {
-        println!(
-            "  {:<14} {:<10} — {}",
-            entry.name,
+        let name = format!("{:<width$}", entry.name, width = theme.layout.name_width);
+        let version = format!(
+            "{:<width$}",
             entry.latest().version,
-            entry.description
+            width = theme.layout.version_width
+        );
+        let description = &entry.description;
+
+        println!(
+            "   {} {} {}",
+            name.with(theme.colors.package_name),
+            version.with(theme.colors.version),
+            description.clone().with(theme.colors.secondary)
         );
     }
+
+    // Footer
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+    println!();
 
     Ok(())
 }

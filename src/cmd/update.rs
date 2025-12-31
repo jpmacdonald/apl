@@ -81,17 +81,29 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     }
 
     // Show available updates (upgrade command actually installs them)
+    // Show available updates (upgrade command actually installs them)
     if !update_list.is_empty() {
-        output.info(&format!(
-            "{} package(s) can be upgraded:",
-            update_list.len()
-        ));
-        for (name, old, new) in &update_list {
-            println!("  {name}: {old} -> {new}");
-        }
-        output.info(
-            "Run 'apl upgrade' to upgrade all, or 'apl upgrade <package>' for specific ones.",
+        let theme = apl::ui::Theme::default();
+        use crossterm::style::Stylize;
+
+        println!();
+        println!(
+            "   {}",
+            format!("{} packages can be upgraded:", update_list.len()).with(theme.colors.header)
         );
+        println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+
+        for (name, old, new) in &update_list {
+            println!(
+                "   {} {} {} → {}",
+                theme.icons.info.with(theme.colors.active),
+                name.clone().with(theme.colors.package_name),
+                old.clone().dark_grey(),
+                new.clone().with(theme.colors.success)
+            );
+        }
+        println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+        output.info("Run 'apl upgrade' to apply these updates.");
     }
 
     Ok(())

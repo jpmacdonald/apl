@@ -72,11 +72,36 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
 
     // For now, show what would be upgraded
     // Full implementation would call install logic for each package
-    output.info(&format!("{} package(s) to upgrade:", to_upgrade.len()));
+    // For now, show what would be upgraded
+    // Full implementation would call install logic for each package
+    use crossterm::style::Stylize;
+    let theme = apl::ui::Theme::default();
+
+    println!();
+    println!(
+        "   {} {} {}",
+        format!("{:<width$}", "PACKAGE", width = theme.layout.name_width).dark_grey(),
+        format!("{:<width$}", "UPDATE", width = 25).dark_grey(),
+        "STATUS".dark_grey()
+    );
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+
     for (name, old, new) in &to_upgrade {
-        output.info(&format!("  {name}: {old} -> {new}"));
+        let name_col = format!("{:<width$}", name, width = theme.layout.name_width);
+        let version_col = format!("{:<width$}", format!("{} → {}", old, new), width = 25);
+
+        println!(
+            "   {} {} {}",
+            name_col.with(theme.colors.package_name),
+            version_col.with(theme.colors.version),
+            "available".with(theme.colors.warning)
+        );
     }
-    output.info("Run 'apl install <package>' to upgrade individually.");
+    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+
+    println!();
+    println!("   Run 'apl install <package>' to upgrade individually.");
+    println!();
 
     Ok(())
 }
