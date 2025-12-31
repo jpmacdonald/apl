@@ -525,6 +525,35 @@ pub async fn prepare_download_new(
             }
         }
         download_or_extract_path = extract_dir;
+
+        // Apply strip_components if needed (mostly for source builds)
+        let strip = if is_source {
+            package_def.source.strip_components
+        } else {
+            0
+        };
+
+        if strip > 0 {
+            // Find the single subdirectory
+            let mut entries = std::fs::read_dir(&download_or_extract_path)?
+                .filter_map(|e| e.ok())
+                .collect::<Vec<_>>();
+
+            // Ignore .DS_Store or hidden files
+            entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
+
+            if entries.len() == 1 && entries[0].path().is_dir() {
+                let subdir = entries[0].path();
+                // Move contents of subdir to extract_dir
+                for sub_entry in std::fs::read_dir(&subdir)? {
+                    let sub_entry = sub_entry?;
+                    let sub_path = sub_entry.path();
+                    let dest = download_or_extract_path.join(sub_entry.file_name());
+                    std::fs::rename(sub_path, dest)?;
+                }
+                std::fs::remove_dir(subdir)?;
+            }
+        }
     }
 
     Ok(Some(PreparedPackage {
