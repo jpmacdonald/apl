@@ -5,7 +5,7 @@ use apl::apl_home;
 use apl::index::PackageIndex;
 
 /// Upgrade installed packages
-pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
+pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> Result<()> {
     let index_path = apl_home().join("index.bin");
     let output = apl::ui::Output::new();
 
@@ -96,6 +96,23 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
     }
     println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
     println!();
+
+    // Ask for confirmation unless --yes flag is set
+    if !skip_confirm {
+        use std::io::{self, Write};
+        print!("Proceed with upgrade? (Y/n): ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let response = input.trim().to_lowercase();
+
+        if !response.is_empty() && response != "y" && response != "yes" {
+            output.info("Upgrade cancelled.");
+            return Ok(());
+        }
+        println!();
+    }
 
     // Extract package names and call install
     let package_names: Vec<String> = to_upgrade.iter().map(|(name, _, _)| name.clone()).collect();

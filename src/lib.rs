@@ -58,6 +58,17 @@ pub fn cache_path() -> PathBuf {
     apl_home().join("cache")
 }
 
+/// Logs directory: ~/.apl/logs
+pub fn log_dir() -> PathBuf {
+    apl_home().join("logs")
+}
+
+/// Generate a build log path for a package
+pub fn build_log_path(package: &str, version: &str) -> PathBuf {
+    let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+    log_dir().join(format!("build-{}-{}-{}.log", package, version, timestamp))
+}
+
 /// Temp path: ~/.apl/tmp (guaranteed same volume as store)
 pub fn tmp_path() -> PathBuf {
     apl_home().join("tmp")

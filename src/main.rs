@@ -98,6 +98,9 @@ enum Commands {
     Upgrade {
         /// Specific packages to upgrade (or all if empty)
         packages: Vec<String>,
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Check status of installed packages
     Status,
@@ -178,7 +181,7 @@ async fn main() -> Result<()> {
         Commands::Search { query } => cmd::search::search(&query),
         Commands::Clean => cmd::clean::clean(dry_run),
         Commands::Update { url } => cmd::update::update(&url, dry_run).await,
-        Commands::Upgrade { packages } => cmd::upgrade::upgrade(&packages, dry_run).await,
+        Commands::Upgrade { packages, yes } => cmd::upgrade::upgrade(&packages, yes, dry_run).await,
 
         Commands::Status => cmd::status::status(),
         Commands::Package { command } => match command {

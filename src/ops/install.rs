@@ -604,8 +604,16 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
             );
         }
 
+        let log_path = crate::build_log_path(&pkg.name, &pkg.version);
+
         builder
-            .build(&pkg.extracted_path, &build_spec.script, &pkg_store_path)
+            .build(
+                &pkg.extracted_path,
+                &build_spec.script,
+                &pkg_store_path,
+                false, // verbose = false (quiet by default)
+                &log_path,
+            )
             .context("Source build failed")?;
     } else {
         // Binary Install: Rename extracted dir to store

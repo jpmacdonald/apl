@@ -23,71 +23,77 @@ impl<'a> Builder<'a> {
     /// 2. Sets up environment (CC, PREFIX)
     /// 3. Runs script in /src
     /// 4. Copies `/usr/local` (or $PREFIX) from sysroot to `output_path`
-    pub fn build(&self, source_path: &Path, script: &str, output_path: &Path) -> Result<()> {
+    pub fn build(
+        &self,
+        source_path: &Path,
+        script: &str,
+        output_path: &Path,
+        verbose: bool,
+        log_path: &Path,
+    ) -> Result<()> {
         let sysroot_path = self.sysroot.path().canonicalize()?;
 
         // 1. Mount Source
         self.sysroot.mount(source_path, Path::new("src"))?;
 
         // 2. Prepare Destination in Sysroot
-        // We assume standard usage installs to /usr/local or /opt/apl
-        // Let's define prefix as /usr/local for now
         let install_rel = Path::new("usr/local");
         let install_abs = sysroot_path.join(install_rel);
         std::fs::create_dir_all(&install_abs)?;
 
         // 3. Construct Environment
-        // Use host compiler directly (Phase 1 simplification)
-        // Full sysroot isolation with copied SDK comes in Phase 2
         let cc = "clang".to_string();
         let cxx = "clang++".to_string();
 
-        // 4. Run Script
-        // We run /bin/sh from the host.
-        let status = Command::new("/bin/sh")
-            .arg("-c")
+        // 4. Ensure log directory exists
+        if let Some(parent) = log_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        // 5. Run Script
+        let mut cmd = Command::new("/bin/sh");
+        cmd.arg("-c")
             .arg(script)
             .current_dir(sysroot_path.join("src"))
             .env("CC", &cc)
             .env("CXX", &cxx)
             .env("PREFIX", &install_abs)
-            // Usually build scripts expect PREFIX to be where they write TO.
-            // If we give them "/usr/local", they write to /usr/local.
-            // But we are running on host, just changed directory.
-            // Wait, if we are NOT chrooting, "/usr/local" means THE HOST /usr/local.
-            // DANGER!
-            // We are not chrooting because we need host tools (make, git, cargo).
-            // Implementation Plan said: "--sysroot".
-            // Clonefile Sysroot is for *compile inputs*.
-            // *Install outputs* must be directed to a safe place.
-            //
-            // We must set PREFIX to the *absolute path inside the sysroot*.
-            // i.e. /tmp/apl-build-xyz/usr/local
-            .env("PREFIX", &install_abs)
-            .env("DESTDIR", "") // Explicitly empty to avoid confusion
+            .env("DESTDIR", "")
             .env("JOBS", num_cpus::get().to_string())
-            .env("OUTPUT", &install_abs) // Alias for clearer scripts
-            .status()
-            .context("Failed to execute build script")?;
+            .env("OUTPUT", &install_abs);
+
+        let status = if verbose {
+            // Stream to terminal (current behavior)
+            cmd.status().context("Failed to execute build script")?
+        } else {
+            // Redirect to log file
+            use std::process::Stdio;
+            let log_file =
+                std::fs::File::create(log_path).context("Failed to create build log file")?;
+            cmd.stdout(Stdio::from(log_file.try_clone()?))
+                .stderr(Stdio::from(log_file))
+                .status()
+                .context("Failed to execute build script")?
+        };
 
         if !status.success() {
+            if !verbose {
+                // Show last 20 lines from log
+                if let Ok(tail) = read_last_lines(log_path, 20) {
+                    eprintln!("\nBuild failed. Last 20 lines:");
+                    eprintln!("{}", tail);
+                    eprintln!("\nFull log: {}", log_path.display());
+                }
+            }
             anyhow::bail!("Build script failed with exit code: {:?}", status.code());
         }
 
-        // 5. Extract Output
-        // Copy `install_abs` to `output_path`
-        // We can use simple recursive copy or rename if on same volume?
-        // `output_path` is usually `~/.apl/store/pkg-v`.
-        // `install_abs` is `/tmp/...`.
-        // Rename might work if /tmp is same volume. MacOS /tmp is often separate?
-        // Let's use recursive copy to be safe.
-        // Actually, we can assume standardized FS moves later.
-
+        // 6. Extract Output
         if output_path.exists() {
             std::fs::remove_dir_all(output_path)?;
         }
 
-        // Rename is atomic and fast if possible.
+        // Rename is atomic and fast if possible
         if std::fs::rename(&install_abs, output_path).is_err() {
             // Fallback to copy
             copy_dir_all(&install_abs, output_path)?;
@@ -108,4 +114,18 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> 
     )
     .map_err(|e| anyhow::anyhow!("Copy failed: {e}"))?;
     Ok(())
+}
+
+/// Read the last N lines from a file
+fn read_last_lines(path: &Path, n: usize) -> Result<String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+
+    let start = lines.len().saturating_sub(n);
+    Ok(lines[start..].join("\n"))
 }
