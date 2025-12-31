@@ -226,7 +226,10 @@ pub fn extract_auto(
 
 /// Detect if a directory has a single top-level directory and strip it by moving contents up.
 pub fn strip_components(dir: &Path) -> io::Result<()> {
-    let entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+
+    // Filter out hidden files (like .DS_Store)
+    entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
 
     // If there is exactly one entry and it's a directory, move its contents up
     if entries.len() == 1 && entries[0].file_type()?.is_dir() {
@@ -307,5 +310,37 @@ mod tests {
 
         assert_eq!(files[0].relative_path.to_str(), Some("testbin"));
         assert!(files[0].absolute_path.starts_with(dest));
+    }
+
+    #[test]
+    fn test_strip_components_simple() {
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("file.txt"), "content").unwrap();
+
+        strip_components(dir.path()).unwrap();
+
+        assert!(dir.path().join("file.txt").exists());
+        assert!(!dir.path().join("nested").exists());
+    }
+
+    #[test]
+    fn test_strip_components_with_hidden_files() {
+        let dir = tempdir().unwrap();
+        let nested = dir.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("file.txt"), "content").unwrap();
+
+        // Create a hidden file (simulation of .DS_Store)
+        fs::write(dir.path().join(".DS_Store"), "junk").unwrap();
+
+        strip_components(dir.path()).unwrap();
+
+        // Should still strip because .DS_Store is ignored
+        assert!(dir.path().join("file.txt").exists());
+        assert!(!dir.path().join("nested").exists());
+        // .DS_Store should remain (or at least not prevent stripping)
+        assert!(dir.path().join(".DS_Store").exists());
     }
 }

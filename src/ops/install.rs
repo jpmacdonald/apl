@@ -71,7 +71,7 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
     if valid_names.is_empty() && !specs.is_empty() {
         // Give indicatif a moment to render failures
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        return Ok(());
+        anyhow::bail!("No valid packages found to install");
     }
 
     // Resolve dependencies for VALID packages only
@@ -268,6 +268,12 @@ pub async fn install_packages(packages: &[String], dry_run: bool, _verbose: bool
                     };
 
                     if result.is_ok() {
+                        output.done(
+                            &name,
+                            &info.package.version,
+                            "installed",
+                            Some(info.size_bytes),
+                        );
                         install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         Ok(Some(info.package.name))
                     } else {
@@ -527,32 +533,8 @@ pub async fn prepare_download_new(
         download_or_extract_path = extract_dir;
 
         // Apply strip_components if needed (mostly for source builds)
-        let strip = if is_source {
-            package_def.source.strip_components
-        } else {
-            0
-        };
-
-        if strip > 0 {
-            // Find the single subdirectory
-            let mut entries = std::fs::read_dir(&download_or_extract_path)?
-                .filter_map(|e| e.ok())
-                .collect::<Vec<_>>();
-
-            // Ignore .DS_Store or hidden files
-            entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
-
-            if entries.len() == 1 && entries[0].path().is_dir() {
-                let subdir = entries[0].path();
-                // Move contents of subdir to extract_dir
-                for sub_entry in std::fs::read_dir(&subdir)? {
-                    let sub_entry = sub_entry?;
-                    let sub_path = sub_entry.path();
-                    let dest = download_or_extract_path.join(sub_entry.file_name());
-                    std::fs::rename(sub_path, dest)?;
-                }
-                std::fs::remove_dir(subdir)?;
-            }
+        if is_source && package_def.source.strip_components > 0 {
+            crate::io::extract::strip_components(&download_or_extract_path)?;
         }
     }
 
