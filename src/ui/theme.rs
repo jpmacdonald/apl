@@ -74,7 +74,7 @@ impl Default for ColorScheme {
             success: Color::Green,
             warning: Color::Yellow,
             error: Color::Red,
-            active: Color::Cyan,
+            active: Color::Red,
             border: Color::DarkGrey,
         }
     }
@@ -93,6 +93,8 @@ pub struct Icons {
     pub error: &'static str,
     /// Warning state (⚠)
     pub warning: &'static str,
+    /// Info/Tip state (ℹ)
+    pub info: &'static str,
 }
 
 impl Default for Icons {
@@ -103,6 +105,7 @@ impl Default for Icons {
             success: "✓",
             error: "✗",
             warning: "⚠",
+            info: "ℹ",
         }
     }
 }

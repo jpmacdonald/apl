@@ -205,17 +205,17 @@ impl TableRenderer {
                     PackageState::Downloading { .. } => (
                         theme.colors.active,
                         theme.colors.package_name,
-                        theme.colors.active,
+                        theme.colors.secondary, // Neutral status text
                     ),
                     PackageState::Installing => (
-                        theme.colors.warning,
+                        theme.colors.active, // Red icon
                         theme.colors.package_name,
-                        theme.colors.warning,
+                        theme.colors.secondary, // Neutral status text
                     ),
                     PackageState::Removing => (
-                        theme.colors.error,
+                        theme.colors.active, // Red icon
                         theme.colors.package_name,
-                        theme.colors.error,
+                        theme.colors.secondary, // Neutral status text
                     ),
                     PackageState::Done { .. } => (
                         theme.colors.success,
@@ -278,8 +278,8 @@ impl TableRenderer {
         }
     }
 
-    /// Print footer separator and success message
-    pub fn print_footer(&mut self, buffer: &mut OutputBuffer, message: &str, success: bool) {
+    /// Print footer separator and message with explicit severity
+    pub fn print_footer(&mut self, buffer: &mut OutputBuffer, message: &str, severity: Severity) {
         if let Some(mut frame) = self.frame.take() {
             let _ = frame.finish();
         }
@@ -288,11 +288,24 @@ impl TableRenderer {
         println!("{}", "─".repeat(self.theme.layout.table_width).dark_grey());
         println!();
 
-        match success {
-            true => println!("{} {}", self.theme.icons.success.green(), message.green()),
-            false => println!("{} {}", self.theme.icons.warning.yellow(), message.yellow()),
+        match severity {
+            Severity::Success => {
+                println!("{} {}", self.theme.icons.success.green(), message.green())
+            }
+            Severity::Warning => {
+                println!("{} {}", self.theme.icons.warning.yellow(), message.yellow())
+            }
+            Severity::Error => println!("{} {}", self.theme.icons.error.red(), message.red()),
         }
     }
+}
+
+/// Message severity for footer
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Severity {
+    Success,
+    Warning,
+    Error,
 }
 
 impl Default for TableRenderer {

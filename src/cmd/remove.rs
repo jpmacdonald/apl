@@ -84,7 +84,7 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
 
         output.removing(&pkg, &version);
 
-        let files_to_delete: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        let files_to_delete = files;
         let pkg_name = pkg.clone();
         let version_str = version.clone();
         let output_clone = output.clone();
@@ -92,10 +92,19 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         handles.push(tokio::spawn(async move {
             let mut success = true;
             if !dry_run {
-                for file_path in files_to_delete {
-                    let path = PathBuf::from(file_path);
+                for file_record in files_to_delete {
+                    let path = PathBuf::from(&file_record.path);
                     if path.exists() {
-                        if let Err(_) = std::fs::remove_file(&path) {
+                        let is_app_bundle = file_record.blake3 == "APP_BUNDLE";
+                        let is_dir = path.is_dir();
+
+                        let result = if is_app_bundle || is_dir {
+                            std::fs::remove_dir_all(&path)
+                        } else {
+                            std::fs::remove_file(&path)
+                        };
+
+                        if result.is_err() {
                             success = false;
                         }
                     }

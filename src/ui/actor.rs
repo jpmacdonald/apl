@@ -12,7 +12,7 @@
 //! - **Testability**: Can record/replay events
 
 use super::buffer::OutputBuffer;
-use super::table::{PackageState, TableRenderer};
+use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
 use std::sync::mpsc;
 use std::thread;
@@ -162,18 +162,24 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
                 table.render_all(&mut buffer);
             }
             Ok(UiEvent::Info(msg)) => {
-                println!("  {} {}", theme.icons.pending, msg);
+                // Info might be printed while table is active?
+                // Ideally Info should also respect table boundaries or just print above?
+                // For now, let's just make sure it uses the right icon.
+                // If table is active, we probably shouldn't break the frame for simple info unless it's a footer?
+                // But normally Info is used BEFORE pipeline or AFTER.
+                // If used DURING pipeline, it will break frame.
+                println!("  {} {}", theme.icons.info, msg);
                 buffer.flush();
             }
             Ok(UiEvent::Success(msg)) => {
-                table.print_footer(&mut buffer, &msg, true);
+                table.print_footer(&mut buffer, &msg, Severity::Success);
             }
             Ok(UiEvent::Warning(msg)) => {
-                table.print_footer(&mut buffer, &msg, false);
+                table.print_footer(&mut buffer, &msg, Severity::Warning);
             }
             Ok(UiEvent::Error(msg)) => {
-                println!("{} {}", theme.icons.error, msg);
-                buffer.flush();
+                // Use table footer to ensure clean output even if table was active
+                table.print_footer(&mut buffer, &msg, Severity::Error);
             }
             Ok(UiEvent::Summary {
                 count,
@@ -187,7 +193,7 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
                     action,
                     elapsed_secs
                 );
-                table.print_footer(&mut buffer, &msg, true);
+                table.print_footer(&mut buffer, &msg, Severity::Success);
             }
             Ok(UiEvent::Shutdown) => {
                 break;

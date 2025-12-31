@@ -16,13 +16,9 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    // 1. Check animation (using standalone standalone)
-    output.info("Checking for updates...");
-
-    // Simulate check time if strictly local, but we have real network call
-    // Let's give it a minimum time so the user sees "Checking..."
-    // In a real optimized CLI we might skip this sleep, but for UX feel it's nice.
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    // 1. Check for updates
+    // removed: output.info("Checking for updates...");
+    // removed: artificial sleep
 
     let client = Client::new();
     let response = match client.get(url).send().await {
@@ -57,10 +53,9 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     // Load current index for comparison
     let current_index = PackageIndex::load(&index_path).ok();
 
-    // Stop checking animation (handled by finish_standalone)
-
     if let Some(current) = current_index {
         if current.updated_at == index.updated_at {
+            // "Index already up to date" is enough feedback
             output.success("Index already up to date");
             return Ok(());
         }

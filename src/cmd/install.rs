@@ -969,8 +969,8 @@ pub fn perform_ux_batch_checks(names: &[String], output: &Output) {
             if !which_path.is_empty()
                 && !which_path.ends_with(&expected.to_string_lossy().to_string())
             {
-                output.info(&format!("{bin_name} is shadowed by {which_path}."));
-                output.info("Run 'hash -r' or restart your terminal to use the new binary.");
+                output.warning(&format!("{bin_name} is shadowed by {which_path}."));
+                // (Info line removed per user request)
             }
         }
     }
