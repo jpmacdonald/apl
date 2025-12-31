@@ -7,10 +7,13 @@ type = "cli"
 [source]
 url = "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_darwin_arm64.tar.gz"
 blake3 = "5e7a34f0465ee0108203c14277841f15299a83a0f9afc4f0aa66488ba5ff4392"
+format = "tar.gz"
 
 [binary.arm64]
 url = "https://github.com/jesseduffield/lazygit/releases/download/v0.57.0/lazygit_0.57.0_darwin_arm64.tar.gz"
 blake3 = "5e7a34f0465ee0108203c14277841f15299a83a0f9afc4f0aa66488ba5ff4392"
+format = "tar.gz"
 
 [install]
+strategy = "link"
 bin = ["lazygit"]

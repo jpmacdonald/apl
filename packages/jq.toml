@@ -7,11 +7,15 @@ license = ""
 type = "cli"
 
 [source]
+url = "https://github.com/jqlang/jq/archive/jq-1.8.1.tar.gz"
+blake3 = "PLACEHOLDER"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 blake3 = "d7f94364d8375d9004ac8169fdbb665f61360c2bcc7cceed1d7306dc6f8958b7"
-strip_components = 0
-
-[binary]
+format = "binary"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["jq"]
 
 [hints]

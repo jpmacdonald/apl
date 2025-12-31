@@ -9,9 +9,13 @@ type = "cli"
 [source]
 url = "https://github.com/Old-Man-Programmer/tree/archive/refs/tags/2.2.1.tar.gz"
 blake3 = "3f6044615ad1e423e7a27db71f338b2e7a217e302bf3313710130762b56ad3f7"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "" # Tree is usually built from source in this registry
+blake3 = ""
+format = "binary"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["tree"]
 lib = []
 include = []

@@ -9,7 +9,13 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 /// Remove one or more packages
-pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) -> Result<()> {
+pub async fn remove(
+    packages: &[String],
+    all: bool,
+    yes: bool,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
 
     let packages_to_remove = if all {
@@ -77,9 +83,16 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
 
         // Get files for this package
         let files = db.get_package_files(&pkg)?;
-        if files.is_empty() {
+        if files.is_empty() && !force {
             output.failed(&pkg, &version, "no files tracked");
             continue;
+        }
+
+        if files.is_empty() && force {
+            output.warning(&format!(
+                "No files tracked for {}, but forcing metadata cleanup",
+                pkg
+            ));
         }
 
         output.removing(&pkg, &version);

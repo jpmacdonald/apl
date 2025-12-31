@@ -7,10 +7,13 @@ type = "app"
 [source]
 url = "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.10.6/Obsidian-1.10.6.dmg"
 blake3 = "33b678dc73294166bfb2149dd84d5b6a51cbeae1f754717eea52b9a4914d61e5"
+format = "dmg"
 
 [binary.arm64]
 url = "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.10.6/Obsidian-1.10.6.dmg"
 blake3 = "33b678dc73294166bfb2149dd84d5b6a51cbeae1f754717eea52b9a4914d61e5"
+format = "dmg"
 
 [install]
+strategy = "app"
 app = "Obsidian.app"

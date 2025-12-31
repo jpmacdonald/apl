@@ -9,9 +9,13 @@ type = "cli"
 [source]
 url = "https://github.com/starship/starship/releases/download/v1.24.2/starship-aarch64-apple-darwin.tar.gz"
 blake3 = "67c03f30cefeb63feb2456003324c68925787f363e550a1fef58ac4bf97d54d4"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "https://github.com/starship/starship/releases/download/v1.24.2/starship-aarch64-apple-darwin.tar.gz"
+blake3 = "67c03f30cefeb63feb2456003324c68925787f363e550a1fef58ac4bf97d54d4"
+format = "tar.gz"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["starship"]
 
 [hints]

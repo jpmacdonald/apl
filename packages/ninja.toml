@@ -7,14 +7,18 @@ type = "cli"
 [source]
 url = "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip"
 blake3 = "fe37342e051bd8e6e083446c620020e2cea7d935acd1a399e6f4801d31f36e1f"
+format = "zip"
 
 [binary.arm64]
 url = "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip"
 blake3 = "fe37342e051bd8e6e083446c620020e2cea7d935acd1a399e6f4801d31f36e1f"
+format = "zip"
 
 [binary.x86_64]
 url = "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-mac.zip"
 blake3 = "fe37342e051bd8e6e083446c620020e2cea7d935acd1a399e6f4801d31f36e1f"
+format = "zip"
 
 [install]
+strategy = "link"
 bin = ["ninja"]

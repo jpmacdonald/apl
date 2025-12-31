@@ -7,10 +7,13 @@ type = "cli"
 [source]
 url = "https://github.com/casey/just/releases/download/1.45.0/just-1.45.0-aarch64-apple-darwin.tar.gz"
 blake3 = "61ece874cb86d7c17a5930f9f2d3405a277907faabddc7dae6e0342191c1af0c"
+format = "tar.gz"
 
 [binary.arm64]
 url = "https://github.com/casey/just/releases/download/1.45.0/just-1.45.0-aarch64-apple-darwin.tar.gz"
 blake3 = "61ece874cb86d7c17a5930f9f2d3405a277907faabddc7dae6e0342191c1af0c"
+format = "tar.gz"
 
 [install]
+strategy = "link"
 bin = ["just"]

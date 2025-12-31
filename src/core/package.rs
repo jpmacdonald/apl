@@ -27,6 +27,32 @@ pub enum PackageType {
     App,
 }
 
+/// Artifact format
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtifactFormat {
+    #[serde(rename = "tar.gz")]
+    TarGz,
+    #[serde(rename = "tar.zst")]
+    TarZst,
+    Tar,
+    Zip,
+    Dmg,
+    Pkg,
+    Binary,
+}
+
+/// Installation strategy
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallStrategy {
+    #[default]
+    Link,
+    App,
+    Pkg,
+    Script,
+}
+
 /// Package metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
@@ -48,6 +74,7 @@ pub struct PackageInfo {
 pub struct Source {
     pub url: String,
     pub blake3: String,
+    pub format: ArtifactFormat,
     #[serde(default)]
     pub strip_components: u32,
 }
@@ -57,6 +84,7 @@ pub struct Source {
 pub struct Binary {
     pub url: String,
     pub blake3: String,
+    pub format: ArtifactFormat,
     /// Target architecture: "arm64" or "x86_64"
     #[serde(default = "default_arch")]
     pub arch: String,
@@ -117,6 +145,9 @@ pub struct BuildSpec {
 /// Installation specification
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InstallSpec {
+    /// Installation strategy
+    #[serde(default)]
+    pub strategy: InstallStrategy,
     /// Files to install to bin/
     #[serde(default)]
     pub bin: Vec<String>,
@@ -191,15 +222,18 @@ license = "Apache-2.0"
 [source]
 url = "https://github.com/neovim/neovim/archive/v0.10.0.tar.gz"
 blake3 = "abc123def456"
+format = "tar.gz"
 
 [binary.arm64]
 url = "https://cdn.example.com/neovim-0.10.0-arm64.tar.zst"
 blake3 = "binary123"
+format = "tar.zst"
 macos = "14.0"
 
 [binary.x86_64]
 url = "https://cdn.example.com/neovim-0.10.0-x86_64.tar.zst"
 blake3 = "binary456"
+format = "tar.zst"
 macos = "12.0"
 
 [dependencies]
@@ -207,6 +241,7 @@ runtime = ["libuv", "msgpack", "tree-sitter"]
 build = ["cmake", "ninja"]
 
 [install]
+strategy = "link"
 bin = ["nvim"]
 "#;
 

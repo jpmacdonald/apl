@@ -8,7 +8,7 @@ use crate::core::relinker::Relinker;
 use crate::core::version::PackageSpec;
 use crate::db::StateDb;
 use crate::io::dmg;
-use crate::package::{Package, PackageInfo, PackageType};
+use crate::package::{ArtifactFormat, InstallStrategy, Package, PackageInfo, PackageType};
 use crate::ui::Output;
 use crate::{apl_home, bin_path, store_path};
 
@@ -331,7 +331,7 @@ pub async fn prepare_download_new(
     index: Option<&crate::index::PackageIndex>,
     output: &Output,
 ) -> Result<Option<PreparedPackage>> {
-    use crate::package::{Binary, Dependencies, Hints, InstallSpec, PackageInfo, Source};
+    use crate::package::{Binary, Dependencies, Hints, InstallSpec, Source};
 
     let package_path = PathBuf::from(pkg_name);
 
@@ -396,6 +396,7 @@ pub async fn prepare_download_new(
                 Binary {
                     url: url.clone(),
                     blake3: hash.clone(),
+                    format: ArtifactFormat::Binary, // Default for resolved index entries if unknown, but usually from index
                     arch: current_arch.to_string(),
                     macos: "14.0".to_string(),
                 },
@@ -418,12 +419,14 @@ pub async fn prepare_download_new(
                 Source {
                     url: url.clone(),
                     blake3: hash.clone(),
-                    strip_components: 1, // Assume standard tarballs
+                    format: ArtifactFormat::TarGz, // Assume tar.gz for source builds by default
+                    strip_components: 1,           // Assume standard tarballs
                 }
             } else {
                 Source {
                     url: String::new(),
                     blake3: String::new(),
+                    format: ArtifactFormat::Binary,
                     strip_components: 0,
                 }
             },
@@ -434,6 +437,11 @@ pub async fn prepare_download_new(
                 optional: vec![],
             },
             install: InstallSpec {
+                strategy: if entry.type_ == "app" {
+                    InstallStrategy::App
+                } else {
+                    InstallStrategy::Link
+                },
                 bin: if release.bin.is_empty() {
                     vec![entry.name.clone()]
                 } else {
@@ -474,13 +482,42 @@ pub async fn prepare_download_new(
     // Determine artifact filename from URL
     let url_filename = binary_url.split('/').next_back().unwrap_or("download");
 
-    // Check type
-    let is_app = package_def.package.type_ == PackageType::App;
+    // Determine format from package definition - MANDATORY
+    let pkg_format = if is_source {
+        package_def.source.format.clone()
+    } else {
+        package_def
+            .binary_for_current_arch()
+            .map(|b| b.format.clone())
+            .context(format!(
+                "No binary defined for current architecture in package '{}'",
+                pkg_name
+            ))?
+    };
+
+    let archive_format = match pkg_format {
+        ArtifactFormat::TarGz => crate::io::extract::ArchiveFormat::TarGz,
+        ArtifactFormat::TarZst => crate::io::extract::ArchiveFormat::TarZst,
+        ArtifactFormat::Tar => crate::io::extract::ArchiveFormat::Tar,
+        ArtifactFormat::Zip => crate::io::extract::ArchiveFormat::Zip,
+        ArtifactFormat::Dmg => crate::io::extract::ArchiveFormat::RawBinary, // DMG is treated as file download
+        ArtifactFormat::Pkg => crate::io::extract::ArchiveFormat::RawBinary, // Pkg is treated as file download
+        ArtifactFormat::Binary => crate::io::extract::ArchiveFormat::RawBinary,
+    };
+
+    // Check type - MUST use strategy
+    let strategy = package_def.install.strategy.clone();
+    let is_app = strategy == InstallStrategy::App;
+
+    let is_dmg = archive_format == crate::io::extract::ArchiveFormat::RawBinary
+        && (pkg_format == ArtifactFormat::Dmg || binary_url.to_lowercase().ends_with(".dmg"));
 
     let download_or_extract_path: PathBuf;
 
-    if is_app {
-        // Legacy File Download for Apps/DMGs
+    if (is_app || package_def.install.strategy == InstallStrategy::Pkg)
+        && (is_dmg || binary_url.to_lowercase().ends_with(".pkg"))
+    {
+        // App in a DMG: Download file directly (will be mounted later)
         let dest_file = temp_dir.path().join(url_filename);
 
         match crate::io::download::download_and_verify_mp(
@@ -502,7 +539,7 @@ pub async fn prepare_download_new(
         }
         download_or_extract_path = dest_file;
     } else {
-        // Pipelined Download & Extract for CLI
+        // CLI or App in Zip/Tar: Use Pipelined Download & Extract
         let cache_file = crate::cache_path().join(&binary_hash);
         // Create cache dir if missing
         if let Some(p) = cache_file.parent() {
@@ -566,14 +603,16 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
         .as_ref()
         .expect("Package definition must be set in PreparedPackage");
 
+    let strategy = package_def.install.strategy.clone();
     let is_app = (package_def.package.type_ == PackageType::App)
+        || (strategy == InstallStrategy::App)
         || pkg
             .extracted_path
             .to_string_lossy()
             .to_lowercase()
             .ends_with(".dmg");
 
-    if is_app {
+    if is_app || strategy == InstallStrategy::Pkg {
         return perform_app_install(pkg);
     }
 

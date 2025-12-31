@@ -7,10 +7,13 @@ type = "cli"
 [source]
 url = "https://github.com/neovim/neovim/releases/download/v0.11.5/nvim-macos-arm64.tar.gz"
 blake3 = "21c039e4cf3ba8163204116799e42f0b7dce9087fa14bfe919cae4e84d1542c8"
+format = "tar.gz"
 
 [binary.arm64]
 url = "https://github.com/neovim/neovim/releases/download/v0.11.5/nvim-macos-arm64.tar.gz"
 blake3 = "21c039e4cf3ba8163204116799e42f0b7dce9087fa14bfe919cae4e84d1542c8"
+format = "tar.gz"
 
 [install]
+strategy = "link"
 bin = ["bin/nvim:nvim"]

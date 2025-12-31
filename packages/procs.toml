@@ -7,11 +7,15 @@ license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/dalance/procs/releases/download/v0.14.10/procs-v0.14.10-aarch64-mac.zip"
-blake3 = "4215cb2f2620f7c0658b644e9afbd844c32cd14593c38938167ba65f8fb19acb"
+url = "https://github.com/dalance/procs/archive/v0.14.10.tar.gz"
+blake3 = "PLACEHOLDER"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "https://github.com/dalance/procs/releases/download/v0.14.10/procs-v0.14.10-aarch64-mac.zip"
+blake3 = "4215cb2f2620f7c0658b644e9afbd844c32cd14593c38938167ba65f8fb19acb"
+format = "zip"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["procs"]
 
 [hints]

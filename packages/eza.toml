@@ -9,9 +9,13 @@ type = "cli"
 [source]
 url = "https://github.com/eza-community/eza/releases/download/v0.23.4/eza_aarch64-unknown-linux-gnu.tar.gz"
 blake3 = "5299fa2c95b289c7f19af936b94b90e122f6dbb89e43e83a25cebc5cf2298c54"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "https://github.com/eza-community/eza/releases/download/v0.23.4/eza_aarch64-unknown-linux-gnu.tar.gz"
+blake3 = "5299fa2c95b289c7f19af936b94b90e122f6dbb89e43e83a25cebc5cf2298c54"
+format = "tar.gz"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["eza"]
 
 [hints]

@@ -19,20 +19,25 @@ name = "{name}"
 version = "0.1.0"
 description = ""
 homepage = ""
+type = "cli"
 
 [source]
 url = "https://github.com/OWNER/{name}/archive/refs/tags/v0.1.0.tar.gz"
 blake3 = "PLACEHOLDER"
+format = "tar.gz"
 
 [binary.arm64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-arm64.tar.gz"
 blake3 = "PLACEHOLDER"
+format = "tar.gz"
 
 [binary.x86_64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-x86_64.tar.gz"
 blake3 = "PLACEHOLDER"
+format = "tar.gz"
 
 [install]
+strategy = "link"
 bin = ["{name}"]
 
 [dependencies]
@@ -111,6 +116,7 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
                 arch: arch.to_string(),
                 url: url.to_string(),
                 blake3: hash.clone(),
+                format: apl::package::ArtifactFormat::Binary,
                 macos: "11.0".to_string(),
             },
         );

@@ -9,9 +9,13 @@ type = "cli"
 [source]
 url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64.tar.gz"
 blake3 = "e6b500707fe7476ee2eabfd8f92baea981d481a117e17f1736a0958c6a774710"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64.tar.gz"
+blake3 = "e6b500707fe7476ee2eabfd8f92baea981d481a117e17f1736a0958c6a774710"
+format = "tar.gz"
 
 [dependencies]
 runtime = []
@@ -19,6 +23,7 @@ build = []
 optional = []
 
 [install]
+strategy = "link"
 bin = ["yq"]
 
 [hints]

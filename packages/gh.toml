@@ -1,17 +1,21 @@
 [package]
-name = "cli"
+name = "gh"
 version = "2.83.2"
-description = ""
+description = "GitHub CLI"
 homepage = "https://github.com/cli/cli"
 license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_macOS_arm64.zip"
-blake3 = "7822d101eed0c4655f55ea502b4993626829c90edb99ba32ae6d9c51411757b0"
+url = "https://github.com/cli/cli/archive/v2.83.2.tar.gz"
+blake3 = "PLACEHOLDER"
+format = "tar.gz"
 strip_components = 1
 
-[binary]
+[binary.arm64]
+url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_macOS_arm64.zip"
+blake3 = "7822d101eed0c4655f55ea502b4993626829c90edb99ba32ae6d9c51411757b0"
+format = "zip"
 
 [dependencies]
 runtime = []
@@ -19,7 +23,8 @@ build = []
 optional = []
 
 [install]
-bin = ["cli"]
+strategy = "link"
+bin = ["gh"]
 
 [hints]
 post_install = ""

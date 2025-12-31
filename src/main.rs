@@ -46,6 +46,9 @@ enum Commands {
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
         yes: bool,
+        /// Force removal of package metadata even if files are missing
+        #[arg(long, short = 'f')]
+        force: bool,
     },
     /// Switch active version of a package
     Use {
@@ -168,9 +171,12 @@ async fn main() -> Result<()> {
         Commands::Install { packages, verbose } => {
             cmd::install::install(&packages, dry_run, verbose).await
         }
-        Commands::Remove { packages, all, yes } => {
-            cmd::remove::remove(&packages, all, yes, dry_run).await
-        }
+        Commands::Remove {
+            packages,
+            all,
+            yes,
+            force,
+        } => cmd::remove::remove(&packages, all, yes, force, dry_run).await,
         Commands::Use { spec } => cmd::r#use::use_package(&spec, dry_run),
         Commands::History { package } => cmd::history::history(&package),
         Commands::Rollback { package } => cmd::rollback::rollback(&package, dry_run).await,
