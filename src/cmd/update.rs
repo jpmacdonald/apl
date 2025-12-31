@@ -74,7 +74,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     for pkg in &packages {
         if let Some(entry) = index.find(&pkg.name) {
             let latest = entry.latest().version.clone();
-            if latest != pkg.version {
+            if apl::core::version::is_newer(&pkg.version, &latest) {
                 update_list.push((pkg.name.clone(), pkg.version.clone(), latest));
             }
         }

@@ -22,7 +22,7 @@ jobs:
       - name: Update Packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo run --release --bin update_packages
+        run: cargo run --release --bin apl-pkg -- update
         
       - name: Commit changes
         run: |

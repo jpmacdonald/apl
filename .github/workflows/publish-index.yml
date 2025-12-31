@@ -23,7 +23,7 @@ jobs:
         run: cargo build --release --bins
       
       - name: Generate index
-        run: cargo run --release --bin update_packages
+        run: cargo run --release --bin apl-pkg -- index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       

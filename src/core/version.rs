@@ -54,6 +54,28 @@ impl PackageSpec {
     }
 }
 
+/// Compare two semantic versions. Returns true if `latest` is newer than `current`.
+/// Handles simple numeric comparison (e.g. 1.2.3 > 1.2.2).
+pub fn is_newer(current: &str, latest: &str) -> bool {
+    let parse =
+        |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse::<u32>().ok()).collect() };
+
+    let c_parts = parse(current);
+    let l_parts = parse(latest);
+
+    for i in 0..std::cmp::max(c_parts.len(), l_parts.len()) {
+        let cv = c_parts.get(i).unwrap_or(&0);
+        let lv = l_parts.get(i).unwrap_or(&0);
+        if lv > cv {
+            return true;
+        }
+        if cv > lv {
+            return false;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +126,17 @@ mod tests {
 
         let spec2 = PackageSpec::parse("jq").unwrap();
         assert_eq!(spec2.version(), None);
+    }
+
+    #[test]
+    fn test_is_newer() {
+        assert!(is_newer("1.2.3", "1.2.4"));
+        assert!(is_newer("1.2.3", "1.3.0"));
+        assert!(is_newer("1.2.3", "2.0.0"));
+        assert!(is_newer("0.10.4", "0.11.5"));
+        assert!(!is_newer("1.2.3", "1.2.3"));
+        assert!(!is_newer("1.2.3", "1.2.2"));
+        assert!(!is_newer("1.2.3", "1.1.5"));
+        assert!(!is_newer("1.11.5", "1.10.4"));
     }
 }
