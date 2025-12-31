@@ -70,10 +70,7 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    // For now, show what would be upgraded
-    // Full implementation would call install logic for each package
-    // For now, show what would be upgraded
-    // Full implementation would call install logic for each package
+    // Actually perform the upgrades by calling install
     use crossterm::style::Stylize;
     let theme = apl::ui::Theme::default();
 
@@ -94,14 +91,17 @@ pub async fn upgrade(packages: &[String], dry_run: bool) -> Result<()> {
             "   {} {} {}",
             name_col.with(theme.colors.package_name),
             version_col.with(theme.colors.version),
-            "available".with(theme.colors.warning)
+            "pending".with(theme.colors.warning)
         );
     }
     println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+    println!();
 
-    println!();
-    println!("   Run 'apl install <package>' to upgrade individually.");
-    println!();
+    // Extract package names and call install
+    let package_names: Vec<String> = to_upgrade.iter().map(|(name, _, _)| name.clone()).collect();
+
+    // Call the install command to actually perform the upgrades
+    crate::cmd::install::install(&package_names, false, false).await?;
 
     Ok(())
 }
