@@ -9,7 +9,7 @@ pub fn lock(dry_run: bool, silent: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
     let packages = db.list_packages()?;
 
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
 
     if packages.is_empty() && !silent {
         output.info("No packages installed. generating empty lockfile.");

@@ -98,10 +98,13 @@ impl<'a> Builder<'a> {
 }
 
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> {
+    // fs_extra is robust for recursive directory copying
     fs_extra::dir::copy(
         src,
         dst,
-        &fs_extra::dir::CopyOptions::new().content_only(true),
+        &fs_extra::dir::CopyOptions::new()
+            .content_only(true)
+            .overwrite(true),
     )
     .map_err(|e| anyhow::anyhow!("Copy failed: {e}"))?;
     Ok(())

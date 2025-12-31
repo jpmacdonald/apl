@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2024"
 description = "apl - A Package Layer for macOS"
 license = "MIT"
-repository = "https://github.com/jpmacdonald/distill"
+repository = "https://github.com/jpmacdonald/apl"
 
 [dependencies]
 # Hashing

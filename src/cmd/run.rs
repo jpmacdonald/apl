@@ -5,19 +5,19 @@ use reqwest::Client;
 
 use crate::cmd::install::prepare_download_new;
 use apl::apl_home;
-use apl::io::output::CliOutput;
+use apl::ui::Output;
 
 /// Run a package transiently without global installation
 pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> {
     let client = Client::new();
 
     // 1. Resolve and download
-    let output = CliOutput::new();
+    let output = Output::new();
     let index_path = apl_home().join("index.bin");
     let index = apl::index::PackageIndex::load(&index_path).ok();
 
     // Add package to progress tracker
-    output.add_package(pkg_name, "");
+    // Removed: output.add_package(pkg_name, "");
 
     let prepared = prepare_download_new(
         &client,

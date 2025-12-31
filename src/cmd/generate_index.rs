@@ -20,7 +20,7 @@ pub fn generate_index(packages_dir: &Path, output: &Path) -> Result<()> {
         anyhow::bail!("Packages directory not found: {}", packages_dir.display());
     }
 
-    let output_ui = apl::io::output::CliOutput::new();
+    let output_ui = apl::ui::Output::new();
 
     for entry in std::fs::read_dir(packages_dir)? {
         let entry = entry?;
@@ -77,7 +77,7 @@ pub fn generate_index(packages_dir: &Path, output: &Path) -> Result<()> {
         }
     }
 
-    index.save(output)?;
+    index.save_compressed(output)?;
     output_ui.success(&format!(
         "Generated {} with {} packages",
         output.display(),

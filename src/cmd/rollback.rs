@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, bail};
 use apl::db::StateDb;
-// use apl::io::output::CliOutput; // Not needed if switch handles output
+// use apl::ui::Output; // Not needed if switch handles output
 
 /// Rollback a package to its previous state
 pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {

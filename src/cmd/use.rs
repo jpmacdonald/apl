@@ -3,7 +3,7 @@
 use anyhow::{Context, Result, bail};
 use apl::core::version::PackageSpec;
 use apl::db::StateDb;
-use apl::io::output::CliOutput;
+use apl::ui::Output;
 use apl::{bin_path, store_path};
 
 /// Switch the active version of a package (CLI Entry Point)
@@ -100,7 +100,7 @@ pub fn use_version(name: &str, version: &str, dry_run: bool) -> Result<()> {
             db.install_package(&p.name, &p.version, &p.blake3)?;
             db.add_history(&p.name, "switch", None, Some(&p.version), true)?;
 
-            let output = CliOutput::new();
+            let output = Output::new();
             output.done(&p.name, &p.version, "switched", None);
         }
         None => {

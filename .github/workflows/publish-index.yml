@@ -1,0 +1,33 @@
+name: Publish Index
+
+on:
+  push:
+    paths:
+      - 'packages/**'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Build apl
+        run: cargo build --release
+      
+      - name: Generate index
+        run: ./target/release/apl generate-index packages/ -o index.bin
+      
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: index
+          files: index.bin
+          body: "Package index - auto-updated"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

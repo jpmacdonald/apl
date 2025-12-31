@@ -151,6 +151,14 @@ impl PackageIndex {
         Ok(())
     }
 
+    /// Save index as a ZSTD-compressed postcard file (for distribution)
+    pub fn save_compressed(&self, path: &Path) -> Result<(), IndexError> {
+        let buf = postcard::to_allocvec(self)?;
+        let compressed = zstd::encode_all(&buf[..], 3)?;
+        fs::write(path, &compressed)?;
+        Ok(())
+    }
+
     /// Serialize to bytes (for network transfer)
     pub fn to_bytes(&self) -> Result<Vec<u8>, IndexError> {
         Ok(postcard::to_allocvec(self)?)

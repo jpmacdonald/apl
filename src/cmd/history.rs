@@ -9,7 +9,7 @@ pub fn history(pkg_name: &str) -> Result<()> {
 
     let history = db.get_history(pkg_name)?;
 
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
 
     if history.is_empty() {
         output.info(&format!("No history found for '{pkg_name}'"));

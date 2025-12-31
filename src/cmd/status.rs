@@ -63,7 +63,7 @@ pub fn status() -> Result<()> {
     }
 
     // --- RENDER ---
-    use apl::io::output::format_size;
+    use apl::ui::theme::format_size;
     use crossterm::style::Stylize;
 
     println!();

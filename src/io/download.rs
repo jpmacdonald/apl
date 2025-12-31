@@ -13,7 +13,7 @@ use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
-use crate::io::output::CliOutput;
+use crate::ui::Output;
 
 #[derive(Error, Debug)]
 pub enum DownloadError {
@@ -31,10 +31,11 @@ pub enum DownloadError {
 pub async fn download_and_verify_mp(
     client: &Client,
     pkg_name: &str,
+    version: &str,
     url: &str,
     dest: &Path,
     expected_hash: &str,
-    output: &CliOutput,
+    output: &Output,
 ) -> Result<String, DownloadError> {
     let user_agent = format!("apl/{}", env!("CARGO_PKG_VERSION"));
 
@@ -52,17 +53,18 @@ pub async fn download_and_verify_mp(
         .unwrap_or(false);
 
     // Set the total bytes for progress display
-    output.set_downloading(pkg_name, "", total_size);
+    output.downloading(pkg_name, version, 0, total_size);
 
     if total_size > 10 * 1024 * 1024 && accept_ranges {
         return download_chunked(
             client,
             pkg_name,
+            version,
             url,
             dest,
             expected_hash,
             total_size,
-            output,
+            Some(output),
             &user_agent,
         )
         .await;
@@ -85,14 +87,14 @@ pub async fn download_and_verify_mp(
         file.write_all(&chunk).await?;
         hasher.write_all(&chunk)?;
         downloaded += chunk.len() as u64;
-        output.update_download(pkg_name, downloaded);
+        output.downloading(pkg_name, version, downloaded, total_size);
     }
 
     file.flush().await?;
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != expected_hash {
-        output.fail(pkg_name, &format_size(downloaded), "hash mismatch");
+        output.failed(pkg_name, &format_size(downloaded), "hash mismatch");
         tokio::fs::remove_file(dest).await.ok();
         return Err(DownloadError::HashMismatch {
             expected: expected_hash.to_string(),
@@ -126,8 +128,18 @@ pub async fn download_and_verify_simple(
         .unwrap_or(false);
 
     if total_size > 10 * 1024 * 1024 && accept_ranges {
-        return download_chunked_simple(client, url, dest, expected_hash, total_size, &user_agent)
-            .await;
+        return download_chunked(
+            client,
+            "",
+            "",
+            url,
+            dest,
+            expected_hash,
+            total_size,
+            None,
+            &user_agent,
+        )
+        .await;
     }
 
     let response = client
@@ -172,14 +184,16 @@ pub async fn download_and_verify(
 }
 
 /// Download a file in chunks parallelly
+/// Download a file in chunks parallelly
 async fn download_chunked(
     client: &Client,
     pkg_name: &str,
+    version: &str,
     url: &str,
     dest: &Path,
     expected_hash: &str,
     total_size: u64,
-    output: &CliOutput,
+    output: Option<&Output>,
     user_agent: &str,
 ) -> Result<String, DownloadError> {
     let chunk_count = if total_size > 50 * 1024 * 1024 { 16 } else { 8 };
@@ -200,10 +214,12 @@ async fn download_chunked(
         let client = client.clone();
         let url = url.to_string();
         let dest = dest.to_path_buf();
-        let output = output.clone();
+        let output = output.cloned(); // Option<Output> is cheap to clone if Output is Arc-like, but Output contains sender.
+        // Sender is cloneable.
         let downloaded = downloaded.clone();
         let user_agent_owned = user_agent.to_string();
         let pkg_name = pkg_name.to_string();
+        let version = version.to_string();
 
         handles.push(tokio::spawn(async move {
             let resp = client
@@ -237,94 +253,11 @@ async fn download_chunked(
                     .await
                     .map_err(|_| std::io::Error::other("Channel closed"))?;
 
-                let mut d = downloaded.lock().await;
-                *d += len;
-                output.update_download(&pkg_name, *d);
-            }
-            drop(tx);
-
-            write_handle.await.map_err(std::io::Error::other)??;
-            Ok::<(), DownloadError>(())
-        }));
-    }
-
-    for handle in handles {
-        handle.await.map_err(std::io::Error::other)??;
-    }
-
-    let mut hasher = Hasher::new();
-    let mut file = std::fs::File::open(dest)?;
-    std::io::copy(&mut file, &mut hasher)?;
-    let actual_hash = hasher.finalize().to_hex().to_string();
-
-    if actual_hash != expected_hash {
-        output.fail(pkg_name, &format_size(total_size), "hash mismatch");
-        let _ = tokio::fs::remove_file(dest).await;
-        return Err(DownloadError::HashMismatch {
-            expected: expected_hash.to_string(),
-            actual: actual_hash,
-        });
-    }
-
-    Ok(actual_hash)
-}
-
-/// Download a file in chunks parallelly (no progress bar)
-async fn download_chunked_simple(
-    client: &Client,
-    url: &str,
-    dest: &Path,
-    expected_hash: &str,
-    total_size: u64,
-    user_agent: &str,
-) -> Result<String, DownloadError> {
-    let chunk_count = if total_size > 50 * 1024 * 1024 { 16 } else { 8 };
-    let chunk_size = total_size.div_ceil(chunk_count);
-    let mut handles = Vec::new();
-
-    {
-        let file = std::fs::File::create(dest)?;
-        file.set_len(total_size)?;
-    }
-
-    for i in 0..chunk_count {
-        let start = i * chunk_size;
-        let end = std::cmp::min(start + chunk_size - 1, total_size - 1);
-
-        let client = client.clone();
-        let url = url.to_string();
-        let dest = dest.to_path_buf();
-        let user_agent_owned = user_agent.to_string();
-
-        handles.push(tokio::spawn(async move {
-            let resp = client
-                .get(&url)
-                .header(reqwest::header::USER_AGENT, &user_agent_owned)
-                .header(reqwest::header::RANGE, format!("bytes={start}-{end}"))
-                .send()
-                .await?
-                .error_for_status()?;
-
-            let mut body = resp.bytes_stream();
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(32);
-
-            let write_handle = tokio::task::spawn_blocking(move || {
-                use std::io::{Seek, SeekFrom, Write};
-                let mut file = std::fs::OpenOptions::new().write(true).open(&dest)?;
-                file.seek(SeekFrom::Start(start))?;
-
-                while let Some(chunk) = rx.blocking_recv() {
-                    file.write_all(&chunk)?;
+                if let Some(out) = &output {
+                    let mut d = downloaded.lock().await;
+                    *d += len;
+                    out.downloading(&pkg_name, &version, *d, total_size);
                 }
-                file.flush()?;
-                Ok::<(), std::io::Error>(())
-            });
-
-            while let Some(chunk) = body.next().await {
-                let chunk = chunk?;
-                tx.send(chunk)
-                    .await
-                    .map_err(|_| std::io::Error::other("Channel closed"))?;
             }
             drop(tx);
 
@@ -343,6 +276,11 @@ async fn download_chunked_simple(
     let actual_hash = hasher.finalize().to_hex().to_string();
 
     if actual_hash != expected_hash {
+        if let Some(out) = output {
+            // We can't access total_size easily if we don't have downloaded count lock here?
+            // But we have total_size arg.
+            out.failed(pkg_name, &format_size(total_size), "hash mismatch");
+        }
         let _ = tokio::fs::remove_file(dest).await;
         return Err(DownloadError::HashMismatch {
             expected: expected_hash.to_string(),
@@ -379,11 +317,12 @@ fn format_size(bytes: u64) -> String {
 pub async fn download_and_extract(
     client: &Client,
     pkg_name: &str,
+    version: &str,
     url: &str,
     cache_dest: &Path,
     extract_dest: &Path,
     expected_hash: &str,
-    output: &CliOutput,
+    output: &Output,
 ) -> Result<String, DownloadError> {
     use async_compression::tokio::bufread::ZstdDecoder;
     use tokio_tar::Archive;
@@ -400,7 +339,7 @@ pub async fn download_and_extract(
     let total_size = head_resp.content_length().unwrap_or(0);
     // Note: We ignore accept_ranges for pipelined extraction, we prefer sequential stream
 
-    output.set_downloading(pkg_name, "", total_size);
+    output.downloading(pkg_name, version, 0, total_size);
 
     let response = client
         .get(url)
@@ -422,46 +361,29 @@ pub async fn download_and_extract(
     let stream_reader = StreamReader::new(tokio_stream::wrappers::ReceiverStream::new(rx));
 
     // Detect compression format from URL
-    let is_gzip = url.ends_with(".tar.gz") || url.ends_with(".tgz");
-    let is_zip = url.ends_with(".zip");
+    let format = crate::io::extract::detect_format(Path::new(url));
+    let is_gzip = format == crate::io::extract::ArchiveFormat::TarGz;
+    let is_zip = format == crate::io::extract::ArchiveFormat::Zip;
+    let is_raw = format == crate::io::extract::ArchiveFormat::RawBinary;
 
-    // For zip files, we can't pipeline - download first, then extract
-    if is_zip {
-        drop(tx); // Don't use pipelined extraction for zip
-
-        // Standard download loop
-        while let Some(chunk_res) = stream.next().await {
-            let chunk = chunk_res?;
-            file.write_all(&chunk).await?;
-            hasher.write_all(&chunk)?;
-            downloaded += chunk.len() as u64;
-            output.update_download(pkg_name, downloaded);
-        }
-        file.flush().await?;
-
-        let actual_hash = hasher.finalize().to_hex().to_string();
-        if actual_hash != expected_hash {
-            output.fail(pkg_name, &format_size(downloaded), "hash mismatch");
-            tokio::fs::remove_file(cache_dest).await.ok();
-            return Err(DownloadError::HashMismatch {
-                expected: expected_hash.to_string(),
-                actual: actual_hash,
-            });
-        }
-
-        // Sync zip extraction
-        let cache_path = cache_dest.to_path_buf();
-        let extract_path = extract_dest.to_path_buf();
-        tokio::task::spawn_blocking(move || {
-            let file = std::fs::File::open(&cache_path)?;
-            let mut archive = zip::ZipArchive::new(file)?;
-            archive.extract(&extract_path)?;
-            Ok::<(), std::io::Error>(())
-        })
-        .await
-        .map_err(std::io::Error::other)??;
-
-        return Ok(actual_hash);
+    // If simple download is sufficient (zip/raw), just run that
+    if is_zip || is_raw {
+        drop(tx);
+        return run_simple_download(
+            stream,
+            file,
+            hasher,
+            pkg_name,
+            version,
+            total_size,
+            output,
+            expected_hash,
+            cache_dest,
+            extract_dest,
+            is_zip,
+            is_raw,
+        )
+        .await;
     }
 
     // Spawn Extractor Task (for tar archives)
@@ -489,11 +411,10 @@ pub async fn download_and_extract(
         hasher.write_all(&chunk)?;
 
         downloaded += chunk.len() as u64;
-        output.update_download(pkg_name, downloaded);
+        output.downloading(pkg_name, "", downloaded, total_size);
 
         // Pipe to Extractor (Clone bytes is cheap, it's Arc)
         if tx.send(Ok(chunk)).await.is_err() {
-            // Receiver dropped (Extractor failed?), stop downloading
             return Err(
                 std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Extractor died").into(),
             );
@@ -504,11 +425,9 @@ pub async fn download_and_extract(
     file.flush().await?;
     let actual_hash = hasher.finalize().to_hex().to_string();
 
-    // Verify Hash FIRST
     if actual_hash != expected_hash {
-        output.fail(pkg_name, &format_size(downloaded), "hash mismatch");
+        output.failed(pkg_name, &format_size(downloaded), "hash mismatch");
         tokio::fs::remove_file(cache_dest).await.ok();
-        // Also clean up partial extraction? Install caller handles temp dir cleanup.
         return Err(DownloadError::HashMismatch {
             expected: expected_hash.to_string(),
             actual: actual_hash,
@@ -519,10 +438,72 @@ pub async fn download_and_extract(
     match extractor_handle.await {
         Ok(Ok(_)) => Ok(actual_hash),
         Ok(Err(e)) => Err(DownloadError::Io(e)),
-        Err(e) => Err(DownloadError::Io(std::io::Error::other(
-            e,
-        ))),
+        Err(e) => Err(DownloadError::Io(std::io::Error::other(e))),
     }
+}
+
+async fn run_simple_download(
+    mut stream: impl Unpin + futures::Stream<Item = reqwest::Result<bytes::Bytes>>,
+    mut file: File,
+    mut hasher: Hasher,
+    pkg_name: &str,
+    version: &str,
+    total_size: u64,
+    output: &Output,
+    expected_hash: &str,
+    cache_dest: &Path,
+    extract_dest: &Path,
+    is_zip: bool,
+    is_raw: bool,
+) -> Result<String, DownloadError> {
+    let mut downloaded = 0;
+    while let Some(chunk_res) = stream.next().await {
+        let chunk = chunk_res?;
+        file.write_all(&chunk).await?;
+        hasher.write_all(&chunk)?;
+        downloaded += chunk.len() as u64;
+        output.downloading(pkg_name, version, downloaded, total_size);
+    }
+    file.flush().await?;
+
+    let actual_hash = hasher.finalize().to_hex().to_string();
+    if actual_hash != expected_hash {
+        output.failed(pkg_name, &format_size(downloaded), "hash mismatch");
+        tokio::fs::remove_file(cache_dest).await.ok();
+        return Err(DownloadError::HashMismatch {
+            expected: expected_hash.to_string(),
+            actual: actual_hash,
+        });
+    }
+
+    if is_zip {
+        // Sync zip extraction
+        let cache_path = cache_dest.to_path_buf();
+        let extract_path = extract_dest.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let file = std::fs::File::open(&cache_path)?;
+            let mut archive = zip::ZipArchive::new(file)?;
+            archive.extract(&extract_path)?;
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(std::io::Error::other)??;
+    } else if is_raw {
+        // For raw binaries, we rename it to the package name for easy linking
+        let dest_path = extract_dest.join(pkg_name);
+        tokio::fs::copy(cache_dest, &dest_path).await?;
+
+        // Ensure executable permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = tokio::fs::metadata(&dest_path).await?.permissions();
+            perms.set_mode(0o755);
+            tokio::fs::set_permissions(&dest_path, perms).await?;
+        }
+    }
+
+    Ok(actual_hash)
 }
 
 #[cfg(test)]

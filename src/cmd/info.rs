@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
+use crossterm::style::Stylize;
 
 /// Show info about a specific package
 pub fn info(package: &str) -> Result<()> {
@@ -22,13 +23,17 @@ pub fn info(package: &str) -> Result<()> {
         None
     };
 
-    let output = apl::io::output::CliOutput::new();
-
     if installed.is_none() && index_entry.is_none() {
         bail!("Package '{package}' not found");
     }
 
-    output.section(&format!("Package {package}"));
+    // Manual header for synchronous ordering
+    println!();
+    println!(
+        "{} {}",
+        format!("Package {package}").white(),
+        "─".repeat(40).dark_grey()
+    );
 
     if let Some(entry) = &index_entry {
         let latest = entry.latest();

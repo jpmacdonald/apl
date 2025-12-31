@@ -1,11 +1,11 @@
 //! Clean command (garbage collection)
 
 use anyhow::Result;
-use apl::io::output::CliOutput;
+use apl::ui::Output;
 
 /// Garbage collect orphaned files
 pub fn clean(_dry_run: bool) -> Result<()> {
-    let output = CliOutput::new();
+    let output = Output::new();
 
     // Legacy CAS cleanup
     let cas_dir = apl::try_apl_home().map(|h| h.join("cache"));

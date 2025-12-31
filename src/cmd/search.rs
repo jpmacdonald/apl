@@ -15,7 +15,7 @@ pub fn search(query: &str) -> Result<()> {
 
     let results = index.search(query);
 
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
 
     if results.is_empty() {
         output.info(&format!("No packages found matching '{query}'"));

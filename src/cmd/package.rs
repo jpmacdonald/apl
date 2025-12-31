@@ -39,7 +39,7 @@ bin = ["{name}"]
 "#
     );
 
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
     std::fs::create_dir_all(output_dir)?;
     std::fs::write(&path, template)?;
 
@@ -56,7 +56,7 @@ bin = ["{name}"]
 pub fn check(path: &Path) -> Result<()> {
     let pkg = Package::from_file(path).context("Failed to parse package")?;
 
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
     output.success("Package is valid");
     println!("  Name: {}", pkg.package.name);
     println!("  Version: {}", pkg.package.version);
@@ -72,7 +72,7 @@ pub fn check(path: &Path) -> Result<()> {
 
 /// Bump a package version and update hashes
 pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
-    let output = apl::io::output::CliOutput::new();
+    let output = apl::ui::Output::new();
     output.info(&format!("Bumping {} to {}...", path.display(), version));
 
     // Download and compute hash

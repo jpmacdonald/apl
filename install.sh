@@ -17,6 +17,7 @@ echo "🚀 Installing apl (A Package Layer)..."
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$APL_HOME/cache"
+mkdir -p "$APL_HOME/tmp"
 
 # For local development: copy from build directory
 if [ -f "./target/release/apl" ]; then

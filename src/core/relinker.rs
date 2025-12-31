@@ -15,7 +15,8 @@ pub struct Relinker;
 impl Relinker {
     /// Fix up a binary to look for libraries in ../lib
     pub fn fix_binary(binary_path: &Path) -> Result<()> {
-        Self::run_install_name_tool(binary_path, &["-add_rpath", "@executable_path/../lib"])
+        Self::run_install_name_tool(binary_path, &["-add_rpath", "@executable_path/../lib"])?;
+        Self::resign(binary_path)
     }
 
     /// Fix up a dylib to have an @rpath ID
@@ -27,13 +28,15 @@ impl Relinker {
 
         let new_id = format!("@rpath/{name}");
 
-        Self::run_install_name_tool(dylib_path, &["-id", &new_id])
+        Self::run_install_name_tool(dylib_path, &["-id", &new_id])?;
+        Self::resign(dylib_path)
     }
 
     /// Change a dependency path in a binary/dylib
     /// e.g. /usr/local/lib/libssl.dylib -> @rpath/libssl.dylib
     pub fn change_dep(path: &Path, old: &str, new: &str) -> Result<()> {
-        Self::run_install_name_tool(path, &["-change", old, new])
+        Self::run_install_name_tool(path, &["-change", old, new])?;
+        Self::resign(path)
     }
 
     /// Helper to run install_name_tool
@@ -48,6 +51,22 @@ impl Relinker {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!("install_name_tool failed on {}: {}", path.display(), stderr);
         }
+
+        Ok(())
+    }
+
+    /// Ad-hoc sign a binary/dylib
+    pub fn resign(path: &Path) -> Result<()> {
+        let _ = Command::new("codesign")
+            .args(&[
+                "-s",
+                "-",
+                "--force",
+                "--preserve-metadata=entitlements,requirements,flags,runtime",
+            ])
+            .arg(path)
+            .output()
+            .context("Failed to spawn codesign");
 
         Ok(())
     }

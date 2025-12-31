@@ -105,30 +105,9 @@ impl Default for Lockfile {
 
 /// Get current time in ISO 8601 format
 fn now_iso8601() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap();
-    
-    // Simple ISO 8601 without external crate
-    let secs = duration.as_secs();
-    let days = secs / 86400;
-    let remaining = secs % 86400;
-    let hours = remaining / 3600;
-    let minutes = (remaining % 3600) / 60;
-    let seconds = remaining % 60;
-    
-    // Approximate date calculation (good enough for display)
-    let years = 1970 + (days / 365);
-    let day_of_year = days % 365;
-    let month = (day_of_year / 30) + 1;
-    let day = (day_of_year % 30) + 1;
-    
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        years, month.min(12), day.min(31), hours, minutes, seconds
-    )
+    use chrono::prelude::*;
+    let utc: DateTime<Utc> = Utc::now();
+    utc.format("%Y-%m-%dT%H:%M:%SZ").to_string()
 }
 
 #[cfg(test)]

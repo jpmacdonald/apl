@@ -11,9 +11,9 @@ use apl::core::relinker::Relinker;
 use apl::core::version::PackageSpec;
 use apl::db::StateDb;
 use apl::io::dmg;
-use apl::io::output::CliOutput;
 use apl::lockfile::Lockfile;
 use apl::package::{Package, PackageInfo, PackageType};
+use apl::ui::Output;
 use apl::{apl_home, bin_path, store_path};
 
 /// Prepared package ready for finalization
@@ -43,7 +43,7 @@ pub async fn install(
 ) -> Result<()> {
     use apl::index::PackageIndex;
 
-    let output = CliOutput::new();
+    let output = Output::new();
     let db = StateDb::open().context("Failed to open state database")?;
 
     // Load index for resolution
@@ -80,7 +80,7 @@ pub async fn install(
             if std::path::Path::new(&spec.name).exists() || index_ref.find(&spec.name).is_some() {
                 valid_names.push(spec.name.clone());
             } else {
-                output.fail(&spec.name, "", "Package not found in index");
+                output.failed(&spec.name, "", "Package not found in index");
             }
         }
     } else {
@@ -168,7 +168,7 @@ pub async fn install(
         }
 
         // Not installed (or version mismatch), so Download
-        tasks.push(InstallTask::Download(name.clone(), requested_version));
+        tasks.push(InstallTask::Download(name.clone(), Some(target_version)));
     }
 
     if tasks.is_empty() {
@@ -187,7 +187,6 @@ pub async fn install(
 
     // Unified Pipeline
     output.prepare_pipeline(&table_items);
-    let ticker = output.start_tick();
 
     let client = Client::builder()
         .tcp_nodelay(true)
@@ -225,13 +224,13 @@ pub async fn install(
                 already_installed_count += 1;
             }
             InstallTask::Switch(name, version) => {
-                output.set_installing(name, version);
+                output.installing(name, version);
                 if !dry_run {
                     match crate::cmd::r#use::use_version(name, version, dry_run) {
                         Ok(_) => {
                             install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
-                        Err(e) => output.fail(name, version, &e.to_string()),
+                        Err(e) => output.failed(name, version, &e.to_string()),
                     }
                 } else {
                     output.done(name, version, "(dry run)", None);
@@ -281,7 +280,7 @@ pub async fn install(
                     }
 
                     // 2. Installing
-                    output.set_installing(&name, &pkg.version);
+                    output.installing(&name, &pkg.version);
 
                     let info =
                         tokio::task::spawn_blocking(move || perform_local_install(pkg)).await??;
@@ -319,12 +318,15 @@ pub async fn install(
     }
 
     // Final Summary
-    ticker.abort();
     let count = install_count.load(std::sync::atomic::Ordering::Relaxed);
     if count > 0 {
         output.summary(count, "installed", start_time.elapsed().as_secs_f64());
+        // Sync UI actor
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     } else if already_installed_count > 0 {
         output.summary_plain(already_installed_count, "already installed");
+        // Sync UI actor
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
     // Shadowing and path checks at the very end
@@ -351,7 +353,7 @@ pub async fn prepare_download_new(
     _dry_run: bool,
     lockfile: Option<&Lockfile>,
     index: Option<&apl::index::PackageIndex>,
-    output: &CliOutput,
+    output: &Output,
 ) -> Result<Option<PreparedPackage>> {
     use apl::package::{Binary, Dependencies, Hints, InstallSpec, PackageInfo, Source};
 
@@ -544,9 +546,14 @@ pub async fn prepare_download_new(
         }
     };
 
+    let tmp_dir_path = apl::tmp_path();
+    if !tmp_dir_path.exists() {
+        std::fs::create_dir_all(&tmp_dir_path).ok();
+    }
+
     let temp_dir = tempfile::Builder::new()
         .prefix("apl-dl-")
-        .tempdir_in(apl::tmp_path())?;
+        .tempdir_in(tmp_dir_path)?;
 
     // Determine artifact filename from URL
     let url_filename = binary_url.split('/').next_back().unwrap_or("download");
@@ -559,11 +566,12 @@ pub async fn prepare_download_new(
     if is_app {
         // Legacy File Download for Apps/DMGs
         let dest_file = temp_dir.path().join(url_filename);
-        output.add_package(pkg_name, &package_def.package.version);
+        // Removed: output.add_package(pkg_name, &package_def.package.version);
 
         match apl::io::download::download_and_verify_mp(
             client,
             pkg_name,
+            &package_def.package.version,
             &binary_url,
             &dest_file,
             &binary_hash,
@@ -573,7 +581,7 @@ pub async fn prepare_download_new(
         {
             Ok(_) => {}
             Err(e) => {
-                output.finish_err(pkg_name, &package_def.package.version, &e.to_string());
+                output.failed(pkg_name, &package_def.package.version, &e.to_string());
                 return Err(e.into());
             }
         }
@@ -589,11 +597,12 @@ pub async fn prepare_download_new(
         let extract_dir = temp_dir.path().join("extracted");
         tokio::fs::create_dir_all(&extract_dir).await?;
 
-        output.add_package(pkg_name, &package_def.package.version);
+        // Removed: output.add_package(pkg_name, &package_def.package.version);
 
         match apl::io::download::download_and_extract(
             client,
             pkg_name,
+            &package_def.package.version,
             &binary_url,
             &cache_file,
             &extract_dir,
@@ -604,7 +613,7 @@ pub async fn prepare_download_new(
         {
             Ok(_) => {}
             Err(e) => {
-                output.finish_err(pkg_name, &package_def.package.version, &e.to_string());
+                output.failed(pkg_name, &package_def.package.version, &e.to_string());
                 return Err(e.into());
             }
         }
@@ -757,6 +766,9 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo> {
         }
 
         let target = bin_path().join(target_name);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
         if target.exists() {
             let _ = std::fs::remove_file(&target);
         }
@@ -889,7 +901,7 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo> {
 }
 
 /// Finalize installation in the database (new PackageProgress API)
-fn commit_installation_new(db: &StateDb, info: &InstallInfo, output: &CliOutput) -> Result<()> {
+fn commit_installation_new(db: &StateDb, info: &InstallInfo, output: &Output) -> Result<()> {
     let pkg = &info.package;
 
     let version_from = db.get_package(&pkg.name).ok().flatten().map(|p| p.version);
@@ -935,7 +947,7 @@ fn update_lockfile_if_exists_quietly() {
     }
 }
 
-pub fn perform_ux_batch_checks(names: &[String], output: &CliOutput) {
+pub fn perform_ux_batch_checks(names: &[String], output: &Output) {
     // 1. PATH check (global)
     let path_env = std::env::var_os("PATH").unwrap_or_default();
     let bin_dir = bin_path();
@@ -943,7 +955,7 @@ pub fn perform_ux_batch_checks(names: &[String], output: &CliOutput) {
 
     if !is_in_path {
         output.warning(&format!("{} is not in your PATH.", bin_dir.display()));
-        output.hint("To use installed binaries, add this to your shell profile:");
+        output.info("To use installed binaries, add this to your shell profile:");
         println!("  export PATH=\"{}:$PATH\"", bin_dir.display());
     }
 
@@ -957,8 +969,8 @@ pub fn perform_ux_batch_checks(names: &[String], output: &CliOutput) {
             if !which_path.is_empty()
                 && !which_path.ends_with(&expected.to_string_lossy().to_string())
             {
-                output.hint(&format!("{bin_name} is shadowed by {which_path}."));
-                output.hint("Run 'hash -r' or restart your terminal to use the new binary.");
+                output.info(&format!("{bin_name} is shadowed by {which_path}."));
+                output.info("Run 'hash -r' or restart your terminal to use the new binary.");
             }
         }
     }

@@ -2,39 +2,36 @@
 
 use anyhow::{Context, Result};
 use apl::db::StateDb;
-use apl::io::output::CliOutput;
+use apl::ui::Output;
 use crossterm::style::Stylize;
 use futures::future::join_all;
+use std::path::PathBuf;
+use std::time::Instant;
 
 /// Remove one or more packages
 pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
 
-    let output = CliOutput::new();
-
     let packages_to_remove = if all {
         let all_packages = db.list_packages()?;
         if all_packages.is_empty() {
-            output.error_summary("No packages installed");
+            println!("  ℹ No packages installed.");
             return Ok(());
         }
 
-        if !yes && !dry_run {
-            use std::io::Write;
+        if !yes {
+            println!();
             print!(
-                "{}",
-                format!(
-                    "{} Are you sure you want to remove all {} packages? [y/N] ",
-                    "⚠",
-                    all_packages.len()
-                )
-                .yellow()
+                "  ⚠ {} This will remove all installed packages. Continue? (y/N) ",
+                "WARNING:".bold().red()
             );
+            use std::io::Write;
             std::io::stdout().flush()?;
 
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
             if !input.trim().eq_ignore_ascii_case("y") {
+                let output = Output::new();
                 output.error("Operation cancelled");
                 return Ok(());
             }
@@ -45,6 +42,11 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         packages.to_vec()
     };
 
+    if packages_to_remove.is_empty() {
+        return Ok(());
+    }
+
+    let output = Output::new();
     let mut task_list = Vec::new();
 
     // 1. Resolve all packages first
@@ -52,7 +54,6 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         if let Ok(Some(info)) = db.get_package(pkg_name) {
             task_list.push((pkg_name.clone(), Some(info.version)));
         } else {
-            // Not found - still add to table with "unknown" version or "-"
             task_list.push((pkg_name.clone(), None));
         }
     }
@@ -61,75 +62,84 @@ pub async fn remove(packages: &[String], all: bool, yes: bool, dry_run: bool) ->
         return Ok(());
     }
 
+    let start_time = Instant::now();
     output.prepare_pipeline(&task_list);
-    let ticker = output.start_tick();
+
     let mut remove_count = 0;
     let mut handles = Vec::new();
 
     for (pkg, version_opt) in task_list {
-        let version = version_opt.unwrap_or_else(|| "-".to_string());
+        if version_opt.is_none() {
+            output.failed(&pkg, "-", "not installed");
+            continue;
+        }
+        let version = version_opt.unwrap();
 
-        // If version is "-", it means it wasn't found in DB
-        if version == "-" {
-            output.fail(&pkg, "-", "not installed");
+        // Get files for this package
+        let files = db.get_package_files(&pkg)?;
+        if files.is_empty() {
+            output.failed(&pkg, &version, "no files tracked");
             continue;
         }
 
-        let files = db.get_package_files(&pkg).unwrap_or_default();
-
-        if dry_run {
-            output.done(&pkg, &version, "(dry run)", None);
-            continue;
-        }
-
-        output.set_installing(&pkg, &version); // Re-use "installing" state for "removing"
+        output.removing(&pkg, &version);
 
         let files_to_delete: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
         let pkg_name = pkg.clone();
-        let version_clone = version.clone();
+        let version_str = version.clone();
+        let output_clone = output.clone();
 
-        handles.push(tokio::task::spawn_blocking(move || {
-            for file_path in files_to_delete {
-                let path = std::path::Path::new(&file_path);
-                let _ = if path.is_dir() {
-                    std::fs::remove_dir_all(path)
-                } else {
-                    std::fs::remove_file(path)
-                };
-            }
-
-            // Cleanup from Store
-            if let Some(apl_store) = apl::try_apl_home().map(|h| h.join("store")) {
-                let pkg_store = apl_store.join(&pkg_name).join(&version_clone);
-                if pkg_store.exists() {
-                    let _ = std::fs::remove_dir_all(pkg_store);
+        handles.push(tokio::spawn(async move {
+            let mut success = true;
+            if !dry_run {
+                for file_path in files_to_delete {
+                    let path = PathBuf::from(file_path);
+                    if path.exists() {
+                        if let Err(_) = std::fs::remove_file(&path) {
+                            success = false;
+                        }
+                    }
                 }
             }
-
-            (pkg_name, version_clone)
+            if success {
+                Some((pkg_name, version_str))
+            } else {
+                output_clone.failed(&pkg_name, &version_str, "partial removal");
+                None
+            }
         }));
     }
 
     let results = join_all(handles).await;
-    ticker.abort();
 
-    for (name, version) in results.into_iter().flatten() {
-        let _ = db.remove_package(&name);
-        let _ = db.add_history(&name, "remove", Some(&version), None, true);
-        output.done(&name, &version, "unlinked from bin", None);
-        remove_count += 1;
+    for res in results {
+        if let Ok(Some((name, version))) = res {
+            if !dry_run {
+                let _ = db.remove_package(&name);
+                let _ = db.add_history(&name, "remove", Some(&version), None, true);
+            }
+            output.done(
+                &name,
+                &version,
+                if dry_run {
+                    "(dry run)"
+                } else {
+                    "unlinked from bin"
+                },
+                None,
+            );
+            remove_count += 1;
+        }
     }
 
     if remove_count > 0 {
-        output.summary(remove_count, "removed", 0.0);
+        output.summary(remove_count, "removed", start_time.elapsed().as_secs_f64());
     } else {
-        // If we attempted removal but count is 0, it means all failed or were not found
         output.error_summary("No packages removed");
     }
 
-    if apl::lockfile::Lockfile::exists_default() {
-        let _ = crate::cmd::lock::lock(false, true);
-    }
+    // Sync UI actor
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     Ok(())
 }

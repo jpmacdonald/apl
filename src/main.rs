@@ -104,12 +104,14 @@ enum Commands {
         #[arg(
             long,
             env = "APL_INDEX_URL",
-            default_value = "https://raw.githubusercontent.com/jpmacdonald/apl/main/index.bin"
+            default_value = "https://github.com/jpmacdonald/apl/releases/download/index/index.bin"
         )]
         url: String,
-        /// Also upgrade all installed packages to latest versions
-        #[arg(long, short = 'a')]
-        all: bool,
+    },
+    /// Upgrade installed packages to latest versions
+    Upgrade {
+        /// Specific packages to upgrade (or all if empty)
+        packages: Vec<String>,
     },
     /// Check status of installed packages
     Status,
@@ -196,7 +198,8 @@ async fn main() -> Result<()> {
             output,
         } => cmd::generate_index::generate_index(&packages_dir, &output),
         Commands::Clean => cmd::clean::clean(dry_run),
-        Commands::Update { url, all } => cmd::update::update(&url, all, dry_run).await,
+        Commands::Update { url } => cmd::update::update(&url, dry_run).await,
+        Commands::Upgrade { packages } => cmd::upgrade::upgrade(&packages, dry_run).await,
 
         Commands::Status => cmd::status::status(),
         Commands::Package { command } => match command {

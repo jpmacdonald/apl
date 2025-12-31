@@ -5,6 +5,7 @@
 pub mod core;
 pub mod io;
 pub mod store;
+pub mod ui;
 
 // Re-exports for convenience
 pub use core::index;
