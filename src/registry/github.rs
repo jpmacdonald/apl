@@ -136,14 +136,14 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     }
 
     println!(
-        "      ✨ New version found: {} -> {}",
+        "      New version found: {} -> {}",
         current_version, latest_tag
     );
 
     let (asset, _is_archive) =
         find_best_asset(&release).context("No compatible asset found for Darwin ARM64")?;
 
-    println!("      ⬇️  Downloading {}...", asset.browser_download_url);
+    println!("      Downloading {}...", asset.browser_download_url);
     let bytes = client
         .get(&asset.browser_download_url)
         .send()
@@ -166,7 +166,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     }
 
     fs::write(path, doc.to_string())?;
-    println!("      💾 Updated {}", path.display());
+    println!("      Updated {}", path.display());
 
     Ok(true)
 }

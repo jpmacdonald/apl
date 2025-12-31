@@ -47,14 +47,14 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Add { repos } => {
             for repo in repos {
-                println!("📦 Adding {}...", repo);
+                println!("Adding {}...", repo);
                 if let Err(e) = add_package(&client, &repo, &packages_dir).await {
-                    eprintln!("   ❌ Failed: {}", e);
+                    eprintln!("   Failed: {}", e);
                 }
             }
         }
         Commands::Update { package } => {
-            println!("🔄 Updating packages...");
+            println!("Updating packages...");
             let mut updated_count = 0;
 
             for entry in fs::read_dir(&packages_dir)? {
@@ -75,20 +75,20 @@ async fn main() -> Result<()> {
                                 updated_count += 1;
                             }
                         }
-                        Err(e) => eprintln!("   ❌ Failed to update {}: {}", file_name, e),
+                        Err(e) => eprintln!("   Failed to update {}: {}", file_name, e),
                     }
                 }
             }
 
             if updated_count > 0 {
                 cli_index(&packages_dir, &index_path)?;
-                println!("\n✅ Done! Updated {} packages.", updated_count);
+                println!("\nDone! Updated {} packages.", updated_count);
             } else {
-                println!("✅ All packages up to date.");
+                println!("All packages up to date.");
             }
         }
         Commands::Check => {
-            println!("🔍 Validating registry integrity...");
+            println!("Validating registry integrity...");
             let mut errors = 0;
             for entry in fs::read_dir(&packages_dir)? {
                 let entry = entry?;
@@ -100,13 +100,13 @@ async fn main() -> Result<()> {
                     let version = pkg["package"]["version"].as_str().unwrap_or("");
 
                     if version == "0.0.0" || version.is_empty() {
-                        eprintln!("   ❌ {}: Invalid version '{}'", name, version);
+                        eprintln!("   {}: Invalid version '{}'", name, version);
                         errors += 1;
                     }
                 }
             }
             if errors == 0 {
-                println!("   ✅ All packages valid.");
+                println!("   All packages valid.");
             } else {
                 anyhow::bail!("Registry check failed with {} errors.", errors);
             }
@@ -120,10 +120,10 @@ async fn main() -> Result<()> {
 }
 
 fn cli_index(packages_dir: &Path, index_path: &Path) -> Result<()> {
-    println!("📚 Regenerating index...");
+    println!("Regenerating index...");
     let index = apl::index::PackageIndex::generate_from_dir(packages_dir)?;
     index.save_compressed(index_path)?;
-    println!("   ✅ Done: {}", index_path.display());
+    println!("   Done: {}", index_path.display());
     Ok(())
 }
 
@@ -141,8 +141,8 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     let (asset, is_archive) =
         github::find_best_asset(&release).context("No compatible macOS ARM64 asset found")?;
 
-    println!("   🎯 Found asset: {}", asset.name);
-    println!("   ⬇️  Downloading...");
+    println!("   Found asset: {}", asset.name);
+    println!("   Downloading...");
     let bytes = client
         .get(&asset.browser_download_url)
         .send()
@@ -150,9 +150,26 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
         .bytes()
         .await?;
     let hash = blake3::hash(&bytes).to_hex().to_string();
-    println!("   🔐 BLAKE3: {}", hash);
+    println!("   BLAKE3: {}", hash);
 
     let strip_components = if is_archive { 1 } else { 0 };
+
+    // Determine format from asset name
+    let format = if asset.name.ends_with(".tar.gz") {
+        "tar.gz"
+    } else if asset.name.ends_with(".tar.zst") || asset.name.ends_with(".tzst") {
+        "tar.zst"
+    } else if asset.name.ends_with(".tar.xz") || asset.name.ends_with(".tar") {
+        "tar"
+    } else if asset.name.ends_with(".zip") {
+        "zip"
+    } else if asset.name.ends_with(".dmg") {
+        "dmg"
+    } else if asset.name.ends_with(".pkg") {
+        "pkg"
+    } else {
+        "binary"
+    };
 
     let toml_content = format!(
         r#"[package]
@@ -166,9 +183,13 @@ type = "cli"
 [source]
 url = "{}"
 blake3 = "{}"
+format = "{}"
 strip_components = {}
 
-[binary]
+[binary.arm64]
+url = "{}"
+blake3 = "{}"
+format = "{}"
 
 [dependencies]
 runtime = []
@@ -181,12 +202,22 @@ bin = ["{}"]
 [hints]
 post_install = ""
 "#,
-        repo_name, version, repo, asset.browser_download_url, hash, strip_components, repo_name
+        repo_name,
+        version,
+        repo,
+        asset.browser_download_url,
+        hash,
+        format,
+        strip_components,
+        asset.browser_download_url,
+        hash,
+        format,
+        repo_name
     );
 
     let toml_path = out_dir.join(format!("{}.toml", repo_name));
     fs::write(&toml_path, toml_content)?;
-    println!("   ✅ Created {}", toml_path.display());
+    println!("   Created {}", toml_path.display());
 
     Ok(())
 }

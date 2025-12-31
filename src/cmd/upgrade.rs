@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use apl::apl_home;
+use apl::core::version::is_newer;
 use apl::index::PackageIndex;
 
 /// Upgrade installed packages
@@ -30,7 +31,8 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
             .filter_map(|pkg| {
                 if let Some(entry) = index.find(&pkg.name) {
                     let latest = &entry.latest().version;
-                    if latest != &pkg.version {
+                    // Only upgrade if latest is actually newer (not just different)
+                    if is_newer(&pkg.version, latest) {
                         Some((pkg.name.clone(), pkg.version.clone(), latest.clone()))
                     } else {
                         None
@@ -48,7 +50,8 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
                 let pkg = installed.iter().find(|p| &p.name == name)?;
                 let entry = index.find(name)?;
                 let latest = &entry.latest().version;
-                if latest != &pkg.version {
+                // Only upgrade if latest is actually newer (not just different)
+                if is_newer(&pkg.version, latest) {
                     Some((pkg.name.clone(), pkg.version.clone(), latest.clone()))
                 } else {
                     None

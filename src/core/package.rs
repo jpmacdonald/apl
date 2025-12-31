@@ -312,10 +312,12 @@ version = "1.0"
 [source]
 url = "https://example.com"
 blake3 = "abc"
+format = "tar.gz"
 
 [binary.x86_64]
 url = "https://example.com/x86.tar.gz"
 blake3 = "xyz"
+format = "tar.gz"
 "#;
         let pkg = Package::parse(pkg_with_one_arch).unwrap();
         // This test will pass on x86 and fail on arm64 - documenting behavior

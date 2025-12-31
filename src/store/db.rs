@@ -147,7 +147,7 @@ impl StateDb {
     }
 
     fn migrate_v2_to_v3(&self) -> Result<(), DbError> {
-        println!("📦 enabling history tracking (Schema V3)...");
+        println!("Enabling history tracking (Schema V3)...");
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,7 +203,7 @@ impl StateDb {
     }
 
     fn migrate_v1_to_v2(&self) -> Result<(), DbError> {
-        println!("📦 Migrating database to V2 (Multi-version support)...");
+        println!("Migrating database to V2 (Multi-version support)...");
         // Disable FKs during migration dance
         self.conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
 

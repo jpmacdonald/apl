@@ -202,7 +202,7 @@ async fn main() -> Result<()> {
         }
         Commands::UpdateSelf => cmd::self_update::self_update(dry_run).await,
         Commands::Run { package, args } => {
-            println!("🚀 Preparing to run '{package}'...");
+            println!("Preparing to run '{package}'...");
             cmd::run::run(&package, &args, dry_run).await
         }
     }

@@ -55,7 +55,8 @@ pub fn status() -> Result<()> {
             }
             if let Some(entry) = idx.find(&pkg.name) {
                 let latest = entry.latest().version.clone();
-                if latest != pkg.version {
+                // Only show update if latest is actually newer (not just different)
+                if apl::core::version::is_newer(&pkg.version, &latest) {
                     update_list.push((pkg.name.clone(), pkg.version.clone(), latest));
                 }
             }
