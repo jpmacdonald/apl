@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `ui_actor` module implements a message-passing architecture for concurrent UI updates, eliminating mutex contention and preventing deadlocks.
+The `actor` module in `src/ui/` implements a message-passing architecture for concurrent UI updates. This design eliminates mutex contention and prevents potential deadlocks during multi-threaded operations like parallel package downloads.
 
 ## Architecture
 
@@ -20,31 +20,31 @@ The `ui_actor` module implements a message-passing architecture for concurrent U
                         │
                         ▼
                 ┌───────────────┐
-                │   UI  Actor   │  ◄─── Single thread owns stdout
+                │   UI  Actor   │  (Single thread owns stdout)
                 │ (Event Loop)  │
                 └───────────────┘
                         │
                         ▼
-                  TableOutput
+                   TableOutput
 ```
 
 ## Benefits
 
-1. **Zero Contention**: Workers never wait for locks
-2. **Crash Safety**: UI thread stays alive even if workers panic
-3. **Separation**: All rendering logic isolated in one place
-4. **Testability**: Can record/replay events for testing
+1. **Zero Contention**: Worker threads never wait for locks to update the UI.
+2. **Crash Safety**: The UI thread remains operational even if individual worker threads encounter errors.
+3. **Decoupling**: Rendering logic is isolated from business logic.
+4. **Testability**: Events can be recorded or simulated for automated UI testing.
 
-## Usage Example
+## Usage
 
 ```rust
-use apl::io::ui_actor::{UiActor, UiEvent};
+use apl::ui::actor::{UiActor, UiEvent};
 
-// Spawn the UI actor
+// Initialize the UI actor
 let ui = UiActor::spawn();
 let sender = ui.sender();
 
-// Workers send events (non-blocking)
+// Workers send non-blocking events
 sender.send(UiEvent::AddPackage {
     name: "neovim".to_string(),
     version: "0.10.0".to_string(),
@@ -56,48 +56,30 @@ sender.send(UiEvent::Progress {
     total_bytes: 1024 * 1024,
 }).ok();
 
-sender.send(UiEvent::Done {
-    name: "neovim".to_string(),
-    version "0.10.0".to_string(),
-    status: "installed".to_string(),
-    size_bytes: Some(5_242_880),
-}).ok();
-
-// Shutdown when done
+// Graceful shutdown after tasks complete
 ui.shutdown();
 ```
 
-## Migration Path
+## Implementation Status
 
-The actor is **opt-in** and can be adopted incrementally:
+The Actor Model is currently **implemented but not integrated** as the default UI engine for the `install` command. It serves as an optimized alternative to the current mutex-based `TableOutput` implementation.
 
-1. **Phase 1** (Current): `CliOutput` uses `Arc<Mutex<TableOutput>>` (works)
-2. **Phase 2**: Refactor `CliOutput` to wrap `UiActor` sender
-3. **Phase 3**: Update `install.rs` to use actor-based API
-4. **Phase 4**: Remove mutex-based implementation
+### Integration Path
+1. Update `CliOutput` in `src/ui/mod.rs` to wrap the `UiActor` sender.
+2. Refactor the `install` flow in `src/ops/install.rs` to emit `UiEvent` messages.
+3. Remove legacy mutex-based synchronization logic.
 
 ## Supported Events
 
-- `AddPackage`: Register a new package
-- `Progress`: Update download progress
-- `SetInstalling`: Mark as installing (extracting/linking)
-- `Done`: Mark as complete
-- `Fail`: Mark as failed
-- `Shutdown`: Stop the actor
+- **AddPackage**: Register a new package for UI tracking.
+- **Progress**: Update download or build progress status.
+- **SetInstalling**: Transition state to installation (extraction or linking).
+- **Done**: Signal successful completion.
+- **Fail**: Signal a task failure with error details.
+- **Shutdown**: Signal the actor thread to terminate.
 
-Other event types (Log, Summary, Info, etc.) are defined but not yet handled by `TableOutput`. They can be added as needed.
+## Performance Characteristics
 
-## Performance
-
-- **Throughput**: ~1M msgs/sec on consumer hardware
-- **Latency**: <1μs to send an event (non-blocking)
-- **Memory**: ~8KB per message in channel buffer
-
-## Next Steps
-
-To integrate this into the existing codebase:
-
-1. Modify `CliOutput::new()` to spawn a `UiActor`
-2. Replace `Arc<Mutex<...>>` field with `mpsc::Sender<UiEvent>`
-3. Update all `CliOutput` methods to send events instead of locking
-4. Test with `apl install` to verify no regressions
+- **Contention**: Zero (asynchronous message passing).
+- **Throughput**: Capable of processing over 1M events per second.
+- **Latency**: Minimal overhead for event dispatch.

@@ -1,11 +1,11 @@
 # Registry Management Architecture
 
-## Current State Analysis
-Maintenance tasks are consolidated into the `apl-pkg` tool.
+## Overview
+The APL registry maintenance is consolidated into the `apl-pkg` utility, which manages the entire lifecycle of package definitions.
 
 ### Unified Registry Maintainer (`apl-pkg`)
 
-The registry follows a centralized architecture for managing the lifecycle of packages.
+The tool utilizes a modular architecture to handle different aspects of registry maintenance.
 
 ### 1. Unified Architecture
 ```mermaid
@@ -26,14 +26,14 @@ graph TD
 ```
 
 ### 2. Core Components
-- **`Registry Core` (`src/registry/mod.rs`)**: Shared logic for package validation, TOML parsing, and client building.
-- **`GitHub Provider` (`src/registry/github.rs`)**: Intelligent asset detection patterns for macOS ARM64 binaries (handles raw binaries and various archive naming conventions).
-- **`Linter`**: Integrated into `apl-pkg check` to catch errors like `0.0.0` versions or missing fields.
+- **Registry Core (`src/registry/mod.rs`)**: Shared logic for package validation, TOML parsing, and HTTP client management.
+- **GitHub Provider (`src/registry/github.rs`)**: Intelligent asset detection patterns for macOS ARM64 binaries. It supports raw executable binaries and multiple archive naming conventions.
+- **Integrity Linter**: Integrated into the `check` command to identify structural errors, invalid versions, or missing metadata.
 
-### 3. Command Structure
+### 3. Primary Commands
 | Command | Action |
 |---------|--------|
-| `apl-pkg add <owner/repo>` | Intelligent scaffolding from GitHub releases. |
-| `apl-pkg update [--package <name>]` | Version refresh for existing TOMLs + Index regeneration. |
-| `apl-pkg index` | Manually generates `index.bin` from TOMLs. |
-| `apl-pkg check` | Validation/Linting (pre-commit check). |
+| `apl-pkg add` | Automated scaffolding from GitHub releases. |
+| `apl-pkg update` | Global version synchronization and index regeneration. |
+| `apl-pkg index` | Manual generation of the compressed `index.bin`. |
+| `apl-pkg check` | Automated registry validation and linting. |

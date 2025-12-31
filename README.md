@@ -67,7 +67,7 @@ apl upgrade
 
 For APL maintainers, the `apl-pkg` tool handles the package lifecycle (adding, updating, and indexing).
 
-See the [Maintainer's Guide](docs/maintainer_guide.md) and [Registry Architecture](docs/registry_architecture.md).
+See the [Maintainer's Guide](docs/maintainer_guide.md) and [Registry Architecture](docs/registry_architecture.md) for more details.
 
 ```bash
 # Add a new package
@@ -137,7 +137,7 @@ bin = ["rg"]
 ## Requirements
 
 - macOS 14.0 or later
-- Apple Silicon or Intel processor
+- Apple Silicon (native) or Intel processor (Rosetta 2)
 
 ## License
 

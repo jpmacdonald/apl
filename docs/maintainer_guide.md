@@ -1,10 +1,10 @@
 # APL Maintainer's Guide
 
-This guide explains how to add and maintain packages in the APL registry using the `apl-pkg` tool.
+This guide provides instructions for adding and maintaining packages in the APL registry using the `apl-pkg` utility.
 
 ## Prerequisites
 
-To maintain the registry efficiently, you must have a `GITHUB_TOKEN` set in your environment to avoid rate limits (increases limit from 60 to 5000 requests per hour).
+To maintain the registry efficiently, set the `GITHUB_TOKEN` environment variable. Authenticated requests benefit from a significantly higher rate limit (5,000 requests per hour compared to 60 for unauthenticated requests).
 
 ```bash
 export GITHUB_TOKEN=your_token_here
@@ -12,27 +12,27 @@ export GITHUB_TOKEN=your_token_here
 
 ## Adding a New Package
 
-Use the `add` command with the GitHub repository path.
+Use the `add` command with the GitHub repository path in `owner/repo` format.
 
 ```bash
 cargo run --release --bin apl-pkg -- add owner/repo
 ```
 
-`apl-pkg` will:
-1. Fetch the latest release from GitHub.
-2. Search for the best macOS ARM64 asset (supporting 15+ naming patterns and raw binaries).
-3. Download and calculate the BLAKE3 hash.
-4. Scaffold a `packages/<repo>.toml` file.
+The `add` command performs the following steps:
+1. Fetches the latest release metadata from the GitHub API.
+2. Identifies the most compatible macOS ARM64 asset (supporting 15+ naming conventions and raw binaries).
+3. Downloads the asset and calculates its BLAKE3 hash.
+4. Generates a standard package definition in `packages/<repo>.toml`.
 
 ## Updating the Registry
 
-To check for updates for all packages and regenerate the index:
+To check for newer versions of all tracked packages and regenerate the index in a single operation:
 
 ```bash
 cargo run --release --bin apl-pkg -- update
 ```
 
-To update a specific package only:
+To update a specific package:
 
 ```bash
 cargo run --release --bin apl-pkg -- update --package <name>
@@ -40,7 +40,7 @@ cargo run --release --bin apl-pkg -- update --package <name>
 
 ## Validating the Registry
 
-Always run the linter before pushing changes to ensure no "broken" packages (e.g., version `0.0.0`) enter the index.
+Use the `check` command to lint the registry for integrity. This ensures that all package definitions have valid versions and required fields.
 
 ```bash
 cargo run --release --bin apl-pkg -- check
@@ -48,7 +48,7 @@ cargo run --release --bin apl-pkg -- check
 
 ## Regenerating the Index
 
-If you manually edit TOML files, regenerate the binary index:
+If package definitions are modified manually, the binary index must be regenerated:
 
 ```bash
 cargo run --release --bin apl-pkg -- index
