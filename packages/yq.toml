@@ -1,5 +1,5 @@
 [package]
-name = "fzf"
+name = "yq"
 version = "0.0.0"
 description = ""
 homepage = ""
@@ -7,7 +7,7 @@ license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/junegunn/fzf"
+url = "https://github.com/mikefarah/yq"
 blake3 = ""
 strip_components = 1
 
@@ -19,7 +19,7 @@ build = []
 optional = []
 
 [install]
-bin = ["fzf"]
+bin = ["yq"]
 
 [hints]
 post_install = ""

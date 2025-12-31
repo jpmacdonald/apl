@@ -1,20 +1,25 @@
 [package]
 name = "gh"
-version = "2.83.2"
+version = "0.0.0"
+description = ""
+homepage = ""
+license = ""
 type = "cli"
-description = "GitHub's official command line tool"
 
 [source]
-url = "https://github.com/cli/cli/archive/refs/tags/v2.83.2.tar.gz"
-blake3 = "0000000000000000000000000000000000000000000000000000000000000000"
+url = "https://github.com/cli/cli"
+blake3 = ""
+strip_components = 1
 
-[binary.arm64]
-url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_macOS_arm64.zip"
-blake3 = "7822d101eed0c4655f55ea502b4993626829c90edb99ba32ae6d9c51411757b0"
+[binary]
 
-[binary.amd64]
-url = "https://github.com/cli/cli/releases/download/v2.83.2/gh_2.83.2_macOS_amd64.zip"
-blake3 = "394a2911b25a3486c610702955400c91c447cd22973c771ceacfbad44bfc4502"
+[dependencies]
+runtime = []
+build = []
+optional = []
 
 [install]
-bin = ["bin/gh"]
+bin = ["gh"]
+
+[hints]
+post_install = ""

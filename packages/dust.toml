@@ -1,0 +1,25 @@
+[package]
+name = "dust"
+version = "1.2.3"
+description = ""
+homepage = ""
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/bootandy/dust/releases/download/v1.2.3/dust-v1.2.3-aarch64-unknown-linux-gnu.tar.gz"
+blake3 = "76ceee6005127a68e235a62ef385e36f54d612885ca0e3b4129a1e8095f8f0da"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["dust"]
+
+[hints]
+post_install = ""

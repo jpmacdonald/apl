@@ -1,16 +1,25 @@
 [package]
 name = "fd"
-version = "10.2.0"
-description = "A simple, fast and user-friendly alternative to 'find'"
+version = "10.3.0"
+description = ""
+homepage = ""
+license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0-aarch64-apple-darwin.tar.gz"
-blake3 = "40f4e51b406baca55370c1eb13e627c4bb0e55972d6e96a419470f19077c3459"
+url = "https://github.com/sharkdp/fd/releases/download/v10.3.0/fd-v10.3.0-aarch64-apple-darwin.tar.gz"
+blake3 = "e7a554aed4fea189f2aa297e82087ceaebb844eac55a2503e5321cce88fbb636"
+strip_components = 1
 
-[binary.arm64]
-url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0-aarch64-apple-darwin.tar.gz"
-blake3 = "40f4e51b406baca55370c1eb13e627c4bb0e55972d6e96a419470f19077c3459"
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
 
 [install]
 bin = ["fd"]
+
+[hints]
+post_install = ""

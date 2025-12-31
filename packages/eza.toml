@@ -1,0 +1,25 @@
+[package]
+name = "eza"
+version = "0.23.4"
+description = ""
+homepage = ""
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/eza-community/eza/releases/download/v0.23.4/eza_aarch64-unknown-linux-gnu.tar.gz"
+blake3 = "5299fa2c95b289c7f19af936b94b90e122f6dbb89e43e83a25cebc5cf2298c54"
+strip_components = 1
+
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+bin = ["eza"]
+
+[hints]
+post_install = ""

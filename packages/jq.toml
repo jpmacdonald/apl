@@ -1,16 +1,25 @@
 [package]
 name = "jq"
-version = "1.7.1"
-description = "Lightweight and flexible command-line JSON processor"
+version = "0.0.0"
+description = ""
+homepage = ""
+license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
-blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
+url = "https://github.com/jqlang/jq"
+blake3 = ""
+strip_components = 1
 
-[binary.arm64]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64"
-blake3 = "6e6779b009e7af14c7a4593c55c7a60ba6bf868687ee55c23c62caa412b31481"
+[binary]
+
+[dependencies]
+runtime = []
+build = []
+optional = []
 
 [install]
 bin = ["jq"]
+
+[hints]
+post_install = ""
