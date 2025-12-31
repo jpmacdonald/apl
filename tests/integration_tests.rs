@@ -75,3 +75,103 @@ fn test_init_creates_state_db() {
 }
 
 // TODO: Add test for 'install' using a mocked index/server once we have that infrastructure.
+
+#[test]
+fn test_search_command() {
+    let ctx = TestContext::new();
+    // Search will fail without index, but shouldn't crash
+    let output = ctx
+        .apl_cmd()
+        .arg("search")
+        .arg("ripgrep")
+        .output()
+        .expect("failed to run apl search");
+
+    // Either succeeds or fails gracefully
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success() || stderr.contains("No index") || stdout.contains("No packages"),
+        "Search should handle missing index gracefully"
+    );
+}
+
+#[test]
+fn test_status_command() {
+    let ctx = TestContext::new();
+    let output = ctx
+        .apl_cmd()
+        .arg("status")
+        .output()
+        .expect("failed to run apl status");
+
+    assert!(output.status.success(), "Status should always succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Version"),
+        "Status should show version info"
+    );
+}
+
+#[test]
+fn test_hash_command() {
+    let ctx = TestContext::new();
+    let test_file = ctx.temp_dir.path().join("test.txt");
+    std::fs::write(&test_file, b"Hello, APL!").expect("failed to write test file");
+
+    let output = ctx
+        .apl_cmd()
+        .arg("hash")
+        .arg(&test_file)
+        .output()
+        .expect("failed to run apl hash");
+
+    assert!(output.status.success(), "Hash should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("test.txt"),
+        "Hash output should mention filename"
+    );
+}
+
+#[test]
+fn test_dry_run_install() {
+    let ctx = TestContext::new();
+    let output = ctx
+        .apl_cmd()
+        .arg("--dry-run")
+        .arg("install")
+        .arg("bat")
+        .output()
+        .expect("failed to run apl dry-run install");
+
+    // Dry run should not create packages even if it fails (no index)
+    // Just verify it doesn't crash
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stdout.contains("Would") || stderr.contains("No index"),
+        "Dry run should indicate what would happen or fail gracefully"
+    );
+}
+
+#[test]
+fn test_update_command_without_index() {
+    let ctx = TestContext::new();
+    let output = ctx
+        .apl_cmd()
+        .arg("update")
+        .output()
+        .expect("failed to run apl update");
+
+    // Update command should attempt to fetch from CDN
+    // It may fail (network/auth), but shouldn't crash
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Either succeeds or fails with network error
+    assert!(
+        output.status.success() || stderr.contains("Failed") || stdout.contains("Index"),
+        "Update should handle network failures gracefully"
+    );
+}

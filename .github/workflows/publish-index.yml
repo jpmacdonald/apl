@@ -17,11 +17,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       
-      - name: Build apl
-        run: cargo build --release
+      - name: Build binaries
+        run: cargo build --release --bins
       
       - name: Generate index
-        run: ./target/release/apl generate-index packages/ -o index.bin
+        run: cargo run --release --bin update_packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Upload to release
         uses: softprops/action-gh-release@v1

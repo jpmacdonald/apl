@@ -14,13 +14,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         
-      - name: Build apl
-        run: cargo build --release
+      - name: Build binaries
+        run: cargo build --release --bins
         
       - name: Update Packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./target/release/update_packages
+        run: cargo run --release --bin update_packages
         
       - name: Commit changes
         run: |
