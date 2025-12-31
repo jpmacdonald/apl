@@ -176,6 +176,21 @@ impl Output {
     pub fn error_summary(&self, msg: &str) {
         self.error(msg);
     }
+
+    /// Block until all pending UI events are processed
+    pub fn wait(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self.sender.send(UiEvent::Sync(tx));
+
+        // Wait for actor to process the sync event
+        // We use block_in_place or just a spin/wait if not in async context,
+        // but since commands are async, we can just block or use a small sleep?
+        // Actually, we can just poll the receiver.
+        let mut rx = rx;
+        while rx.try_recv().is_err() {
+            std::thread::yield_now();
+        }
+    }
 }
 
 impl Default for Output {

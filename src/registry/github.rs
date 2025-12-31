@@ -32,6 +32,28 @@ pub const MACOS_ARM_PATTERNS: &[&str] = &[
     "universal-apple-darwin",
 ];
 
+/// Strip common prefixes from GitHub tags (e.g., 'v1.0.0', 'jq-1.8.1' -> '1.8.1')
+pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
+    let mut version = tag;
+    let prefixes = [
+        format!("{}-", package_name),
+        format!("{}_", package_name),
+        "v".to_string(),
+    ];
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for p in &prefixes {
+            if version.starts_with(p) {
+                version = &version[p.len()..];
+                changed = true;
+            }
+        }
+    }
+    version.to_string()
+}
+
 /// Logic to find the best matching asset in a release
 pub fn find_best_asset(release: &GithubRelease) -> Option<(&GithubAsset, bool)> {
     for pattern in MACOS_ARM_PATTERNS {
@@ -107,7 +129,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     println!("   Checking {} ({}/{})...", name, owner, repo_name);
 
     let release = fetch_latest_release(client, owner, repo_name).await?;
-    let latest_tag = release.tag_name.trim_start_matches('v');
+    let latest_tag = strip_tag_prefix(&release.tag_name, name);
 
     if latest_tag == current_version {
         return Ok(false);

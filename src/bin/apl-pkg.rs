@@ -136,7 +136,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     let repo_name = parts[1];
 
     let release = github::fetch_latest_release(client, owner, repo_name).await?;
-    let version = release.tag_name.trim_start_matches('v').to_string();
+    let version = github::strip_tag_prefix(&release.tag_name, repo_name);
 
     let (asset, is_archive) =
         github::find_best_asset(&release).context("No compatible macOS ARM64 asset found")?;

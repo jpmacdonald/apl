@@ -19,7 +19,7 @@ use std::thread;
 use std::time::Duration;
 
 /// Events that can be sent to the UI actor
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum UiEvent {
     /// Prepare the table for a pipeline of packages
     PreparePipeline {
@@ -65,6 +65,8 @@ pub enum UiEvent {
         action: String,
         elapsed_secs: f64,
     },
+    /// Synchronize UI state (wait for all pending renders)
+    Sync(tokio::sync::oneshot::Sender<()>),
     /// Shutdown the actor
     Shutdown,
 }
@@ -194,6 +196,10 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
                     elapsed_secs
                 );
                 table.print_footer(&mut buffer, &msg, Severity::Success);
+            }
+            Ok(UiEvent::Sync(tx)) => {
+                // All previous events are processed because of sequential mpsc
+                let _ = tx.send(());
             }
             Ok(UiEvent::Shutdown) => {
                 break;

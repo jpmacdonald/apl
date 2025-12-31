@@ -1,6 +1,6 @@
 [package]
 name = "jq"
-version = "jq-1.8.1"
+version = "1.8.1"
 description = ""
 homepage = "https://github.com/jqlang/jq"
 license = ""
