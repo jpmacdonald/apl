@@ -7,11 +7,11 @@ use apl::ui::Output;
 pub fn clean(_dry_run: bool) -> Result<()> {
     let output = Output::new();
 
-    // Legacy CAS cleanup
-    let cas_dir = apl::try_apl_home().map(|h| h.join("cache"));
-    if let Some(dir) = cas_dir {
+    // Legacy cache cleanup
+    let cache_dir = apl::try_apl_home().map(|h| h.join("cache"));
+    if let Some(dir) = cache_dir {
         if dir.exists() {
-            output.info("Removing legacy CAS cache directory...");
+            output.info("Cleaning cache directory...");
             if !_dry_run {
                 let _ = std::fs::remove_dir_all(dir);
             }

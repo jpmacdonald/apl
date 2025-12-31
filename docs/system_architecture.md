@@ -14,7 +14,6 @@ APL (Advanced Package Loader) is a high-performance macOS package manager design
 | `package.rs` | Functional | TOML package definitions and BuildSpec support |
 | `version.rs` | Functional | SemVer parsing and PackageSpec (name@version) utility |
 | `resolver.rs` | Functional | Dependency resolution using topological sort |
-| `lockfile.rs` | Partial | Lockfile generation and reading (not currently in main flow) |
 | `sysroot.rs` | Functional | APFS clonefile COW directories for isolated builds |
 | `builder.rs` | Functional | Source build orchestration |
 | `relinker.rs` | Functional | install_name_tool wrapper for @rpath adjustment |
@@ -89,8 +88,7 @@ APL (Advanced Package Loader) is a high-performance macOS package manager design
 ## Known Limitations
 
 1. **UI Actor Integration**: The message-passing UI architecture is implemented but not yet fully integrated into the main installation flow.
-2. **Lockfile Utilization**: The lockfile module is present but not currently utilized for dependency pinning.
-3. **DMG Handling**: DMG mounting support is functional for some packages but requires further stabilization for complex bundles.
+2. **DMG Handling**: DMG mounting support is functional for some packages but requires further stabilization for complex bundles.
 
 ---
 

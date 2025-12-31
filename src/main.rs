@@ -31,7 +31,6 @@ enum Commands {
         /// Package name(s), optionally with version: pkg or pkg@1.0.0
         #[arg(required = true)]
         packages: Vec<String>,
-        /// Only install packages pinned in apl.lock
         /// Show verbose output (DMG mounting, file counts, etc.)
         #[arg(short, long)]
         verbose: bool,

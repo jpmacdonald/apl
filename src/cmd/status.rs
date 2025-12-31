@@ -32,15 +32,15 @@ pub fn status() -> Result<()> {
     // 3. Packages and Cache
     let packages = db.list_packages()?;
     let mut total_size: u64 = 0;
-    let mut cas_items = 0;
+    let mut cache_items = 0;
 
-    let cas_dir = apl_home().join("cache");
-    if let Ok(entries) = std::fs::read_dir(cas_dir) {
+    let cache_dir = apl_home().join("cache");
+    if let Ok(entries) = std::fs::read_dir(cache_dir) {
         for entry in entries.flatten() {
             if let Ok(meta) = entry.metadata() {
                 if meta.is_file() {
                     total_size += meta.len();
-                    cas_items += 1;
+                    cache_items += 1;
                 }
             }
         }
@@ -99,7 +99,7 @@ pub fn status() -> Result<()> {
         format!(
             "{} ({} items)",
             apl::ui::theme::format_size(total_size),
-            cas_items
+            cache_items
         )
         .with(theme.colors.version)
     );

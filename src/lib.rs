@@ -11,15 +11,11 @@ pub mod ui;
 
 // Re-exports for convenience
 pub use core::index;
-// pub use core::lockfile;
 pub use core::package;
 pub use core::resolver;
 pub use io::download as downloader;
 pub use io::extract as extractor;
-// pub use store::cas;
 pub use store::db;
-
-// Backwards compatibility
 
 use dirs::home_dir;
 use std::path::PathBuf;
@@ -36,8 +32,6 @@ pub fn try_apl_home() -> Option<PathBuf> {
 pub fn apl_home() -> PathBuf {
     try_apl_home().expect("Could not determine home directory")
 }
-
-// public cas_path removed
 
 /// SQLite database path: ~/.apl/state.db
 pub fn db_path() -> PathBuf {
