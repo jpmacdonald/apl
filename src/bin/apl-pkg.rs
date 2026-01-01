@@ -62,14 +62,26 @@ async fn main() -> Result<()> {
         }
         Commands::Update { package } => {
             println!("Syncing packages...");
-            let mut updated_count = 0;
+
+            struct UpdateResult {
+                name: String,
+                status: UpdateStatus,
+            }
+
+            enum UpdateStatus {
+                Updated,
+                UpToDate,
+                Failed(String),
+            }
+
+            let mut results = Vec::new();
 
             for entry in fs::read_dir(&packages_dir)? {
                 let entry = entry?;
                 let path = entry.path();
 
                 if path.extension().is_some_and(|e| e == "toml") {
-                    let file_name = path.file_stem().unwrap().to_string_lossy();
+                    let file_name = path.file_stem().unwrap().to_string_lossy().to_string();
                     if let Some(ref target) = package {
                         if file_name != *target {
                             continue;
@@ -79,17 +91,68 @@ async fn main() -> Result<()> {
                     match github::update_package_definition(&client, &path).await {
                         Ok(updated) => {
                             if updated {
-                                updated_count += 1;
+                                results.push(UpdateResult {
+                                    name: file_name,
+                                    status: UpdateStatus::Updated,
+                                });
+                            } else {
+                                results.push(UpdateResult {
+                                    name: file_name,
+                                    status: UpdateStatus::UpToDate,
+                                });
                             }
                         }
-                        Err(e) => eprintln!("   Failed to update {}: {}", file_name, e),
+                        Err(e) => {
+                            eprintln!("   Failed to update {}: {}", file_name, e); // Keep inline error for context
+                            results.push(UpdateResult {
+                                name: file_name,
+                                status: UpdateStatus::Failed(e.to_string()),
+                            });
+                        }
                     }
                 }
             }
 
+            // Calculate stats
+            let updated_count = results
+                .iter()
+                .filter(|r| matches!(r.status, UpdateStatus::Updated))
+                .count();
+            let failed_count = results
+                .iter()
+                .filter(|r| matches!(r.status, UpdateStatus::Failed(_)))
+                .count();
+
             if updated_count > 0 {
                 cli_index(&packages_dir, &index_path)?;
-                println!("\nDone! Updated {} packages.", updated_count);
+            }
+
+            // Print Summary
+            if failed_count > 0 || updated_count > 0 {
+                println!("\n{:=^40}", " Update Summary ");
+
+                if updated_count > 0 {
+                    println!("\nUpdated ({})", updated_count);
+                    for r in results
+                        .iter()
+                        .filter(|r| matches!(r.status, UpdateStatus::Updated))
+                    {
+                        println!("  ✓ {}", r.name);
+                    }
+                }
+
+                if failed_count > 0 {
+                    println!("\nFailed ({})", failed_count);
+                    for r in results
+                        .iter()
+                        .filter(|r| matches!(r.status, UpdateStatus::Failed(_)))
+                    {
+                        if let UpdateStatus::Failed(msg) = &r.status {
+                            println!("  ✗ {}: {}", r.name, msg);
+                        }
+                    }
+                }
+                println!("\n{:=^40}\n", "");
             } else {
                 println!("All packages up to date.");
             }
