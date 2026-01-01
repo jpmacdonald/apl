@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,9 @@ pub const MACOS_ARM_PATTERNS: &[&str] = &[
     "aarch64-mac",
     "arm64-macos",
     "arm64-mac",
-    "universal-apple-darwin",
+    "universal",
+    "macos",
+    "mac",
 ];
 
 /// Strip common prefixes from GitHub tags (e.g., 'v1.0.0', 'jq-1.8.1' -> '1.8.1')
@@ -55,7 +57,11 @@ pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
 }
 
 /// Logic to find the best matching asset in a release
-pub fn find_best_asset(release: &GithubRelease) -> Option<(&GithubAsset, bool)> {
+pub fn find_best_asset<'a>(
+    release: &'a GithubRelease,
+    package_name: &str,
+) -> Option<(&'a GithubAsset, bool)> {
+    let package_name_low = package_name.to_lowercase();
     for pattern in MACOS_ARM_PATTERNS {
         if let Some(asset) = release.assets.iter().find(|a| {
             let name = a.name.to_lowercase();
@@ -63,7 +69,13 @@ pub fn find_best_asset(release: &GithubRelease) -> Option<(&GithubAsset, bool)> 
 
             if name.contains(&pat) {
                 // archives
-                if name.ends_with(".tar.gz") || name.ends_with(".zip") || name.ends_with(".tar.xz")
+                if name.ends_with(".tar.gz")
+                    || name.ends_with(".zip")
+                    || name.ends_with(".tar.xz")
+                    || name.ends_with(".tar.zst")
+                    || name.ends_with(".tzst")
+                    || name.ends_with(".dmg")
+                    || name.ends_with(".pkg")
                 {
                     return true;
                 }
@@ -76,10 +88,24 @@ pub fn find_best_asset(release: &GithubRelease) -> Option<(&GithubAsset, bool)> 
         }) {
             let is_archive = asset.name.ends_with(".tar.gz")
                 || asset.name.ends_with(".zip")
-                || asset.name.ends_with(".tar.xz");
+                || asset.name.ends_with(".tar.xz")
+                || asset.name.ends_with(".tar.zst")
+                || asset.name.ends_with(".tzst")
+                || asset.name.ends_with(".dmg")
+                || asset.name.ends_with(".pkg");
             return Some((asset, is_archive));
         }
     }
+
+    // NEW: Fallback for macOS apps that just name their DMG/PKG after the app
+    // e.g. Alacritty-v0.16.1.dmg
+    if let Some(asset) = release.assets.iter().find(|a| {
+        let name = a.name.to_lowercase();
+        (name.ends_with(".dmg") || name.ends_with(".pkg")) && name.contains(&package_name_low)
+    }) {
+        return Some((asset, true));
+    }
+
     None
 }
 
@@ -129,7 +155,8 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     println!("   Checking {} ({}/{})...", name, owner, repo_name);
 
     let release = fetch_latest_release(client, owner, repo_name).await?;
-    let latest_tag = strip_tag_prefix(&release.tag_name, name);
+    let latest_tag_raw = &release.tag_name;
+    let latest_tag = strip_tag_prefix(latest_tag_raw, name);
 
     if latest_tag == current_version {
         return Ok(false);
@@ -140,29 +167,61 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
         current_version, latest_tag
     );
 
-    let (asset, _is_archive) =
-        find_best_asset(&release).context("No compatible asset found for Darwin ARM64")?;
+    let asset_discovery = find_best_asset(&release, name);
 
-    println!("      Downloading {}...", asset.browser_download_url);
-    let bytes = client
-        .get(&asset.browser_download_url)
-        .send()
-        .await?
-        .bytes()
-        .await?;
-    let hash = blake3::hash(&bytes).to_hex().to_string();
+    if let Some((asset, _is_archive)) = asset_discovery {
+        println!("      Downloading {}...", asset.browser_download_url);
+        let bytes = client
+            .get(&asset.browser_download_url)
+            .send()
+            .await?
+            .bytes()
+            .await?;
+        let hash = blake3::hash(&bytes).to_hex().to_string();
 
-    // Update TOML
-    doc["package"]["version"] = value(latest_tag);
+        // Update TOML
+        doc["package"]["version"] = value(latest_tag);
 
-    if doc.get("source").is_some() {
-        doc["source"]["url"] = value(asset.browser_download_url.clone());
-        doc["source"]["blake3"] = value(hash.clone());
-    }
+        if doc.get("source").is_some() {
+            doc["source"]["url"] = value(asset.browser_download_url.clone());
+            doc["source"]["blake3"] = value(hash.clone());
+        }
 
-    if doc.get("binary").and_then(|b| b.get("arm64")).is_some() {
-        doc["binary"]["arm64"]["url"] = value(asset.browser_download_url.clone());
-        doc["binary"]["arm64"]["blake3"] = value(hash);
+        if doc.get("binary").and_then(|b| b.get("arm64")).is_some() {
+            doc["binary"]["arm64"]["url"] = value(asset.browser_download_url.clone());
+            doc["binary"]["arm64"]["blake3"] = value(hash);
+        }
+    } else {
+        // Fallback for source-only or custom binary updates
+        // If we have a [source] section with an archive URL, update it
+        if let Some(src_url) = doc
+            .get("source")
+            .and_then(|s| s.get("url"))
+            .and_then(|u| u.as_str())
+        {
+            if src_url.contains("/archive/refs/tags/") {
+                println!("      Source-only update detected (no binary asset found)");
+                let new_url = src_url
+                    .replace(&current_version, &latest_tag)
+                    .replace(&release.tag_name, &latest_tag_raw); // just in case
+
+                println!("      Downloading source archive {}...", new_url);
+                let bytes = client.get(&new_url).send().await?.bytes().await?;
+                let hash = blake3::hash(&bytes).to_hex().to_string();
+
+                doc["package"]["version"] = value(latest_tag);
+                doc["source"]["url"] = value(new_url);
+                doc["source"]["blake3"] = value(hash);
+            } else {
+                anyhow::bail!(
+                    "No compatible asset found for Darwin ARM64 and source URL is not a standard tag archive"
+                );
+            }
+        } else {
+            anyhow::bail!(
+                "No compatible asset found for Darwin ARM64 and no source section found to update"
+            );
+        }
     }
 
     fs::write(path, doc.to_string())?;
@@ -183,6 +242,34 @@ pub async fn fetch_latest_release(
     let resp = client.get(&url).send().await?;
 
     if !resp.status().is_success() {
+        if resp.status() == 404 {
+            // Fallback 1: fetch all releases and pick the most recent one
+            let releases_url = format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
+            let releases_resp = client.get(&releases_url).send().await?;
+            if releases_resp.status().is_success() {
+                let releases: Vec<GithubRelease> = releases_resp.json().await?;
+                if let Some(first) = releases.into_iter().next() {
+                    return Ok(first);
+                }
+            }
+
+            // Fallback 2: fetch all tags and pick the most recent one (for repos without formal releases)
+            let tags_url = format!("https://api.github.com/repos/{}/{}/tags", owner, repo);
+            let tags_resp = client.get(&tags_url).send().await?;
+            if tags_resp.status().is_success() {
+                #[derive(Deserialize)]
+                struct GithubTag {
+                    name: String,
+                }
+                let tags: Vec<GithubTag> = tags_resp.json().await?;
+                if let Some(first) = tags.into_iter().next() {
+                    return Ok(GithubRelease {
+                        tag_name: first.name,
+                        assets: vec![], // No assets for a tag
+                    });
+                }
+            }
+        }
         anyhow::bail!("GitHub API error: {} for {}", resp.status(), url);
     }
 

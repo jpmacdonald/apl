@@ -1,17 +1,17 @@
 [package]
 name = "cmake"
-version = "3.31.4"
+version = "4.2.1"
 description = "Cross-platform build system generator"
 type = "cli"
 
 [source]
-url = "https://github.com/Kitware/CMake/releases/download/v3.31.4/cmake-3.31.4-macos-universal.tar.gz"
-blake3 = "7f28fa8bc24c482ba0f40cea2f86032774946064b1875a525c0681e39fe743c1"
+url = "https://github.com/Kitware/CMake/releases/download/v4.2.1/cmake-4.2.1-macos-universal.dmg"
+blake3 = "9fce27cc9ec3f2a354988807246caaa9c0a050f9ca0d710a421a920c17efd140"
 format = "tar.gz"
 
 [binary.arm64]
-url = "https://github.com/Kitware/CMake/releases/download/v3.31.4/cmake-3.31.4-macos-universal.tar.gz"
-blake3 = "7f28fa8bc24c482ba0f40cea2f86032774946064b1875a525c0681e39fe743c1"
+url = "https://github.com/Kitware/CMake/releases/download/v4.2.1/cmake-4.2.1-macos-universal.dmg"
+blake3 = "9fce27cc9ec3f2a354988807246caaa9c0a050f9ca0d710a421a920c17efd140"
 format = "tar.gz"
 
 [binary.x86_64]
