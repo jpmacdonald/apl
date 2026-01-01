@@ -346,10 +346,11 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     let format = crate::io::extract::detect_format(Path::new(url));
     let is_gzip = format == crate::io::extract::ArchiveFormat::TarGz;
     let is_zip = format == crate::io::extract::ArchiveFormat::Zip;
+    let is_pkg = format == crate::io::extract::ArchiveFormat::Pkg;
     let is_raw = format == crate::io::extract::ArchiveFormat::RawBinary;
 
-    // Fast path for non-tar formats (zip/raw)
-    if is_zip || is_raw {
+    // Fast path for non-tar formats (zip/raw/pkg)
+    if is_zip || is_raw || is_pkg {
         drop(tx);
         return run_simple_download(
             stream,
@@ -363,6 +364,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
             cache_dest,
             extract_dest,
             is_zip,
+            is_pkg,
             is_raw,
         )
         .await;
@@ -431,6 +433,7 @@ async fn run_simple_download<R: Reporter>(
     cache_dest: &Path,
     extract_dest: &Path,
     is_zip: bool,
+    is_pkg: bool,
     is_raw: bool,
 ) -> Result<String, DownloadError> {
     let mut downloaded = 0;
@@ -475,6 +478,16 @@ async fn run_simple_download<R: Reporter>(
             perms.set_mode(0o755);
             tokio::fs::set_permissions(&dest_path, perms).await?;
         }
+    } else if is_pkg {
+        let cache_path = cache_dest.to_path_buf();
+        let extract_path = extract_dest.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            crate::io::extract::extract_pkg(&cache_path, &extract_path)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .map_err(std::io::Error::other)??;
     }
 
     Ok(actual_hash)

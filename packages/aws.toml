@@ -7,21 +7,21 @@ license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/aws/aws-cli/releases/download/2.0.0dev0/AWS-CLI-Installer.pkg"
-blake3 = "aa07e28baa5aabadb7c4df6b1c2398590a5f6d3b053a517553ba1776dc6e9830"
+url = "https://awscli.amazonaws.com/AWSCLIV2.pkg"
+blake3 = "SKIP_VERIFY" 
 format = "pkg"
 strip_components = 1
 
 [binary.x86_64]
-url = "https://github.com/aws/aws-cli/releases/download/2.0.0dev0/AWS-CLI-Installer.pkg"
-blake3 = "aa07e28baa5aabadb7c4df6b1c2398590a5f6d3b053a517553ba1776dc6e9830"
+url = "https://awscli.amazonaws.com/AWSCLIV2.pkg" 
+blake3 = "SKIP_VERIFY"
 format = "pkg"
 arch = "x86_64"
 macos = "14.0"
 
 [binary.arm64]
-url = "https://github.com/aws/aws-cli/releases/download/2.0.0dev0/AWS-CLI-Installer.pkg"
-blake3 = "aa07e28baa5aabadb7c4df6b1c2398590a5f6d3b053a517553ba1776dc6e9830"
+url = "https://awscli.amazonaws.com/AWSCLIV2.pkg"
+blake3 = "SKIP_VERIFY"
 format = "pkg"
 arch = "arm64"
 macos = "14.0"

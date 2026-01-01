@@ -178,6 +178,8 @@ pub fn detect_format(path: &Path) -> ArchiveFormat {
         ArchiveFormat::Tar
     } else if path_str.ends_with(".zip") {
         ArchiveFormat::Zip
+    } else if path_str.ends_with(".pkg") {
+        ArchiveFormat::Pkg
     } else {
         ArchiveFormat::RawBinary
     }
@@ -190,6 +192,7 @@ pub enum ArchiveFormat {
     TarGz,
     Tar,
     Zip,
+    Pkg,
     RawBinary,
 }
 
@@ -206,6 +209,7 @@ pub fn extract_auto(
             extract_tar(BufReader::new(file), dest_dir)
         }
         ArchiveFormat::Zip => extract_zip(archive_path, dest_dir),
+        ArchiveFormat::Pkg => extract_pkg(archive_path, dest_dir),
         ArchiveFormat::RawBinary => {
             // For raw binaries, just copy the file
             fs::create_dir_all(dest_dir)?;
@@ -222,6 +226,131 @@ pub fn extract_auto(
             }])
         }
     }
+}
+
+/// Extract a macOS PKG (using xar and cpio)
+pub fn extract_pkg(
+    archive_path: &Path,
+    dest_dir: &Path,
+) -> Result<Vec<ExtractedFile>, ExtractError> {
+    // 1. Create temp dir for xar expansion
+    let temp_dir = tempfile::Builder::new()
+        .prefix("apl-pkg-")
+        .tempdir()
+        .map_err(|e| ExtractError::Io(e))?;
+
+    // 2. Run: xar -xf <archive> -C <temp>
+    let status = std::process::Command::new("xar")
+        .arg("-xf")
+        .arg(archive_path)
+        .arg("-C")
+        .arg(temp_dir.path())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .map_err(|e| ExtractError::Io(e))?;
+
+    if !status.success() {
+        return Err(ExtractError::Archive("xar extraction failed".to_string()));
+    }
+
+    // 3. Find Payload file (bfs/dfs)
+    // We look for any file named "Payload". Typical path: "Name.pkg/Payload"
+    let mut payload_path = None;
+    let mut stack = vec![temp_dir.path().to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(iter) => iter,
+            Err(_) => continue,
+        };
+
+        for entry_res in entries {
+            let entry = match entry_res {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let path = entry.path();
+            if path.file_name().and_then(|n| n.to_str()) == Some("Payload") {
+                payload_path = Some(path);
+                break;
+            } else if path.is_dir() {
+                stack.push(path);
+            }
+        }
+        if payload_path.is_some() {
+            break;
+        }
+    }
+
+    let payload =
+        payload_path.ok_or_else(|| ExtractError::Archive("No Payload found in pkg".to_string()))?;
+
+    // 4. Extract Payload: cat Payload | gzip -d | cpio -i
+    // We must run cpio in the dest_dir
+    fs::create_dir_all(dest_dir)?;
+
+    let cat = std::process::Command::new("cat")
+        .arg(payload)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| ExtractError::Io(e))?;
+
+    let gunzip = std::process::Command::new("gunzip")
+        .stdin(cat.stdout.unwrap())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| ExtractError::Io(e))?;
+
+    let cpio = std::process::Command::new("cpio")
+        .arg("-i")
+        .arg("--quiet")
+        .stdin(gunzip.stdout.unwrap())
+        .current_dir(dest_dir)
+        .status()
+        .map_err(|e| ExtractError::Io(e))?;
+
+    if !cpio.success() {
+        return Err(ExtractError::Archive("cpio extraction failed".to_string()));
+    }
+
+    // 5. Walk dest_dir to build ExtractedFile list
+    // This is a bit inefficient (re-walking) but robust
+    let mut extracted_files = Vec::new();
+    let mut stack = vec![dest_dir.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(iter) => iter,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let relative_path = path
+                    .strip_prefix(dest_dir)
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(path.clone());
+                // Check executable (simple heuristic or check mode)
+                let is_executable = if let Ok(metadata) = path.metadata() {
+                    use std::os::unix::fs::PermissionsExt;
+                    metadata.permissions().mode() & 0o111 != 0
+                } else {
+                    false
+                };
+
+                extracted_files.push(ExtractedFile {
+                    relative_path,
+                    absolute_path: path,
+                    is_executable,
+                });
+            }
+        }
+    }
+
+    Ok(extracted_files)
 }
 
 /// Detect if a directory has a single top-level directory and strip it by moving contents up.
@@ -342,5 +471,13 @@ mod tests {
         assert!(!dir.path().join("nested").exists());
         // .DS_Store should remain (or at least not prevent stripping)
         assert!(dir.path().join(".DS_Store").exists());
+    }
+
+    #[test]
+    fn test_detect_format_pkg() {
+        assert_eq!(
+            detect_format(Path::new("installer.pkg")),
+            ArchiveFormat::Pkg
+        );
     }
 }
