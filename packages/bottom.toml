@@ -1,17 +1,17 @@
 [package]
 name = "bottom"
-version = "0.12.2"
+version = "0.12.3"
 description = "A cross-platform graphical process/system monitor"
 type = "cli"
 
 [source]
-url = "https://github.com/ClementTsang/bottom/releases/download/0.12.2/bottom_aarch64-apple-darwin.tar.gz"
-blake3 = "da8dfef139b6d734a97ad7c8d0d175f03cc4b599cb84f37e9cc89b5aaa08f3c2"
+url = "https://github.com/ClementTsang/bottom/releases/download/0.12.3/bottom_aarch64-apple-darwin.tar.gz"
+blake3 = "8de3f9837b79fe738be9d8dbea61502e0a677ac2faf55afc2d02b0f251cef2d8"
 format = "tar.gz"
 
 [binary.arm64]
-url = "https://github.com/ClementTsang/bottom/releases/download/0.12.2/bottom_aarch64-apple-darwin.tar.gz"
-blake3 = "da8dfef139b6d734a97ad7c8d0d175f03cc4b599cb84f37e9cc89b5aaa08f3c2"
+url = "https://github.com/ClementTsang/bottom/releases/download/0.12.3/bottom_aarch64-apple-darwin.tar.gz"
+blake3 = "8de3f9837b79fe738be9d8dbea61502e0a677ac2faf55afc2d02b0f251cef2d8"
 format = "tar.gz"
 
 [install]
