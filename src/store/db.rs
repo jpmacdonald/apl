@@ -49,6 +49,13 @@ pub struct InstalledFile {
     pub blake3: String,
 }
 
+/// SQLite database handle.
+///
+/// # Thread Safety
+/// This handle implements `!Sync` because `rusqlite::Connection` is not thread-safe.
+/// You cannot share a `StateDb` across threads. Instead:
+/// 1. Multithreaded apps should wrap this in `Arc<Mutex<StateDb>>`.
+/// 2. Or, open a new connection per thread (SQLite WAL mode handles this well).
 pub struct StateDb {
     conn: Connection,
 }

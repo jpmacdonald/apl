@@ -36,21 +36,25 @@ pub fn info(package: &str) -> Result<()> {
     );
 
     if let Some(entry) = &index_entry {
-        let latest = entry.latest();
-        println!("  Latest Version: {}", latest.version);
-        if !entry.description.is_empty() {
-            println!("  Description: {}", entry.description);
-        }
+        if let Some(latest) = entry.latest() {
+            println!("  Latest Version: {}", latest.version);
+            if !entry.description.is_empty() {
+                println!("  Description: {}", entry.description);
+            }
 
-        // Show versions
-        let version_list: Vec<String> = entry.releases.iter().map(|r| r.version.clone()).collect();
-        println!("  Available Versions: {}", version_list.join(", "));
+            // Show versions
+            let version_list: Vec<String> =
+                entry.releases.iter().map(|r| r.version.clone()).collect();
+            println!("  Available Versions: {}", version_list.join(", "));
 
-        if !latest.deps.is_empty() {
-            println!("  Dependencies: {}", latest.deps.join(", "));
-        }
-        if !latest.bin.is_empty() {
-            println!("  Binaries: {}", latest.bin.join(", "));
+            if !latest.deps.is_empty() {
+                println!("  Dependencies: {}", latest.deps.join(", "));
+            }
+            if !latest.bin.is_empty() {
+                println!("  Binaries: {}", latest.bin.join(", "));
+            }
+        } else {
+            println!("  Latest Version: (none)");
         }
     }
 

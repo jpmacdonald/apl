@@ -116,9 +116,21 @@ fn plan_install_tasks(
         let target_version = if let Some(index_ref) = index {
             if let Some(entry) = index_ref.find(name) {
                 match &requested_version {
-                    Some(v) if v == "latest" => entry.latest().version.clone(),
+                    Some(v) if v == "latest" => entry
+                        .latest()
+                        .ok_or_else(|| {
+                            InstallError::Validation("No releases found for package".to_string())
+                        })?
+                        .version
+                        .clone(),
                     Some(v) => v.clone(),
-                    None => entry.latest().version.clone(),
+                    None => entry
+                        .latest()
+                        .ok_or_else(|| {
+                            InstallError::Validation("No releases found for package".to_string())
+                        })?
+                        .version
+                        .clone(),
                 }
             } else {
                 requested_version
@@ -378,14 +390,18 @@ pub async fn prepare_download<R: Reporter + Clone + 'static>(
 
         let release = if let Some(v) = requested_version {
             if v == "latest" {
-                entry.latest()
+                entry.latest().ok_or_else(|| {
+                    InstallError::Validation(format!("No releases found for {pkg_name}"))
+                })?
             } else {
                 entry
                     .find_version(v)
                     .ok_or_else(|| InstallError::Validation(format!("Version {v} not found")))?
             }
         } else {
-            entry.latest()
+            entry.latest().ok_or_else(|| {
+                InstallError::Validation(format!("No releases found for {pkg_name}"))
+            })?
         };
 
         let current_arch = crate::arch::current();

@@ -152,10 +152,8 @@ impl Output {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self.sender.send(UiEvent::Sync(tx));
 
-        let mut rx = rx;
-        while rx.try_recv().is_err() {
-            std::thread::yield_now();
-        }
+        // Block effectively without spinning CPU
+        let _ = rx.blocking_recv();
     }
 }
 

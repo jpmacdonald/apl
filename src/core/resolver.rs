@@ -42,7 +42,9 @@ fn resolve_recursive(
         .find(name)
         .with_context(|| format!("Package '{name}' not found in index"))?;
 
-    let latest = entry.latest();
+    let latest = entry
+        .latest()
+        .with_context(|| format!("Package '{name}' has no releases"))?;
     for dep in &latest.deps {
         resolve_recursive(dep, index, order, visited, visiting)?;
     }

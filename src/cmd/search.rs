@@ -44,7 +44,7 @@ pub fn search(query: &str) -> Result<()> {
         let name = format!("{:<width$}", entry.name, width = theme.layout.name_width);
         let version = format!(
             "{:<width$}",
-            entry.latest().version,
+            entry.latest().map(|v| v.version.as_str()).unwrap_or("?"),
             width = theme.layout.version_width
         );
         let description = &entry.description;

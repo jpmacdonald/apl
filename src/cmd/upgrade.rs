@@ -30,12 +30,12 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
             .iter()
             .filter_map(|pkg| {
                 if let Some(entry) = index.find(&pkg.name) {
-                    let latest = &entry.latest().version;
+                    let latest = &entry.latest()?.version;
                     // Only upgrade if latest is actually newer (not just different)
                     if is_newer(&pkg.version, latest) {
                         Some((pkg.name.clone(), pkg.version.clone(), latest.clone()))
                     } else {
-                        None
+                        None::<(_, _, _)>
                     }
                 } else {
                     None
@@ -49,7 +49,7 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
             .filter_map(|name| {
                 let pkg = installed.iter().find(|p| &p.name == name)?;
                 let entry = index.find(name)?;
-                let latest = &entry.latest().version;
+                let latest = &entry.latest()?.version;
                 // Only upgrade if latest is actually newer (not just different)
                 if is_newer(&pkg.version, latest) {
                     Some((pkg.name.clone(), pkg.version.clone(), latest.clone()))

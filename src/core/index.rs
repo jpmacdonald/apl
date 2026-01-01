@@ -92,11 +92,9 @@ pub struct IndexEntry {
 }
 
 impl IndexEntry {
-    /// Get the latest release
-    pub fn latest(&self) -> &VersionInfo {
-        self.releases
-            .first()
-            .expect("Entry must have at least one release")
+    /// Get the latest release (if any)
+    pub fn latest(&self) -> Option<&VersionInfo> {
+        self.releases.first()
     }
 
     /// Find a specific version
@@ -315,7 +313,7 @@ mod tests {
 
         let entry = index.find("test").unwrap();
         assert_eq!(entry.releases.len(), 2);
-        assert_eq!(entry.latest().version, "1.1.0");
+        assert_eq!(entry.latest().unwrap().version, "1.1.0");
     }
 
     #[test]

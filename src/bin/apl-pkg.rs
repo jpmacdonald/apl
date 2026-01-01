@@ -29,8 +29,8 @@ enum Commands {
         /// GitHub repositories in owner/repo format
         repos: Vec<String>,
     },
-    /// Synchronize all existing packages or a specific one (formerly 'update')
-    Sync {
+    /// Synchronize all existing packages or a specific one
+    Update {
         /// Optional specific package to update
         #[arg(short, long)]
         package: Option<String>,
@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Sync { package } => {
+        Commands::Update { package } => {
             println!("Syncing packages...");
             let mut updated_count = 0;
 
