@@ -1,0 +1,42 @@
+[package]
+name = "podman"
+version = "5.7.1"
+description = ""
+homepage = "https://github.com/containers/podman"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/containers/podman/releases/download/v5.7.1/podman-remote-release-darwin_arm64.zip"
+blake3 = "e74c9a1e93fcd0fe40af70da1e98cefaa6130808478e15274bbbab822b08a746"
+format = "zip"
+strip_components = 1
+
+[binary.x86_64]
+url = "https://github.com/containers/podman/releases/download/v5.7.1/podman-remote-release-darwin_amd64.zip"
+blake3 = "4539bce10b7fe4e8a8cb6fd9819dc4600283e9a5356bc72e45cca4c95c06d8c1"
+format = "zip"
+arch = "x86_64"
+macos = "14.0"
+
+[binary.arm64]
+url = "https://github.com/containers/podman/releases/download/v5.7.1/podman-remote-release-darwin_arm64.zip"
+blake3 = "e74c9a1e93fcd0fe40af70da1e98cefaa6130808478e15274bbbab822b08a746"
+format = "zip"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["podman"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,42 @@
+[package]
+name = "air"
+version = "1.63.4"
+description = ""
+homepage = "https://github.com/air-verse/air"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/air-verse/air/releases/download/v1.63.4/air_1.63.4_darwin_arm64.tar.gz"
+blake3 = "8f9812e179b9b502a11706889db5e6801bcd80974e7995f848f1ec105f5ed1de"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/air-verse/air/releases/download/v1.63.4/air_1.63.4_darwin_arm64.tar.gz"
+blake3 = "8f9812e179b9b502a11706889db5e6801bcd80974e7995f848f1ec105f5ed1de"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/air-verse/air/releases/download/v1.63.4/air_1.63.4_darwin_amd64.tar.gz"
+blake3 = "a10d503ec24dd3bc83a3c84ac92233c188a7c65c87c4b6be9adb811705de9c6a"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["air"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

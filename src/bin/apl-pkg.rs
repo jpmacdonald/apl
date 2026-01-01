@@ -1,8 +1,7 @@
 //! apl-pkg - Unified registry management tool
 //! Usage: cargo run --bin apl-pkg -- <command> [args]
 
-use anyhow::{Context, Result};
-use apl::arch::ARM64;
+use anyhow::Result;
 use apl::index::{IndexBinary, IndexSource, PackageIndex, VersionInfo};
 use apl::package::{
     ArtifactFormat, Binary, Dependencies, Hints, InstallSpec, Package, PackageInfo, PackageType,
@@ -285,51 +284,144 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     let release = github::fetch_latest_release(client, owner, repo_name).await?;
     let version = github::strip_tag_prefix(&release.tag_name, repo_name);
 
-    let (asset, is_archive) = github::find_best_asset(&release, repo_name)
-        .context("No compatible macOS ARM64 asset found")?;
+    // NEW: Find BOTH ARM64 and x86_64 assets
+    let (arm64_asset, x86_asset) = github::find_macos_assets(&release, repo_name);
 
-    println!("   Found asset: {}", asset.name);
-    println!("   Downloading...");
-    let bytes = client
-        .get(&asset.browser_download_url)
-        .send()
-        .await?
-        .bytes()
-        .await?;
-    let hash = blake3::hash(&bytes).to_hex().to_string();
-    println!("   BLAKE3: {}", hash);
+    if arm64_asset.is_none() && x86_asset.is_none() {
+        anyhow::bail!("No compatible macOS assets found (neither ARM64 nor x86_64)");
+    }
+
+    // Helper to download and hash an asset
+    async fn download_asset(
+        client: &reqwest::Client,
+        asset: &github::GithubAsset,
+    ) -> Result<(String, String)> {
+        let bytes = client
+            .get(&asset.browser_download_url)
+            .send()
+            .await?
+            .bytes()
+            .await?;
+        let hash = blake3::hash(&bytes).to_hex().to_string();
+        Ok((asset.browser_download_url.clone(), hash))
+    }
+
+    // Determine format from first available asset
+    let sample_asset = arm64_asset.or(x86_asset).unwrap();
+    let is_archive = sample_asset.name.ends_with(".tar.gz")
+        || sample_asset.name.ends_with(".zip")
+        || sample_asset.name.ends_with(".tar.xz")
+        || sample_asset.name.ends_with(".tar.zst")
+        || sample_asset.name.ends_with(".tzst")
+        || sample_asset.name.ends_with(".dmg")
+        || sample_asset.name.ends_with(".pkg");
 
     let strip_components = if is_archive { 1 } else { 0 };
 
-    // Determine format from asset name
-    let format = if asset.name.ends_with(".tar.gz") {
+    let format = if sample_asset.name.ends_with(".tar.gz") {
         ArtifactFormat::TarGz
-    } else if asset.name.ends_with(".tar.zst") || asset.name.ends_with(".tzst") {
+    } else if sample_asset.name.ends_with(".tar.zst") || sample_asset.name.ends_with(".tzst") {
         ArtifactFormat::TarZst
-    } else if asset.name.ends_with(".tar.xz") || asset.name.ends_with(".tar") {
+    } else if sample_asset.name.ends_with(".tar.xz") || sample_asset.name.ends_with(".tar") {
         ArtifactFormat::Tar
-    } else if asset.name.ends_with(".zip") {
+    } else if sample_asset.name.ends_with(".zip") {
         ArtifactFormat::Zip
-    } else if asset.name.ends_with(".dmg") {
+    } else if sample_asset.name.ends_with(".dmg") {
         ArtifactFormat::Dmg
-    } else if asset.name.ends_with(".pkg") {
+    } else if sample_asset.name.ends_with(".pkg") {
         ArtifactFormat::Pkg
     } else {
         ArtifactFormat::Binary
     };
 
+    // Download ARM64
     let mut binary_map = HashMap::new();
-    // Assuming ARM64 for now as default, maybe detect based on asset name in future if needed
-    binary_map.insert(
-        ARM64.to_string(),
-        Binary {
-            url: asset.browser_download_url.clone(),
-            blake3: hash.clone(),
-            format: format.clone(),
-            arch: ARM64.to_string(),
-            macos: "14.0".to_string(),
-        },
-    );
+    let source_url;
+    let source_hash;
+
+    if let Some(asset) = arm64_asset {
+        println!("   Found ARM64 asset: {}", asset.name);
+        println!("   Downloading...");
+        let (url, hash) = download_asset(client, asset).await?;
+        println!("   ARM64 BLAKE3: {}", hash);
+
+        binary_map.insert(
+            "arm64".to_string(),
+            Binary {
+                url: url.clone(),
+                blake3: hash.clone(),
+                format: format.clone(),
+                arch: "arm64".to_string(),
+                macos: "14.0".to_string(),
+            },
+        );
+
+        // Use ARM64 as source by default
+        source_url = url;
+        source_hash = hash;
+    } else {
+        // Use x86_64 as source if no ARM64
+        source_url = String::new();
+        source_hash = String::new();
+    }
+
+    // Download x86_64
+    if let Some(asset) = x86_asset {
+        println!("   Found x86_64 asset: {}", asset.name);
+        println!("   Downloading...");
+        let (url, hash) = download_asset(client, asset).await?;
+        println!("   x86_64 BLAKE3: {}", hash);
+
+        binary_map.insert(
+            "x86_64".to_string(),
+            Binary {
+                url: url.clone(),
+                blake3: hash.clone(),
+                format: format.clone(),
+                arch: "x86_64".to_string(),
+                macos: "14.0".to_string(),
+            },
+        );
+
+        // If we didn't have ARM64, use x86_64 as source
+        if arm64_asset.is_none() {
+            let source_url = url;
+            let source_hash = hash;
+
+            let package = Package {
+                package: PackageInfo {
+                    name: repo_name.to_string(),
+                    version: version.to_string(),
+                    description: "".to_string(),
+                    homepage: format!("https://github.com/{}", repo),
+                    license: "".to_string(),
+                    type_: PackageType::Cli,
+                },
+                source: Source {
+                    url: source_url,
+                    blake3: source_hash,
+                    format: format.clone(),
+                    strip_components,
+                },
+                binary: binary_map,
+                dependencies: Dependencies::default(),
+                install: InstallSpec {
+                    bin: vec![repo_name.to_string()],
+                    ..Default::default()
+                },
+                hints: Hints {
+                    post_install: "".to_string(),
+                },
+                build: None,
+            };
+
+            let toml_content = package.to_toml()?;
+            let toml_path = out_dir.join(format!("{}.toml", repo_name));
+            fs::write(&toml_path, toml_content)?;
+            println!("   Created {}", toml_path.display());
+            return Ok(());
+        }
+    }
 
     let package = Package {
         package: PackageInfo {
@@ -341,10 +433,10 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             type_: PackageType::Cli,
         },
         source: Source {
-            url: asset.browser_download_url.clone(),
-            blake3: hash.clone(),
+            url: source_url,
+            blake3: source_hash,
             format: format.clone(),
-            strip_components: strip_components,
+            strip_components,
         },
         binary: binary_map,
         dependencies: Dependencies::default(),
@@ -359,7 +451,6 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     };
 
     let toml_content = package.to_toml()?;
-
     let toml_path = out_dir.join(format!("{}.toml", repo_name));
     fs::write(&toml_path, toml_content)?;
     println!("   Created {}", toml_path.display());

@@ -1,0 +1,42 @@
+[package]
+name = "terragrunt"
+version = "0.96.1"
+description = ""
+homepage = "https://github.com/gruntwork-io/terragrunt"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/gruntwork-io/terragrunt/releases/download/v0.96.1/terragrunt_darwin_arm64"
+blake3 = "e8831f8d7a7e29b894bb1389fc929db5bec1a86d0b81f2559d810ce5dee75ae0"
+format = "binary"
+strip_components = 0
+
+[binary.arm64]
+url = "https://github.com/gruntwork-io/terragrunt/releases/download/v0.96.1/terragrunt_darwin_arm64"
+blake3 = "e8831f8d7a7e29b894bb1389fc929db5bec1a86d0b81f2559d810ce5dee75ae0"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/gruntwork-io/terragrunt/releases/download/v0.96.1/terragrunt_darwin_amd64"
+blake3 = "fb361f5f0c3a65a7c170d69277eb49d014b08c04ca78b050fa141ad341db24ba"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["terragrunt"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

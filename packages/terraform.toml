@@ -1,19 +1,35 @@
 [package]
 name = "terraform"
-version = "1.10.3"
+version = "1.14.3"
 description = "Infrastructure as Code tool"
+homepage = "https://github.com/hashicorp/terraform"
+license = "BUSL-1.1"
 type = "cli"
 
 [source]
-url = "https://releases.hashicorp.com/terraform/1.10.3/terraform_1.10.3_darwin_arm64.zip"
-blake3 = "db1ab75d4e87d12758431718f450f8988ab3c038d4e7d32aa72431da951d0c8a"
-format = "zip"
+url = "https://github.com/hashicorp/terraform/archive/refs/tags/v1.14.3.tar.gz"
+blake3 = "7669dc904841d2778b9522e64f4d85305b6cf550fcfd35920543d7112a36e277"
+format = "tar.gz"
+strip_components = 1
 
-[binary.arm64]
-url = "https://releases.hashicorp.com/terraform/1.10.3/terraform_1.10.3_darwin_arm64.zip"
-blake3 = "db1ab75d4e87d12758431718f450f8988ab3c038d4e7d32aa72431da951d0c8a"
-format = "zip"
+[dependencies]
+runtime = []
+build = ["go"]
+optional = []
+
+[build]
+script = """
+go build -o terraform
+mkdir -p $PREFIX/bin
+cp terraform $PREFIX/bin/
+"""
 
 [install]
 strategy = "link"
 bin = ["terraform"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = "Note: This is the latest version. Homebrew is frozen at v1.5.7 due to license changes."

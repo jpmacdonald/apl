@@ -16,6 +16,15 @@ strip_components = 1
 url = "https://github.com/muesli/duf/releases/download/v0.9.1/duf_0.9.1_darwin_arm64.tar.gz"
 blake3 = "6077fe4cc9d4c56b2caf0369c12d8e104ff6174845e6a71d3320643093b9ecff"
 format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/muesli/duf/releases/download/v0.9.1/duf_0.9.1_darwin_x86_64.tar.gz"
+blake3 = "7e31c2705e3e5f833895abc8f88b41854dbf327a2396a7b0995b81bd29d3dabb"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
 
 [dependencies]
 runtime = []
@@ -25,6 +34,9 @@ optional = []
 [install]
 strategy = "link"
 bin = ["duf"]
+lib = []
+include = []
+script = ""
 
 [hints]
 post_install = ""

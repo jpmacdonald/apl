@@ -1,0 +1,42 @@
+[package]
+name = "xh"
+version = "0.25.3"
+description = ""
+homepage = "https://github.com/ducaale/xh"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/ducaale/xh/releases/download/v0.25.3/xh-v0.25.3-aarch64-apple-darwin.tar.gz"
+blake3 = "e45b70d06699b59e5384ab7f941b174b4eead86e3323377f6ebefaa55f229107"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/ducaale/xh/releases/download/v0.25.3/xh-v0.25.3-aarch64-apple-darwin.tar.gz"
+blake3 = "e45b70d06699b59e5384ab7f941b174b4eead86e3323377f6ebefaa55f229107"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/ducaale/xh/releases/download/v0.25.3/xh-v0.25.3-x86_64-apple-darwin.tar.gz"
+blake3 = "e1e6c303f6fe44934f8b3a933d297640ddc20eea4244ab81e7c5227474746265"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["xh"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

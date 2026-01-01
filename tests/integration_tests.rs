@@ -175,3 +175,18 @@ fn test_update_command_without_index() {
         "Update should handle network failures gracefully"
     );
 }
+
+#[test]
+fn test_ui_output_singleton() {
+    use apl::ui::Output;
+
+    // Multiple Output instances should share the same actor
+    let out1 = Output::new();
+    let out2 = Output::new();
+
+    out1.info("Message 1");
+    out2.info("Message 2");
+    out1.wait(); // Should sync both messages
+
+    // No crash = success
+}

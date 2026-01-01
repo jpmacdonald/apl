@@ -1,0 +1,42 @@
+[package]
+name = "k9s"
+version = "0.50.16"
+description = ""
+homepage = "https://github.com/derailed/k9s"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/derailed/k9s/releases/download/v0.50.16/k9s_Darwin_arm64.tar.gz"
+blake3 = "abfb9895fa840cc23f543acde28e4225c4911feaeacbd472e37e23611063a089"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/derailed/k9s/releases/download/v0.50.16/k9s_Darwin_arm64.tar.gz"
+blake3 = "abfb9895fa840cc23f543acde28e4225c4911feaeacbd472e37e23611063a089"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/derailed/k9s/releases/download/v0.50.16/k9s_Darwin_amd64.tar.gz"
+blake3 = "13d8c8ce02edb6396fef9c2846cd424731c5d90dd54cf9692838349ab0438032"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["k9s"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

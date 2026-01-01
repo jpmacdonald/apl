@@ -23,16 +23,38 @@ pub const MACOS_ARM_PATTERNS: &[&str] = &[
     "macos_arm64",
     "macOS-arm64",
     "macOS_arm64",
+    "macos-aarch64", // fastfetch pattern
     "osx-arm64",
     "osx_arm64",
     "aarch64-macos",
     "aarch64-mac",
     "arm64-macos",
     "arm64-mac",
-    "universal",
-    "macos",
-    "mac",
+    "-aarch64", // generic aarch64 (careful - last resort)
 ];
+
+/// Priority patterns for macOS x86_64 binaries
+pub const MACOS_X86_PATTERNS: &[&str] = &[
+    "x86_64-apple-darwin",
+    "amd64-apple-darwin",
+    "darwin-x86_64",
+    "darwin_x86_64",
+    "darwin-x64", // pulumi pattern
+    "darwin-amd64",
+    "darwin_amd64",
+    "macos-x86_64",
+    "macos_x86_64",
+    "macOS-x86_64",
+    "macos-amd64", // fastfetch pattern
+    "osx-x86_64",
+    "osx-x64",
+    "x64-mac",
+    "-amd64",  // generic amd64 (careful - last resort)
+    "-x86_64", // generic x86_64 (careful - last resort)
+];
+
+/// Universal binary patterns (work on both ARM64 and x86_64)
+pub const MACOS_UNIVERSAL_PATTERNS: &[&str] = &["universal", "macos", "mac"];
 
 /// Strip common prefixes from GitHub tags (e.g., 'v1.0.0', 'jq-1.8.1' -> '1.8.1')
 pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
@@ -56,7 +78,66 @@ pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
     version.to_string()
 }
 
-/// Logic to find the best matching asset in a release
+/// Find both ARM64 and x86_64 assets for macOS
+pub fn find_macos_assets<'a>(
+    release: &'a GithubRelease,
+    package_name: &str,
+) -> (Option<&'a GithubAsset>, Option<&'a GithubAsset>) {
+    let arm64_asset = find_asset_for_arch(release, package_name, MACOS_ARM_PATTERNS);
+    let x86_asset = find_asset_for_arch(release, package_name, MACOS_X86_PATTERNS);
+
+    // If we didn't find arch-specific, try universal binaries
+    let arm64_final = arm64_asset
+        .or_else(|| find_asset_for_arch(release, package_name, MACOS_UNIVERSAL_PATTERNS));
+    let x86_final =
+        x86_asset.or_else(|| find_asset_for_arch(release, package_name, MACOS_UNIVERSAL_PATTERNS));
+
+    (arm64_final, x86_final)
+}
+
+/// Find asset matching specific architecture patterns
+fn find_asset_for_arch<'a>(
+    release: &'a GithubRelease,
+    package_name: &str,
+    patterns: &[&str],
+) -> Option<&'a GithubAsset> {
+    let package_name_low = package_name.to_lowercase();
+    for pattern in patterns {
+        if let Some(asset) = release.assets.iter().find(|a| {
+            let name = a.name.to_lowercase();
+            let pat = pattern.to_lowercase();
+
+            if name.contains(&pat) {
+                // archives
+                if name.ends_with(".tar.gz")
+                    || name.ends_with(".zip")
+                    || name.ends_with(".tar.xz")
+                    || name.ends_with(".tar.zst")
+                    || name.ends_with(".tzst")
+                    || name.ends_with(".dmg")
+                    || name.ends_with(".pkg")
+                {
+                    return true;
+                }
+                // raw binaries (usually no extension or custom suffix)
+                if !name.contains('.') || name.ends_with(".exe") {
+                    return true;
+                }
+            }
+            false
+        }) {
+            return Some(asset);
+        }
+    }
+
+    // Fallback for macOS apps that just name their DMG/PKG after the app
+    release.assets.iter().find(|a| {
+        let name = a.name.to_lowercase();
+        (name.ends_with(".dmg") || name.ends_with(".pkg")) && name.contains(&package_name_low)
+    })
+}
+
+/// Legacy function - find best ARM64 asset (kept for compatibility)
 pub fn find_best_asset<'a>(
     release: &'a GithubRelease,
     package_name: &str,

@@ -1,0 +1,42 @@
+[package]
+name = "exa"
+version = "0.10.1"
+description = ""
+homepage = "https://github.com/ogham/exa"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/ogham/exa/releases/download/v0.10.1/exa-macos-x86_64-v0.10.1.zip"
+blake3 = "0c115842b1a7e923e0602df733737f90b3e783c1c1264ba1de54ecdade94e550"
+format = "zip"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/ogham/exa/releases/download/v0.10.1/exa-macos-x86_64-v0.10.1.zip"
+blake3 = "0c115842b1a7e923e0602df733737f90b3e783c1c1264ba1de54ecdade94e550"
+format = "zip"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/ogham/exa/releases/download/v0.10.1/exa-macos-x86_64-v0.10.1.zip"
+blake3 = "0c115842b1a7e923e0602df733737f90b3e783c1c1264ba1de54ecdade94e550"
+format = "zip"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["exa"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

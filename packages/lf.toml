@@ -1,0 +1,42 @@
+[package]
+name = "lf"
+version = "r40"
+description = ""
+homepage = "https://github.com/gokcehan/lf"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/gokcehan/lf/releases/download/r40/lf-darwin-arm64.tar.gz"
+blake3 = "51de3110d510d9d3300abd77c81714c458e0885d9e42ec58982c73c6f7eb2af2"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/gokcehan/lf/releases/download/r40/lf-darwin-arm64.tar.gz"
+blake3 = "51de3110d510d9d3300abd77c81714c458e0885d9e42ec58982c73c6f7eb2af2"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/gokcehan/lf/releases/download/r40/lf-darwin-amd64.tar.gz"
+blake3 = "b9fb2b3d28e01f34bd45e9c280560d9c2f8bd6516357fb2fab5f6ec0c035fc2f"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["lf"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

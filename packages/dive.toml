@@ -1,0 +1,42 @@
+[package]
+name = "dive"
+version = "0.13.1"
+description = ""
+homepage = "https://github.com/wagoodman/dive"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/wagoodman/dive/releases/download/v0.13.1/dive_0.13.1_darwin_arm64.tar.gz"
+blake3 = "b2d31e2f2b36b549ef2d11d726bf45668391cc8e2844c1e903e6d2a3ddb60b9c"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/wagoodman/dive/releases/download/v0.13.1/dive_0.13.1_darwin_arm64.tar.gz"
+blake3 = "b2d31e2f2b36b549ef2d11d726bf45668391cc8e2844c1e903e6d2a3ddb60b9c"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/wagoodman/dive/releases/download/v0.13.1/dive_0.13.1_darwin_amd64.tar.gz"
+blake3 = "872a5f4fd0f00af3942d082a2b59b4ba0e613165e63fd67a23977ed684664f87"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["dive"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

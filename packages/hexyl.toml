@@ -1,0 +1,42 @@
+[package]
+name = "hexyl"
+version = "0.16.0"
+description = ""
+homepage = "https://github.com/sharkdp/hexyl"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/sharkdp/hexyl/releases/download/v0.16.0/hexyl-v0.16.0-aarch64-apple-darwin.tar.gz"
+blake3 = "b400dca1f4a503ad222cd1a2db86eba1f03228d3bc8f87fad372b00f69536ef4"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/sharkdp/hexyl/releases/download/v0.16.0/hexyl-v0.16.0-aarch64-apple-darwin.tar.gz"
+blake3 = "b400dca1f4a503ad222cd1a2db86eba1f03228d3bc8f87fad372b00f69536ef4"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/sharkdp/hexyl/releases/download/v0.16.0/hexyl-v0.16.0-x86_64-apple-darwin.tar.gz"
+blake3 = "a01ba5cb9c0a44370f4156bdb8a4d71fbdb186258de90280b3b073ee4b32c802"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["hexyl"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

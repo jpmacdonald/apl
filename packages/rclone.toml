@@ -1,0 +1,42 @@
+[package]
+name = "rclone"
+version = "1.72.1"
+description = ""
+homepage = "https://github.com/rclone/rclone"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/rclone/rclone/releases/download/v1.72.1/rclone-v1.72.1-osx-arm64.zip"
+blake3 = "1fe214f9ab80b66a97f3b5b660510f2d0380fb6e9fea87bfff8077e2a12a110f"
+format = "zip"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/rclone/rclone/releases/download/v1.72.1/rclone-v1.72.1-osx-arm64.zip"
+blake3 = "1fe214f9ab80b66a97f3b5b660510f2d0380fb6e9fea87bfff8077e2a12a110f"
+format = "zip"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/rclone/rclone/releases/download/v1.72.1/rclone-v1.72.1-freebsd-amd64.zip"
+blake3 = "ee20286f15de2a6ed285281aea4644f42bd81df340d1397a7b3ce23d72a164d1"
+format = "zip"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["rclone"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

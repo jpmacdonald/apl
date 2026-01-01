@@ -1,0 +1,42 @@
+[package]
+name = "lsd"
+version = "1.2.0"
+description = ""
+homepage = "https://github.com/lsd-rs/lsd"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/lsd-rs/lsd/releases/download/v1.2.0/lsd-v1.2.0-aarch64-apple-darwin.tar.gz"
+blake3 = "1d3ff1bf634a2dd0e7fe5c91bba10676c5b4b96556e60cb0e84652921e27abb3"
+format = "tar.gz"
+strip_components = 1
+
+[binary.x86_64]
+url = "https://github.com/lsd-rs/lsd/releases/download/v1.2.0/lsd-v1.2.0-x86_64-apple-darwin.tar.gz"
+blake3 = "1bbedbea09769055a54f543598d026ade0ab816f181f84aa2aec430024b087b3"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[binary.arm64]
+url = "https://github.com/lsd-rs/lsd/releases/download/v1.2.0/lsd-v1.2.0-aarch64-apple-darwin.tar.gz"
+blake3 = "1d3ff1bf634a2dd0e7fe5c91bba10676c5b4b96556e60cb0e84652921e27abb3"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["lsd"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

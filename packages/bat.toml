@@ -1,19 +1,42 @@
 [package]
 name = "bat"
 version = "0.26.1"
-description = "A cat(1) clone with wings"
+description = ""
+homepage = "https://github.com/sharkdp/bat"
+license = ""
 type = "cli"
 
 [source]
 url = "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-aarch64-apple-darwin.tar.gz"
 blake3 = "5a3de674ad3fa40cd9784086f9b3c4fe1ce096e9a4aa60e186a309aba7a0ebbc"
 format = "tar.gz"
+strip_components = 1
 
 [binary.arm64]
 url = "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-aarch64-apple-darwin.tar.gz"
 blake3 = "5a3de674ad3fa40cd9784086f9b3c4fe1ce096e9a4aa60e186a309aba7a0ebbc"
 format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-apple-darwin.tar.gz"
+blake3 = "63ea65f789f3711faf64e966fa1c06d9014d850ea9a656e77310aea99365292f"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
 
 [install]
 strategy = "link"
 bin = ["bat"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

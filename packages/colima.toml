@@ -1,0 +1,42 @@
+[package]
+name = "colima"
+version = "0.9.1"
+description = ""
+homepage = "https://github.com/abiosoft/colima"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/abiosoft/colima/releases/download/v0.9.1/colima-Darwin-arm64"
+blake3 = "687f13d292b8d5247cf97d1cd1bbd2bd5939531aa43af7b23f1129464d1c7bda"
+format = "binary"
+strip_components = 0
+
+[binary.arm64]
+url = "https://github.com/abiosoft/colima/releases/download/v0.9.1/colima-Darwin-arm64"
+blake3 = "687f13d292b8d5247cf97d1cd1bbd2bd5939531aa43af7b23f1129464d1c7bda"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/abiosoft/colima/releases/download/v0.9.1/colima-Darwin-x86_64"
+blake3 = "3deea91bd50d9a07332c84f6dfed5827a7a9ef4099d3bf1ec38c92563c3482ae"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["colima"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,42 @@
+[package]
+name = "logseq"
+version = "0.10.15"
+description = ""
+homepage = "https://github.com/logseq/logseq"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/logseq/logseq/releases/download/0.10.15/Logseq-darwin-arm64-0.10.15.dmg"
+blake3 = "126da8dfdab5eb96a9df166ce63622595bd4199829e66a616a4ae0746f205268"
+format = "dmg"
+strip_components = 1
+
+[binary.x86_64]
+url = "https://github.com/logseq/logseq/releases/download/0.10.15/Logseq-darwin-arm64-0.10.15.dmg"
+blake3 = "126da8dfdab5eb96a9df166ce63622595bd4199829e66a616a4ae0746f205268"
+format = "dmg"
+arch = "x86_64"
+macos = "14.0"
+
+[binary.arm64]
+url = "https://github.com/logseq/logseq/releases/download/0.10.15/Logseq-darwin-arm64-0.10.15.dmg"
+blake3 = "126da8dfdab5eb96a9df166ce63622595bd4199829e66a616a4ae0746f205268"
+format = "dmg"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["logseq"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

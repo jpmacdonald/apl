@@ -1,0 +1,42 @@
+[package]
+name = "kitty"
+version = "0.45.0"
+description = ""
+homepage = "https://github.com/kovidgoyal/kitty"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/kovidgoyal/kitty/releases/download/v0.45.0/kitten-darwin-arm64"
+blake3 = "f6818f1ceeeace0f4c208ec5ea2a5963276e095451796cd8183f34c1141e69d3"
+format = "binary"
+strip_components = 0
+
+[binary.arm64]
+url = "https://github.com/kovidgoyal/kitty/releases/download/v0.45.0/kitten-darwin-arm64"
+blake3 = "f6818f1ceeeace0f4c208ec5ea2a5963276e095451796cd8183f34c1141e69d3"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/kovidgoyal/kitty/releases/download/v0.45.0/kitten-darwin-amd64"
+blake3 = "9bd83713b95d66f40430d7f7339be0d531978c92b12b374566af887f5427b4a8"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["kitty"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

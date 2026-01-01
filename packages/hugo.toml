@@ -1,0 +1,42 @@
+[package]
+name = "hugo"
+version = "0.154.0"
+description = ""
+homepage = "https://github.com/gohugoio/hugo"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/gohugoio/hugo/releases/download/v0.154.0/hugo_0.154.0_darwin-universal.pkg"
+blake3 = "c409b8907616a9761028e31d5db05fc5cc448d4e8dff64b9045caf04e5bd8e8b"
+format = "pkg"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/gohugoio/hugo/releases/download/v0.154.0/hugo_0.154.0_darwin-universal.pkg"
+blake3 = "c409b8907616a9761028e31d5db05fc5cc448d4e8dff64b9045caf04e5bd8e8b"
+format = "pkg"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/gohugoio/hugo/releases/download/v0.154.0/hugo_0.154.0_darwin-universal.pkg"
+blake3 = "c409b8907616a9761028e31d5db05fc5cc448d4e8dff64b9045caf04e5bd8e8b"
+format = "pkg"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["hugo"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

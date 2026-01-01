@@ -1,0 +1,42 @@
+[package]
+name = "hadolint"
+version = "2.14.0"
+description = ""
+homepage = "https://github.com/hadolint/hadolint"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-arm64"
+blake3 = "64b44bb3b23903fc5aa93534f71a3f5a7e7398acad9cb358032463c83be8507d"
+format = "binary"
+strip_components = 0
+
+[binary.x86_64]
+url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-x86_64"
+blake3 = "ebc0a2c32607b86f3758614be259aaf4c7a33b1a956803a23bc3dffbbcf4f1ba"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
+
+[binary.arm64]
+url = "https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-macos-arm64"
+blake3 = "64b44bb3b23903fc5aa93534f71a3f5a7e7398acad9cb358032463c83be8507d"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["hadolint"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

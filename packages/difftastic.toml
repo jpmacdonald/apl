@@ -1,0 +1,42 @@
+[package]
+name = "difftastic"
+version = "0.67.0"
+description = ""
+homepage = "https://github.com/Wilfred/difftastic"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/Wilfred/difftastic/releases/download/0.67.0/difft-aarch64-apple-darwin.tar.gz"
+blake3 = "f3559027eda797499a91ff66c3924ade0df6b01fad9a66b20f43bf66c75c59f5"
+format = "tar.gz"
+strip_components = 1
+
+[binary.x86_64]
+url = "https://github.com/Wilfred/difftastic/releases/download/0.67.0/difft-x86_64-apple-darwin.tar.gz"
+blake3 = "bf3ae1935c0df0e1487debdd8aaba46b9f9497a38ba53ff250c55b9d33d2099b"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[binary.arm64]
+url = "https://github.com/Wilfred/difftastic/releases/download/0.67.0/difft-aarch64-apple-darwin.tar.gz"
+blake3 = "f3559027eda797499a91ff66c3924ade0df6b01fad9a66b20f43bf66c75c59f5"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["difftastic"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

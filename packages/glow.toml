@@ -1,0 +1,42 @@
+[package]
+name = "glow"
+version = "2.1.1"
+description = ""
+homepage = "https://github.com/charmbracelet/glow"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/charmbracelet/glow/releases/download/v2.1.1/glow_2.1.1_Darwin_arm64.tar.gz"
+blake3 = "40c03c98871371ac2107cc18d2a20a4023d97fc661f7d52bcec60f1434a21e15"
+format = "tar.gz"
+strip_components = 1
+
+[binary.arm64]
+url = "https://github.com/charmbracelet/glow/releases/download/v2.1.1/glow_2.1.1_Darwin_arm64.tar.gz"
+blake3 = "40c03c98871371ac2107cc18d2a20a4023d97fc661f7d52bcec60f1434a21e15"
+format = "tar.gz"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/charmbracelet/glow/releases/download/v2.1.1/glow_2.1.1_Darwin_x86_64.tar.gz"
+blake3 = "499adb9835672b7be63e43d652d9b6f059300e2b63ab7534360ef2b069b257d8"
+format = "tar.gz"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["glow"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

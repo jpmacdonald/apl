@@ -7,15 +7,24 @@ license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64.tar.gz"
-blake3 = "e6b500707fe7476ee2eabfd8f92baea981d481a117e17f1736a0958c6a774710"
-format = "tar.gz"
-strip_components = 1
+url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64"
+blake3 = "67616143fe897f1651031682b5856735936f593d6e75561fd902dfe933f2a7e4"
+format = "binary"
+strip_components = 0
+
+[binary.x86_64]
+url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_amd64"
+blake3 = "8e4217b712cc6d7ab96b3b18660a11ab9fe20f0b8cf38402591a469c5196f825"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
 
 [binary.arm64]
-url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64.tar.gz"
-blake3 = "e6b500707fe7476ee2eabfd8f92baea981d481a117e17f1736a0958c6a774710"
-format = "tar.gz"
+url = "https://github.com/mikefarah/yq/releases/download/v4.50.1/yq_darwin_arm64"
+blake3 = "67616143fe897f1651031682b5856735936f593d6e75561fd902dfe933f2a7e4"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
 
 [dependencies]
 runtime = []
@@ -25,6 +34,9 @@ optional = []
 [install]
 strategy = "link"
 bin = ["yq"]
+lib = []
+include = []
+script = ""
 
 [hints]
 post_install = ""

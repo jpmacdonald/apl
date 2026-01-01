@@ -1,0 +1,42 @@
+[package]
+name = "opa"
+version = "1.12.1"
+description = ""
+homepage = "https://github.com/open-policy-agent/opa"
+license = ""
+type = "cli"
+
+[source]
+url = "https://github.com/open-policy-agent/opa/releases/download/v1.12.1/opa_darwin_arm64"
+blake3 = "889d3464de080eab7e62effef30a5df32bfc11202ae259243cd043320138b3b5"
+format = "binary"
+strip_components = 0
+
+[binary.arm64]
+url = "https://github.com/open-policy-agent/opa/releases/download/v1.12.1/opa_darwin_arm64"
+blake3 = "889d3464de080eab7e62effef30a5df32bfc11202ae259243cd043320138b3b5"
+format = "binary"
+arch = "arm64"
+macos = "14.0"
+
+[binary.x86_64]
+url = "https://github.com/open-policy-agent/opa/releases/download/v1.12.1/opa_darwin_amd64"
+blake3 = "0062ff513cbbebfea4caae852d658a974354a13dbd7e475e42d5cba1b2c1022e"
+format = "binary"
+arch = "x86_64"
+macos = "14.0"
+
+[dependencies]
+runtime = []
+build = []
+optional = []
+
+[install]
+strategy = "link"
+bin = ["opa"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""
