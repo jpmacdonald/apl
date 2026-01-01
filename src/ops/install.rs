@@ -797,7 +797,15 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError
     // instead of linking them. We also strip the "Quarantine" attribute so macOS
     // allows them to run (otherwise it complains they are from an unidentified developer).
     Ok(InstallInfo {
-        package: pkg.package_def.unwrap().package,
+        package: pkg
+            .package_def
+            .ok_or_else(|| {
+                InstallError::Validation(format!(
+                    "Package definition missing for {} after download logic",
+                    pkg.name
+                ))
+            })?
+            .package,
         blake3: pkg.blake3,
         files_to_record: vec![(
             target_app.to_string_lossy().to_string(),

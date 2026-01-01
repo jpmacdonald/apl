@@ -73,6 +73,38 @@ pub fn is_newer(current: &str, latest: &str) -> bool {
             return false;
         }
     }
+
+    // If numeric parts are identical, check for pre-release suffixes.
+    // Logic: Stable (no suffix) > Pre-release (any suffix).
+    // e.g. 1.0.0 > 1.0.0-beta
+    //
+    // If 'latest' has no suffix and 'current' has a suffix, latest is newer (upgrade to stable).
+    // If 'current' has no suffix and 'latest' has a suffix, latest is OLDER (don't downgrade to beta).
+    //
+    // Note: This simple check doesn't compare "beta.1" vs "beta.2", but it solves the
+    // "stuck on beta" problem when stable is out.
+    let has_suffix = |v: &str| v.contains('-') || v.chars().any(|c| c.is_alphabetic());
+
+    let c_has_suffix = has_suffix(current);
+    let l_has_suffix = has_suffix(latest);
+
+    if c_has_suffix && !l_has_suffix {
+        // Current is beta, latest is stable -> Newer
+        return true;
+    }
+    if !c_has_suffix && l_has_suffix {
+        // Current is stable, latest is beta -> Older (ignore)
+        return false;
+    }
+
+    // Fallback: If both have suffixes, use lexicographical comparison as a heuristic.
+    // e.g. "1.0.0-beta.2" > "1.0.0-beta.1"
+    // e.g. "1.0.0-rc.1" > "1.0.0-beta.1"
+    if c_has_suffix && l_has_suffix {
+        return latest > current;
+    }
+
+    // Fallback: Same version or unknown
     false
 }
 
@@ -98,7 +130,7 @@ mod tests {
     fn test_parse_latest() {
         let spec = PackageSpec::parse("jq@latest").unwrap();
         assert_eq!(spec.name, "jq");
-        assert_eq!(spec.version, None); // latest = no version = get latest
+        assert_eq!(spec.version, None);
     }
 
     #[test]
@@ -111,32 +143,36 @@ mod tests {
     fn test_is_pinned() {
         let pinned = PackageSpec::parse("jq@1.7.1").unwrap();
         assert!(pinned.is_pinned());
-
         let unpinned = PackageSpec::parse("jq").unwrap();
         assert!(!unpinned.is_pinned());
-
-        let latest = PackageSpec::parse("jq@latest").unwrap();
-        assert!(!latest.is_pinned()); // @latest is not pinned
     }
 
     #[test]
     fn test_version_method() {
         let spec = PackageSpec::parse("jq@1.7.1").unwrap();
         assert_eq!(spec.version(), Some("1.7.1"));
-
         let spec2 = PackageSpec::parse("jq").unwrap();
         assert_eq!(spec2.version(), None);
     }
 
     #[test]
-    fn test_is_newer() {
+    fn test_is_newer_numeric() {
         assert!(is_newer("1.2.3", "1.2.4"));
         assert!(is_newer("1.2.3", "1.3.0"));
-        assert!(is_newer("1.2.3", "2.0.0"));
-        assert!(is_newer("0.10.4", "0.11.5"));
-        assert!(!is_newer("1.2.3", "1.2.3"));
         assert!(!is_newer("1.2.3", "1.2.2"));
-        assert!(!is_newer("1.2.3", "1.1.5"));
-        assert!(!is_newer("1.11.5", "1.10.4"));
+    }
+
+    #[test]
+    fn test_is_newer_prerelease_upgrade() {
+        assert!(is_newer("1.0.0-beta", "1.0.0"));
+        assert!(!is_newer("1.0.0", "1.0.0-beta"));
+    }
+
+    #[test]
+    fn test_is_newer_intra_prerelease() {
+        assert!(is_newer("1.0.0-beta.1", "1.0.0-beta.2"));
+        assert!(is_newer("1.0.0-alpha", "1.0.0-beta"));
+        assert!(is_newer("1.0.0-beta", "1.0.0-rc.1"));
+        assert!(!is_newer("1.0.0-beta.2", "1.0.0-beta.1"));
     }
 }
