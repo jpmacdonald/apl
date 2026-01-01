@@ -1,7 +1,7 @@
 [package]
 name = "wezterm"
 version = "20240203-110809-5046fc22"
-description = ""
+description = "GPU-accelerated terminal emulator and multiplexer"
 homepage = "https://github.com/wez/wezterm"
 license = ""
 type = "cli"

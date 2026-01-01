@@ -1,7 +1,7 @@
 [package]
 name = "k9s"
 version = "0.50.16"
-description = ""
+description = "Kubernetes CLI To Manage Your Clusters In Style!"
 homepage = "https://github.com/derailed/k9s"
 license = ""
 type = "cli"

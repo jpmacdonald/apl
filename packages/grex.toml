@@ -1,7 +1,7 @@
 [package]
 name = "grex"
 version = "1.4.6"
-description = ""
+description = "A command-line tool for generating regular expressions"
 homepage = "https://github.com/pemistahl/grex"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "hadolint"
 version = "2.14.0"
-description = ""
+description = "Haskell Dockerfile Linter"
 homepage = "https://github.com/hadolint/hadolint"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "colima"
 version = "0.9.1"
-description = ""
+description = "Container runtimes on macOS (and Linux) with minimal setup"
 homepage = "https://github.com/abiosoft/colima"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "typos"
 version = "1.41.0"
-description = ""
+description = "Source code spell checker"
 homepage = "https://github.com/crate-ci/typos"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "charm"
 version = "0.12.6"
-description = ""
+description = "A set of tools that makes adding a backend to terminal-based applications fun and easy"
 homepage = "https://github.com/charmbracelet/charm"
 license = ""
 type = "cli"

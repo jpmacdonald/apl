@@ -1,7 +1,7 @@
 [package]
 name = "duf"
 version = "0.9.1"
-description = ""
+description = "Disk Usage/Free Utility - a better 'df' alternative"
 homepage = "https://github.com/muesli/duf"
 license = ""
 type = "cli"

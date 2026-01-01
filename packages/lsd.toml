@@ -1,7 +1,7 @@
 [package]
 name = "lsd"
 version = "1.2.0"
-description = ""
+description = "The next gen ls command"
 homepage = "https://github.com/lsd-rs/lsd"
 license = ""
 type = "cli"

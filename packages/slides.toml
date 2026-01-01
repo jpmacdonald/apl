@@ -1,7 +1,7 @@
 [package]
 name = "slides"
 version = "0.9.0"
-description = ""
+description = "Terminal based presentation tool"
 homepage = "https://github.com/maaslalani/slides"
 license = ""
 type = "cli"

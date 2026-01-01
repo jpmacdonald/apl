@@ -1,7 +1,7 @@
 [package]
 name = "xh"
 version = "0.25.3"
-description = ""
+description = "Friendly and fast tool for sending HTTP requests"
 homepage = "https://github.com/ducaale/xh"
 license = ""
 type = "cli"

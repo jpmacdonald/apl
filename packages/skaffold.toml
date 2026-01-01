@@ -1,7 +1,7 @@
 [package]
 name = "skaffold"
 version = "2.17.0"
-description = ""
+description = "Easy and Repeatable Kubernetes Development"
 homepage = "https://github.com/GoogleContainerTools/skaffold"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
-name = "aws-cli"
+name = "aws"
 version = "2.0.0dev0"
-description = ""
+description = "Universal Command Line Interface for Amazon Web Services"
 homepage = "https://github.com/aws/aws-cli"
 license = ""
 type = "cli"
@@ -33,7 +33,7 @@ optional = []
 
 [install]
 strategy = "link"
-bin = ["aws-cli"]
+bin = ["aws"]
 lib = []
 include = []
 script = ""

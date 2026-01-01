@@ -1,7 +1,7 @@
 [package]
 name = "curlie"
 version = "1.8.2"
-description = ""
+description = "The power of curl, the ease of use of httpie"
 homepage = "https://github.com/rs/curlie"
 license = ""
 type = "cli"

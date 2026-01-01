@@ -1,7 +1,7 @@
 [package]
 name = "watchexec"
 version = "2.3.2"
-description = ""
+description = "Executes commands in response to file modifications"
 homepage = "https://github.com/watchexec/watchexec"
 license = ""
 type = "cli"

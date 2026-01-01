@@ -1,7 +1,7 @@
 [package]
 name = "volta"
 version = "2.0.2"
-description = ""
+description = "The Hassle-Free JavaScript Tool Manager"
 homepage = "https://github.com/volta-cli/volta"
 license = ""
 type = "cli"

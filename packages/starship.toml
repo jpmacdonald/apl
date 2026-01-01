@@ -1,7 +1,7 @@
 [package]
 name = "starship"
 version = "1.24.2"
-description = ""
+description = "The minimal, blazing-fast, and infinitely customizable prompt for any shell!"
 homepage = "https://github.com/starship/starship"
 license = ""
 type = "cli"

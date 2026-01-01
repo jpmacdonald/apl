@@ -1,7 +1,7 @@
 [package]
-name = "opentofu"
+name = "tofu"
 version = "1.11.2"
-description = ""
+description = "Open-source Infrastructure as Code tool managed by the Linux Foundation"
 homepage = "https://github.com/opentofu/opentofu"
 license = ""
 type = "cli"
@@ -33,7 +33,7 @@ optional = []
 
 [install]
 strategy = "link"
-bin = ["opentofu"]
+bin = ["tofu"]
 lib = []
 include = []
 script = ""

@@ -1,7 +1,7 @@
 [package]
 name = "opa"
 version = "1.12.1"
-description = ""
+description = "Enabling policy-based control across the stack"
 homepage = "https://github.com/open-policy-agent/opa"
 license = ""
 type = "cli"

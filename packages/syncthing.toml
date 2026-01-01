@@ -1,7 +1,7 @@
 [package]
 name = "syncthing"
 version = "2.0.12"
-description = ""
+description = "Open Source Continuous File Synchronization"
 homepage = "https://github.com/syncthing/syncthing"
 license = ""
 type = "cli"

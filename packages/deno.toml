@@ -1,7 +1,7 @@
 [package]
 name = "deno"
 version = "2.6.3"
-description = ""
+description = "A secure runtime for JavaScript and TypeScript"
 homepage = "https://github.com/denoland/deno"
 license = ""
 type = "cli"

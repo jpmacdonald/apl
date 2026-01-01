@@ -1,7 +1,7 @@
 [package]
 name = "gitui"
 version = "0.28.0"
-description = ""
+description = "Blazing fast terminal-ui for git written in rust"
 homepage = "https://github.com/extrawurst/gitui"
 license = ""
 type = "cli"

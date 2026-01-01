@@ -1,7 +1,7 @@
 [package]
 name = "trivy"
 version = "0.68.2"
-description = ""
+description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 homepage = "https://github.com/aquasecurity/trivy"
 license = ""
 type = "cli"

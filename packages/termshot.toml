@@ -1,7 +1,7 @@
 [package]
 name = "termshot"
 version = "0.6.0"
-description = ""
+description = "Capture polished terminal output as images"
 homepage = "https://github.com/homeport/termshot"
 license = ""
 type = "cli"

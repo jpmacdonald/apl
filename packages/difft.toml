@@ -1,7 +1,7 @@
 [package]
-name = "difftastic"
+name = "difft"
 version = "0.67.0"
-description = ""
+description = "A structural diff that understands syntax"
 homepage = "https://github.com/Wilfred/difftastic"
 license = ""
 type = "cli"
@@ -33,7 +33,7 @@ optional = []
 
 [install]
 strategy = "link"
-bin = ["difftastic"]
+bin = ["difft"]
 lib = []
 include = []
 script = ""

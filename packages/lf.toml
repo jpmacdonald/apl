@@ -1,7 +1,7 @@
 [package]
 name = "lf"
 version = "r40"
-description = ""
+description = "A terminal file manager implemented in Go"
 homepage = "https://github.com/gokcehan/lf"
 license = ""
 type = "cli"

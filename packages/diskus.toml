@@ -1,7 +1,7 @@
 [package]
 name = "diskus"
 version = "0.9.0"
-description = ""
+description = "A minimal, fast alternative to 'du -sh'"
 homepage = "https://github.com/sharkdp/diskus"
 license = ""
 type = "cli"

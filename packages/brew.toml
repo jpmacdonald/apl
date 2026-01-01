@@ -1,7 +1,7 @@
 [package]
 name = "brew"
 version = "5.0.8"
-description = ""
+description = "The missing package manager for macOS (or Linux)"
 homepage = "https://github.com/Homebrew/brew"
 license = ""
 type = "cli"

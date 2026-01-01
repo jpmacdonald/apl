@@ -1,7 +1,7 @@
 [package]
 name = "vhs"
 version = "0.10.0"
-description = ""
+description = "Your CLI home video recorder"
 homepage = "https://github.com/charmbracelet/vhs"
 license = ""
 type = "cli"

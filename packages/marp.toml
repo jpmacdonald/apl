@@ -1,7 +1,7 @@
 [package]
-name = "marp-cli"
+name = "marp"
 version = "4.2.3"
-description = ""
+description = "CLI interface for Marp and Marpit-based converters"
 homepage = "https://github.com/marp-team/marp-cli"
 license = ""
 type = "cli"
@@ -33,7 +33,7 @@ optional = []
 
 [install]
 strategy = "link"
-bin = ["marp-cli"]
+bin = ["marp"]
 lib = []
 include = []
 script = ""

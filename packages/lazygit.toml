@@ -1,7 +1,7 @@
 [package]
 name = "lazygit"
 version = "0.57.0"
-description = ""
+description = "Simple terminal UI for git commands"
 homepage = "https://github.com/jesseduffield/lazygit"
 license = ""
 type = "cli"

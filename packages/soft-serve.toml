@@ -1,7 +1,7 @@
 [package]
 name = "soft-serve"
 version = "0.11.1"
-description = ""
+description = "The mighty, self-hostable Git server for the command line"
 homepage = "https://github.com/charmbracelet/soft-serve"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "slsa-verifier"
 version = "2.7.1"
-description = ""
+description = "Verify provenance from SLSA compliant builders"
 homepage = "https://github.com/slsa-framework/slsa-verifier"
 license = ""
 type = "cli"

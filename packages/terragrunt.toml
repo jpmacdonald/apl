@@ -1,7 +1,7 @@
 [package]
 name = "terragrunt"
 version = "0.96.1"
-description = ""
+description = "A flexible orchestration tool for scaling Infrastructure as Code"
 homepage = "https://github.com/gruntwork-io/terragrunt"
 license = ""
 type = "cli"

@@ -1,7 +1,7 @@
 [package]
 name = "logseq"
 version = "0.10.15"
-description = ""
+description = "A privacy-first, open-source platform for knowledge management and collaboration"
 homepage = "https://github.com/logseq/logseq"
 license = ""
 type = "cli"

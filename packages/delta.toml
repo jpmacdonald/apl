@@ -1,7 +1,7 @@
 [package]
 name = "delta"
 version = "0.18.2"
-description = ""
+description = "A syntax-highlighting pager for git, diff, grep, and blame output"
 homepage = "https://github.com/dandavison/delta"
 license = ""
 type = "cli"

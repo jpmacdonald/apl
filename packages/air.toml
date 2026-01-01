@@ -1,7 +1,7 @@
 [package]
 name = "air"
 version = "1.63.4"
-description = ""
+description = "Live reload for Go apps"
 homepage = "https://github.com/air-verse/air"
 license = ""
 type = "cli"

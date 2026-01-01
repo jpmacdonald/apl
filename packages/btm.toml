@@ -1,5 +1,5 @@
 [package]
-name = "bottom"
+name = "btm"
 version = "0.12.3"
 description = "A cross-platform graphical process/system monitor"
 homepage = "https://github.com/ClementTsang/bottom"
@@ -33,7 +33,7 @@ optional = []
 
 [install]
 strategy = "link"
-bin = ["bottom"]
+bin = ["btm"]
 lib = []
 include = []
 script = ""
