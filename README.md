@@ -4,24 +4,21 @@ A fast, minimal package manager for macOS.
 
 ## Installation
 
-```bash
-curl -fsSL https://<some domain i havent setup yet>/install.sh | sh
-```
-
-Or build from source:
+Since APL is currently in development, you can install it by cloning the repository and running the bootstrap script:
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/jpmacdonald/apl.git
 cd apl
+
+# 2. Build from source
 cargo build --release
-cp target/release/apl ~/.local/bin/
+
+# 3. Run the installer
+./install.sh
 ```
 
-After installing, add `~/.apl/bin` to your PATH:
-
-```bash
-export PATH="$HOME/.apl/bin:$PATH"
-```
+The installer will copy the binary to `~/.apl/bin` and help you set up your PATH.
 
 ## Quick Start
 
