@@ -1,143 +1,79 @@
 # APL
 
-A package manager for macOS.
+A fast, minimal package manager for macOS.
 
 ## Installation
 
 ```bash
-curl -fsSL https://apl.dev/install.sh | sh
+curl -fsSL https://<some domain i havent setup yet>/install.sh | sh
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/user/apl.git
+git clone https://github.com/jpmacdonald/apl.git
 cd apl
 cargo build --release
 cp target/release/apl ~/.local/bin/
 ```
 
-## Usage
-
-### Install packages
-
-```bash
-apl install ripgrep neovim
-```
-
-### Remove packages
-
-```bash
-apl remove ripgrep
-```
-
-### List installed packages
-
-```bash
-apl list
-```
-
-### Search for packages
-
-```bash
-apl search editor
-```
-
-### View package information
-
-```bash
-apl info neovim
-```
-
-### Update the package index
-
-```bash
-apl update
-```
-
-### Upgrade installed packages
-
-```bash
-apl upgrade
-```
-
-## Registry Maintenance
-
-## Registry Maintenance
-
-For APL maintainers, the `apl-pkg` tool handles the package lifecycle (adding, updating, and indexing).
-
-See the [Maintainer's Guide](docs/maintainer_guide.md) and [Registry Architecture](docs/registry_architecture.md) for more details.
-
-```bash
-# Add a new package
-cargo run --release --bin apl-pkg -- add owner/repo
-
-# Update all packages and regenerate index
-cargo run --release --bin apl-pkg -- update
-```
-
-## Configuration
-
-APL stores all data in `~/.apl/`:
-
-```
-~/.apl/
-├── bin/          # Symlinks to installed binaries
-├── store/        # Installed packages (versioned)
-├── cache/        # Downloaded archives
-├── index.bin     # Package index
-└── state.db      # Installation database
-```
-
-Add `~/.apl/bin` to your PATH:
+After installing, add `~/.apl/bin` to your PATH:
 
 ```bash
 export PATH="$HOME/.apl/bin:$PATH"
 ```
 
-## Shell Completions
-
-APL supports completions for bash, zsh, fish, elvish, and powershell.
+## Quick Start
 
 ```bash
-# Zsh
-apl completions zsh > ~/.zfunc/_apl
+# Update the package index
+apl update
 
-# Bash
-apl completions bash > /etc/bash_completion.d/apl
+# Install packages
+apl install ripgrep fd bat
 
-# Fish
-apl completions fish > ~/.config/fish/completions/apl.fish
+# List installed packages
+apl list
+
+# Upgrade all packages
+apl upgrade
 ```
 
-## Package Format
+## Commands
 
-Packages are defined in TOML:
+| Command | Description |
+|---------|-------------|
+| `apl install <pkg>` | Install packages |
+| `apl remove <pkg>` | Remove packages |
+| `apl list` | List installed packages |
+| `apl search <query>` | Search for packages |
+| `apl info <pkg>` | Show package details |
+| `apl update` | Update package index |
+| `apl upgrade` | Upgrade installed packages |
+| `apl status` | Check for updates |
 
-```toml
-[package]
-name = "ripgrep"
-version = "14.1.1"
-description = "Line-oriented search tool"
-type = "cli"
+See the [User Guide](docs/user-guide.md) for complete command reference.
 
-[source]
-url = "https://github.com/BurntSushi/ripgrep/releases/..."
-blake3 = "abc123..."
+## Documentation
 
-[binary.arm64]
-url = "https://github.com/BurntSushi/ripgrep/releases/..."
-blake3 = "def456..."
+- [Getting Started](docs/getting-started.md) - Installation and first steps
+- [User Guide](docs/user-guide.md) - Complete command reference
+- [Package Format](docs/package-format.md) - Create your own packages
+- [Architecture](docs/architecture.md) - Technical overview
+- [Contributing](docs/contributing.md) - How to contribute
 
-[install]
-bin = ["rg"]
-```
+## Features
+
+- **Fast** - Sub-second installs with streaming downloads
+- **Simple** - TOML packages, no DSLs
+- **Secure** - BLAKE3 hash verification
+- **Portable** - Automatic binary relinking for macOS
+- **Version control** - Multiple versions, history, rollback
 
 ## Requirements
 
 - macOS 14.0 or later
-- Apple Silicon (native) or Intel processor (Rosetta 2)
+- Apple Silicon (native) or Intel (Rosetta 2)
 
 ## License
 

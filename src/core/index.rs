@@ -97,10 +97,16 @@ impl IndexEntry {
         self.releases.first()
     }
 
-    /// Find a specific version
+    /// Find a specific version - O(log n) binary search
+    ///
+    /// Note: Releases are sorted descending (newest first), so we reverse the comparison.
     pub fn find_version(&self, version: impl AsRef<str>) -> Option<&VersionInfo> {
         let v = version.as_ref();
-        self.releases.iter().find(|r| r.version == v)
+        // Releases sorted descending, so we reverse: compare target to element (not element to target)
+        self.releases
+            .binary_search_by(|r| v.cmp(&r.version))
+            .ok()
+            .map(|idx| &self.releases[idx])
     }
 }
 
@@ -138,14 +144,18 @@ impl PackageIndex {
         // where possible (borrowing), avoiding string copies.
         //
         // This makes startup for large indices (10k+ packages) nearly instantaneous.
-        if mmap.len() >= 4 && mmap[0..4] == crate::ZSTD_MAGIC {
+        let mut index = if mmap.len() >= 4 && mmap[0..4] == crate::ZSTD_MAGIC {
             let decompressed = zstd::decode_all(&mmap[..])?;
-            return postcard::from_bytes(&decompressed)
-                .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint));
-        }
+            postcard::from_bytes(&decompressed)
+                .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?
+        } else {
+            // Postcard header check (version defined in from_bytes)
+            Self::from_bytes(&mmap)?
+        };
 
-        // Postcard header check (version defined in from_bytes)
-        Self::from_bytes(&mmap)
+        // Ensure sorted for O(log n) lookups
+        index.ensure_sorted();
+        Ok(index)
     }
 
     /// Serializes to an uncompressed Postcard file, optimized for MMAP usage.
@@ -190,10 +200,9 @@ impl PackageIndex {
 
     /// Add or update a package entry (full entry)
     pub fn upsert(&mut self, entry: IndexEntry) {
-        if let Some(existing) = self.packages.iter_mut().find(|e| e.name == entry.name) {
-            *existing = entry;
-        } else {
-            self.packages.push(entry);
+        match self.packages.binary_search_by(|e| e.name.cmp(&entry.name)) {
+            Ok(idx) => self.packages[idx] = entry,
+            Err(idx) => self.packages.insert(idx, entry),
         }
     }
 
@@ -205,44 +214,80 @@ impl PackageIndex {
         type_: &str,
         release: VersionInfo,
     ) {
-        if let Some(entry) = self.packages.iter_mut().find(|e| e.name == name) {
-            entry.description = description.to_string();
-            entry.type_ = type_.to_string();
-            if let Some(existing) = entry
-                .releases
-                .iter_mut()
-                .find(|r| r.version == release.version)
-            {
-                *existing = release;
-            } else {
-                entry.releases.push(release);
+        match self
+            .packages
+            .binary_search_by(|e| e.name.as_str().cmp(name))
+        {
+            Ok(idx) => {
+                let entry = &mut self.packages[idx];
+                entry.description = description.to_string();
+                entry.type_ = type_.to_string();
+                if let Some(existing) = entry
+                    .releases
+                    .iter_mut()
+                    .find(|r| r.version == release.version)
+                {
+                    *existing = release;
+                } else {
+                    entry.releases.push(release);
+                }
+                // Sort releases by version descending
+                entry.releases.sort_by(|a, b| b.version.cmp(&a.version));
             }
-            // Sort releases by version descending (basic string comparison for now, improves later)
-            entry.releases.sort_by(|a, b| b.version.cmp(&a.version));
-        } else {
-            self.packages.push(IndexEntry {
-                name: name.to_string(),
-                description: description.to_string(),
-                homepage: String::new(),
-                type_: type_.to_string(),
-                releases: vec![release],
-            });
+            Err(idx) => {
+                self.packages.insert(
+                    idx,
+                    IndexEntry {
+                        name: name.to_string(),
+                        description: description.to_string(),
+                        homepage: String::new(),
+                        type_: type_.to_string(),
+                        releases: vec![release],
+                    },
+                );
+            }
         }
     }
 
-    /// Find a package by name
+    /// Find a package by name - O(log n) binary search
     pub fn find(&self, name: impl AsRef<str>) -> Option<&IndexEntry> {
         let n = name.as_ref();
-        self.packages.iter().find(|e| e.name == n)
+        self.packages
+            .binary_search_by(|e| e.name.as_str().cmp(n))
+            .ok()
+            .map(|idx| &self.packages[idx])
     }
 
-    /// Search packages by prefix
+    /// Search packages by query (matches name or description) - O(n) scan
+    ///
+    /// Note: This is intentionally O(n) because it's a substring search.
+    /// For prefix-only search, we could use partition_point for O(log n).
     pub fn search(&self, query: &str) -> Vec<&IndexEntry> {
         let query_lower = query.to_lowercase();
         self.packages
             .iter()
-            .filter(|e| e.name.to_lowercase().contains(&query_lower))
+            .filter(|e| {
+                e.name.to_lowercase().contains(&query_lower)
+                    || e.description.to_lowercase().contains(&query_lower)
+            })
             .collect()
+    }
+
+    /// Search packages by name prefix - O(log n) using binary search
+    pub fn search_prefix(&self, prefix: &str) -> Vec<&IndexEntry> {
+        let start = self.packages.partition_point(|e| e.name.as_str() < prefix);
+
+        // Collect all entries that start with prefix
+        self.packages[start..]
+            .iter()
+            .take_while(|e| e.name.starts_with(prefix))
+            .collect()
+    }
+
+    /// Ensure packages are sorted by name for binary search.
+    /// Called after load and deserialization.
+    fn ensure_sorted(&mut self) {
+        self.packages.sort_by(|a, b| a.name.cmp(&b.name));
     }
 }
 

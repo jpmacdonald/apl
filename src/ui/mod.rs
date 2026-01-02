@@ -45,19 +45,22 @@
 //!
 //! ```no_run
 //! use apl::ui::Output;
+//! use apl::{PackageName, Version};
 //!
 //! let output = Output::new();
 //!
 //! // Prepare for parallel downloads
 //! output.prepare_pipeline(&[
-//!     ("ripgrep".to_string(), Some("14.1.0".to_string())),
-//!     ("fd".to_string(), Some("10.2.0".to_string())),
+//!     (PackageName::new("ripgrep"), Some(Version::from("14.1.0"))),
+//!     (PackageName::new("fd"), Some(Version::from("10.2.0"))),
 //! ]);
 //!
 //! // Update progress
-//! output.downloading("ripgrep", "14.1.0", 1024, 4096);
-//! output.installing("ripgrep", "14.1.0");
-//! output.done("ripgrep", "14.1.0", "installed", None);
+//! let name = PackageName::new("ripgrep");
+//! let version = Version::from("14.1.0");
+//! output.downloading(&name, &version, 1024, 4096);
+//! output.installing(&name, &version);
+//! output.done(&name, &version, "installed", None);
 //!
 //! // Show summary
 //! output.success_summary("2 packages installed");
