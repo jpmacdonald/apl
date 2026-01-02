@@ -142,15 +142,32 @@ APL is built around three principles:
 
 ---
 
-## Key Innovations
+### Algorithmic Registry
+
+The package registry is now **algorithmic**, meaning it uses templates to dynamically discover versions rather than requiring manual updates for every release.
+
+- **Storage**: Templates are sharded in `registry/{prefix}/{name}.toml`.
+- **Discovery**: The `apl-pkg` tool uses the GitHub Tags API to find all historical versions matching a `tag_pattern`.
+- **Hydration**: For each discovered version, APL constructs download URLs and fetches integrity hashes (prioritizing vendor checksum files).
+
+### Hydration Pipeline
+
+To generate the binary index, APL runs a hydration pipeline:
+
+1. **Version Discovery**: Scan GitHub for all tags matching the template.
+2. **Asset Mapping**: For each version, map APL architectures to vendor-specific targets.
+3. **Checksum Fetching**: 
+   - APL tries to fetch the vendor's `.sha256` or `.txt` checksum file first.
+   - **Optimization**: This avoids downloading the full binary (99.9% network savings).
+4. **Fallback Hashing**: If vendor checksums are unavailable, APL downloads the binary once and computes a **BLAKE3** hash, which is then cached locally and in the index.
 
 ### Binary Index
 
-The package index uses [Postcard](https://docs.rs/postcard) serialization with optional Zstd compression and memory mapping:
+The package index uses [Postcard](https://docs.rs/postcard) serialization with Zstd compression and memory mapping:
 
 - **Load time**: <1ms (no parsing, just mmap)
-- **Size**: ~15KB for 100 packages
-- **Lookups**: O(n) scan, fast for small registries
+- **Size**: ~2KB for 100 packages (pre-compression)
+- **Lookups**: O(log n) binary search via memory-mapped slices.
 
 ### Streaming Extraction
 

@@ -94,53 +94,36 @@ cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
 
 ## Registry Maintenance
 
-The `apl-pkg` tool manages the package registry.
+APL uses an **Algorithmic Registry**. Instead of manually updating version strings, you contribute **Templates** that tell APL how to discover new versions.
 
 ### Prerequisites
 
-Set a GitHub token for higher API rate limits:
+Set a GitHub token for higher API rate limits (required for index generation):
 
 ```bash
 export GITHUB_TOKEN=your_token_here
 ```
 
-### Add a Package
+### Contributing a New Package
 
-```bash
-cargo run --release --bin apl-pkg -- add owner/repo
-```
+1. Create a template in `registry/{prefix}/{name}.toml`.
+   - Example: `registry/ri/ripgrep.toml`
+2. Follow the [Package Format](package-format.md) guide to define:
+   - `[discovery]`: GitHub repo and tag pattern.
+   - `[assets]`: URL templates with `{{version}}` and `{{target}}`.
+   - `[checksums]`: Vendor checksum templates.
+3. Validate your template:
+   ```bash
+   cargo run --release --bin apl-pkg -- check
+   ```
+4. Generate a local index to test:
+   ```bash
+   cargo run --release --bin apl-pkg -- index
+   ```
 
-This:
-1. Fetches the latest GitHub release
-2. Downloads binaries for ARM64 and x86_64
-3. Computes BLAKE3 hashes
-4. Generates `packages/<name>.toml`
+### Updating the Index
 
-### Update All Packages
-
-```bash
-cargo run --release --bin apl-pkg -- update
-```
-
-### Update a Specific Package
-
-```bash
-cargo run --release --bin apl-pkg -- update --package ripgrep
-```
-
-### Validate Registry
-
-```bash
-cargo run --release --bin apl-pkg -- check
-```
-
-### Regenerate Index
-
-If you manually edit package files:
-
-```bash
-cargo run --release --bin apl-pkg -- index
-```
+The index is automatically updated every 6 hours by GitHub Actions. You don't need to manually update versions unless the template logic changes.
 
 ---
 

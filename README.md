@@ -64,9 +64,10 @@ See the [User Guide](docs/user-guide.md) for complete command reference.
 
 ## Features
 
+- **Algorithmic Registry** - Dynamic version discovery via GitHub (zero manual maintenance)
 - **Fast** - Sub-second installs with streaming downloads
 - **Simple** - TOML packages, no DSLs
-- **Secure** - BLAKE3 hash verification
+- **Secure** - BLAKE3 hash verification with vendor checksum support
 - **Portable** - Automatic binary relinking for macOS
 - **Version control** - Multiple versions, history, rollback
 
