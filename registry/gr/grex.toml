@@ -1,0 +1,35 @@
+[package]
+name = "grex"
+version = "1.4.6"
+description = "A command-line tool for generating regular expressions"
+homepage = "https://github.com/pemistahl/grex"
+license = ""
+type = "cli"
+
+[discovery]
+github = "pemistahl/grex"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/pemistahl/grex/releases/download/v{{version}}/grex-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["grex"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

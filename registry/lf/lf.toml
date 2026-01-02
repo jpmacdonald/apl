@@ -1,0 +1,35 @@
+[package]
+name = "lf"
+version = "r40"
+description = "A terminal file manager implemented in Go"
+homepage = "https://github.com/gokcehan/lf"
+license = ""
+type = "cli"
+
+[discovery]
+github = "gokcehan/lf"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/gokcehan/lf/releases/download/{{version}}/lf-darwin-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "amd64"
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["lf"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

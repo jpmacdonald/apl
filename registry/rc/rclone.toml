@@ -1,0 +1,35 @@
+[package]
+name = "rclone"
+version = "1.72.1"
+description = "Rsync for cloud storage"
+homepage = "https://github.com/rclone/rclone"
+license = ""
+type = "cli"
+
+[discovery]
+github = "rclone/rclone"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/rclone/rclone/releases/download/v{{version}}/rclone-v{{version}}-osx-{{target}}.zip"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["rclone"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

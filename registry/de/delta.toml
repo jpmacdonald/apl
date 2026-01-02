@@ -1,0 +1,35 @@
+[package]
+name = "delta"
+version = "0.18.2"
+description = "A syntax-highlighting pager for git, diff, grep, and blame output"
+homepage = "https://github.com/dandavison/delta"
+license = ""
+type = "cli"
+
+[discovery]
+github = "dandavison/delta"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/dandavison/delta/releases/download/{{version}}/delta-{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["delta"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

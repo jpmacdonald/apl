@@ -1,0 +1,31 @@
+[package]
+name = "eza"
+version = "0.23.4"
+description = "A modern replacement for ls"
+homepage = "https://github.com/eza-community/eza"
+license = "MIT"
+type = "cli"
+
+[discovery]
+github = "eza-community/eza"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/eza-community/eza/archive/refs/tags/v{{version}}.tar.gz"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["eza"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

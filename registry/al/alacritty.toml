@@ -1,0 +1,31 @@
+[package]
+name = "alacritty"
+version = "0.16.1"
+description = "A cross-platform, OpenGL terminal emulator"
+homepage = "https://github.com/alacritty/alacritty"
+license = ""
+type = "cli"
+
+[discovery]
+github = "alacritty/alacritty"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/alacritty/alacritty/releases/download/v{{version}}/Alacritty-v{{version}}.dmg"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["alacritty"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

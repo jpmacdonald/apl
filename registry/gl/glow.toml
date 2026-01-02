@@ -1,0 +1,35 @@
+[package]
+name = "glow"
+version = "2.1.1"
+description = "Render markdown on the CLI, with pizzazz!"
+homepage = "https://github.com/charmbracelet/glow"
+license = ""
+type = "cli"
+
+[discovery]
+github = "charmbracelet/glow"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/charmbracelet/glow/releases/download/v{{version}}/glow_{{version}}_Darwin_{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "x86_64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["glow"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,31 @@
+[package]
+name = "transmission"
+version = "4.0.6"
+description = "A Fast, Easy, and Free BitTorrent Client"
+homepage = "https://github.com/transmission/transmission"
+license = ""
+type = "cli"
+
+[discovery]
+github = "transmission/transmission"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/transmission/transmission/releases/download/{{version}}/Transmission-{{version}}.dmg"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["transmission"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

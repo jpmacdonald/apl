@@ -1,0 +1,31 @@
+[package]
+name = "mpv"
+version = "0.41.0"
+description = "Command line media player"
+homepage = "https://github.com/mpv-player/mpv"
+license = ""
+type = "cli"
+
+[discovery]
+github = "mpv-player/mpv"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/mpv-player/mpv/releases/download/v{{version}}/mpv-v{{version}}-macos-14-arm.zip"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["mpv"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,35 @@
+[package]
+name = "logseq"
+version = "0.10.15"
+description = "A privacy-first, open-source platform for knowledge management and collaboration"
+homepage = "https://github.com/logseq/logseq"
+license = ""
+type = "cli"
+
+[discovery]
+github = "logseq/logseq"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/logseq/logseq/releases/download/{{version}}/Logseq-darwin-{{target}}-{{version}}.dmg"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["logseq"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

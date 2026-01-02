@@ -1,0 +1,35 @@
+[package]
+name = "lsd"
+version = "1.2.0"
+description = "The next gen ls command"
+homepage = "https://github.com/lsd-rs/lsd"
+license = ""
+type = "cli"
+
+[discovery]
+github = "lsd-rs/lsd"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/lsd-rs/lsd/releases/download/v{{version}}/lsd-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["lsd"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

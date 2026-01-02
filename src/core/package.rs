@@ -79,6 +79,10 @@ pub struct Source {
     pub format: ArtifactFormat,
     #[serde(default)]
     pub strip_components: u32,
+    #[serde(default)]
+    pub url_template: Option<String>,
+    #[serde(default)]
+    pub versions: Option<Vec<String>>,
 }
 
 /// Binary artifact (precompiled)
@@ -208,6 +212,71 @@ impl std::str::FromStr for Package {
 }
 
 // Type aliases for backwards compatibility during migration
+
+// ============================================================================
+// Algorithmic Registry Structs (Template-Based Package Definitions)
+// ============================================================================
+
+/// Package template for algorithmic registry (stored in registry/)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageTemplate {
+    pub package: PackageInfo,
+    pub discovery: DiscoveryConfig,
+    pub assets: AssetConfig,
+    #[serde(default)]
+    pub checksums: ChecksumConfig,
+    pub install: InstallSpec,
+    #[serde(default)]
+    pub hints: Hints,
+}
+
+/// How to discover versions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DiscoveryConfig {
+    GitHub {
+        github: String, // "owner/repo"
+        #[serde(default = "default_tag_pattern")]
+        tag_pattern: String, // "{{version}}" or "v{{version}}"
+        #[serde(default = "default_true")]
+        semver_only: bool,
+        #[serde(default)]
+        include_prereleases: bool,
+    },
+    Manual {
+        manual: Vec<String>, // List of versions
+    },
+}
+
+fn default_tag_pattern() -> String {
+    "{{version}}".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// How to construct asset URLs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetConfig {
+    pub url_template: String,
+    #[serde(default)]
+    pub targets: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub universal: bool, // Single binary for all arches
+}
+
+/// Checksum configuration
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ChecksumConfig {
+    #[serde(default)]
+    pub url_template: Option<String>,
+    /// Expected hash type from vendor (usually sha256)
+    #[serde(default)]
+    pub vendor_type: Option<crate::index::HashType>,
+    #[serde(default)]
+    pub skip: bool,
+}
 
 #[cfg(test)]
 mod tests {

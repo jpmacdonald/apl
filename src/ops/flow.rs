@@ -248,7 +248,7 @@ impl UnresolvedPackage {
             Ok((
                 ArtifactKind::Binary {
                     url: b.url.clone(),
-                    hash: b.blake3.clone(),
+                    hash: b.hash.clone(),
                 },
                 current_arch,
             ))
@@ -256,7 +256,7 @@ impl UnresolvedPackage {
             Ok((
                 ArtifactKind::Source {
                     url: src.url.clone(),
-                    hash: src.blake3.clone(),
+                    hash: src.hash.clone(),
                 },
                 current_arch,
             ))
@@ -314,6 +314,8 @@ impl UnresolvedPackage {
                 },
                 format: ArtifactFormat::TarGz,
                 strip_components: 1,
+                url_template: None,
+                versions: None,
             },
             binary: binary_map,
             dependencies: Dependencies {

@@ -1,0 +1,35 @@
+[package]
+name = "git-lfs"
+version = "3.7.1"
+description = "Git extension for versioning large files"
+homepage = "https://github.com/git-lfs/git-lfs"
+license = ""
+type = "cli"
+
+[discovery]
+github = "git-lfs/git-lfs"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/git-lfs/git-lfs/releases/download/v{{version}}/git-lfs-darwin-{{target}}-v{{version}}.zip"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["git-lfs"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

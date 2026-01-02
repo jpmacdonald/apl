@@ -1,0 +1,35 @@
+[package]
+name = "rg"
+version = "15.1.0"
+description = "A line-oriented search tool that recursively searches the current directory for a regex pattern"
+homepage = "https://github.com/BurntSushi/ripgrep"
+license = ""
+type = "cli"
+
+[discovery]
+github = "BurntSushi/ripgrep"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/BurntSushi/ripgrep/releases/download/{{version}}/ripgrep-{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["rg"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

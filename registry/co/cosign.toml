@@ -1,0 +1,35 @@
+[package]
+name = "cosign"
+version = "3.0.3"
+description = "Code signing and transparency for containers and binaries"
+homepage = "https://github.com/sigstore/cosign"
+license = ""
+type = "cli"
+
+[discovery]
+github = "sigstore/cosign"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/sigstore/cosign/releases/download/v{{version}}/cosign-darwin-{{target}}"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["cosign"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

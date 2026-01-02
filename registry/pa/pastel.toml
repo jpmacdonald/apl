@@ -1,0 +1,35 @@
+[package]
+name = "pastel"
+version = "0.11.0"
+description = "A command-line tool to generate, analyze, convert and manipulate colors"
+homepage = "https://github.com/sharkdp/pastel"
+license = ""
+type = "cli"
+
+[discovery]
+github = "sharkdp/pastel"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/sharkdp/pastel/releases/download/v{{version}}/pastel-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["pastel"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

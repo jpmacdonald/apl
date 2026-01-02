@@ -1,0 +1,35 @@
+[package]
+name = "watchexec"
+version = "2.3.2"
+description = "Executes commands in response to file modifications"
+homepage = "https://github.com/watchexec/watchexec"
+license = ""
+type = "cli"
+
+[discovery]
+github = "watchexec/watchexec"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/watchexec/watchexec/releases/download/v{{version}}/watchexec-{{version}}-{{target}}.tar.xz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["watchexec"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

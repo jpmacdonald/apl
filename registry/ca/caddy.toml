@@ -1,0 +1,35 @@
+[package]
+name = "caddy"
+version = "2.10.2"
+description = "Fast and extensible multi-platform HTTP/1-2-3 web server with automatic HTTPS"
+homepage = "https://github.com/caddyserver/caddy"
+license = ""
+type = "cli"
+
+[discovery]
+github = "caddyserver/caddy"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/caddyserver/caddy/releases/download/v{{version}}/caddy_{{version}}_mac_{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "amd64"
+arm64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["caddy"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

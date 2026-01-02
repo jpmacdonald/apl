@@ -1,0 +1,35 @@
+[package]
+name = "opa"
+version = "1.12.1"
+description = "Enabling policy-based control across the stack"
+homepage = "https://github.com/open-policy-agent/opa"
+license = ""
+type = "cli"
+
+[discovery]
+github = "open-policy-agent/opa"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/open-policy-agent/opa/releases/download/v{{version}}/opa_darwin_{{target}}"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["opa"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

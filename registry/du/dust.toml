@@ -1,0 +1,34 @@
+[package]
+name = "dust"
+version = "1.2.3"
+description = "A more intuitive version of 'du' in Rust"
+homepage = "https://github.com/bootandy/dust"
+license = ""
+type = "cli"
+
+[discovery]
+github = "bootandy/dust"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/bootandy/dust/releases/download/v{{version}}/dust-v{{version}}-{{target}}-unknown-linux-gnu.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["dust"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

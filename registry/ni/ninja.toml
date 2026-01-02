@@ -1,0 +1,31 @@
+[package]
+name = "ninja"
+version = "1.13.2"
+description = "Small build system with a focus on speed"
+homepage = ""
+license = ""
+type = "cli"
+
+[discovery]
+github = "ninja-build/ninja"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/ninja-build/ninja/releases/download/v{{version}}/ninja-mac.zip"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["ninja"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

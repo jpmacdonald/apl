@@ -1,0 +1,35 @@
+[package]
+name = "soft-serve"
+version = "0.11.1"
+description = "The mighty, self-hostable Git server for the command line"
+homepage = "https://github.com/charmbracelet/soft-serve"
+license = ""
+type = "cli"
+
+[discovery]
+github = "charmbracelet/soft-serve"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/charmbracelet/soft-serve/releases/download/v{{version}}/soft-serve_{{version}}_Darwin_{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64"
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["soft-serve"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

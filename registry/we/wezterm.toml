@@ -1,0 +1,31 @@
+[package]
+name = "wezterm"
+version = "20240203-110809-5046fc22"
+description = "GPU-accelerated terminal emulator and multiplexer"
+homepage = "https://github.com/wez/wezterm"
+license = ""
+type = "cli"
+
+[discovery]
+github = "wezterm/wezterm"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/wezterm/wezterm/releases/download/{{version}}/WezTerm-macos-{{version}}.zip"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["wezterm"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

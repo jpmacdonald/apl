@@ -1,0 +1,35 @@
+[package]
+name = "terragrunt"
+version = "0.96.1"
+description = "A flexible orchestration tool for scaling Infrastructure as Code"
+homepage = "https://github.com/gruntwork-io/terragrunt"
+license = ""
+type = "cli"
+
+[discovery]
+github = "gruntwork-io/terragrunt"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/gruntwork-io/terragrunt/releases/download/v{{version}}/terragrunt_darwin_{{target}}"
+universal = false
+
+[assets.targets]
+x86_64 = "amd64"
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["terragrunt"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

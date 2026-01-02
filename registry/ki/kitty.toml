@@ -1,0 +1,35 @@
+[package]
+name = "kitty"
+version = "0.45.0"
+description = "Cross-platform, fast, feature-rich, GPU based terminal emulator"
+homepage = "https://github.com/kovidgoyal/kitty"
+license = ""
+type = "cli"
+
+[discovery]
+github = "kovidgoyal/kitty"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/kovidgoyal/kitty/releases/download/v{{version}}/kitten-darwin-{{target}}"
+universal = false
+
+[assets.targets]
+x86_64 = "amd64"
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["kitty"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,31 @@
+[package]
+name = "gitui"
+version = "0.28.0"
+description = "Blazing fast terminal-ui for git written in rust"
+homepage = "https://github.com/extrawurst/gitui"
+license = ""
+type = "cli"
+
+[discovery]
+github = "gitui-org/gitui"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/gitui-org/gitui/releases/download/v{{version}}/gitui-mac-x86.tar.gz"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["gitui"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

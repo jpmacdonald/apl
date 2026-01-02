@@ -1,0 +1,31 @@
+[package]
+name = "marp"
+version = "4.2.3"
+description = "CLI interface for Marp and Marpit-based converters"
+homepage = "https://github.com/marp-team/marp-cli"
+license = ""
+type = "cli"
+
+[discovery]
+github = "marp-team/marp-cli"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/marp-team/marp-cli/releases/download/v{{version}}/marp-cli-v{{version}}-mac.tar.gz"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["marp"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

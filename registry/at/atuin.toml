@@ -1,0 +1,35 @@
+[package]
+name = "atuin"
+version = "18.10.0"
+description = "Magical shell history"
+homepage = "https://github.com/ellie/atuin"
+license = ""
+type = "cli"
+
+[discovery]
+github = "atuinsh/atuin"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/atuinsh/atuin/releases/download/v{{version}}/atuin-{{target}}-update"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["atuin"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

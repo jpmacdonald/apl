@@ -1,0 +1,31 @@
+[package]
+name = "volta"
+version = "2.0.2"
+description = "The Hassle-Free JavaScript Tool Manager"
+homepage = "https://github.com/volta-cli/volta"
+license = ""
+type = "cli"
+
+[discovery]
+github = "volta-cli/volta"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/volta-cli/volta/releases/download/v{{version}}/volta-{{version}}-macos.tar.gz"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["volta"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

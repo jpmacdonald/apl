@@ -1,0 +1,35 @@
+[package]
+name = "cmake"
+version = "4.2.1"
+description = "Cross-platform build system generator"
+homepage = ""
+license = ""
+type = "cli"
+
+[discovery]
+github = "Kitware/CMake"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/Kitware/CMake/releases/download/v{{version}}/cmake-{{version}}-macos-universal.dmg"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = [
+    "CMake.app/Contents/bin/cmake",
+    "CMake.app/Contents/bin/ctest",
+    "CMake.app/Contents/bin/cpack",
+]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

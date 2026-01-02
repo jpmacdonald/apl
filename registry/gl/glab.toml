@@ -1,0 +1,35 @@
+[package]
+name = "glab"
+version = "1.22.0"
+description = "A GitLab CLI tool"
+homepage = "https://github.com/profclems/glab"
+license = ""
+type = "cli"
+
+[discovery]
+github = "profclems/glab"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/profclems/glab/releases/download/v{{version}}/glab_{{version}}_macOS_{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64"
+arm64 = "x86_64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["glab"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

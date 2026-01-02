@@ -1,0 +1,35 @@
+[package]
+name = "golangci-lint"
+version = "2.7.2"
+description = "Fast linters runner for Go"
+homepage = "https://github.com/golangci/golangci-lint"
+license = ""
+type = "cli"
+
+[discovery]
+github = "golangci/golangci-lint"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/golangci/golangci-lint/releases/download/v{{version}}/golangci-lint-{{version}}-darwin-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["golangci-lint"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

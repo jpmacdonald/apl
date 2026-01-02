@@ -108,7 +108,7 @@ fn resolve_package_recursive(
         name: name.clone(),
         version: Version::from(version_info.version.clone()),
         url: binary.url.clone(),
-        blake3: binary.blake3.clone(),
+        blake3: binary.hash.clone(),
         timestamp: Some(timestamp),
     });
 
@@ -217,7 +217,8 @@ mod tests {
                     binaries: vec![IndexBinary {
                         arch: crate::Arch::current().as_str().to_string(),
                         url: "http://test".to_string(),
-                        blake3: "hash".to_string(),
+                        hash: "hash".to_string(),
+                        hash_type: crate::core::index::HashType::Blake3,
                     }],
                     deps: vec![],
                     build_deps: vec![],

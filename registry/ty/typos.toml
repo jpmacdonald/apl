@@ -1,0 +1,35 @@
+[package]
+name = "typos"
+version = "1.41.0"
+description = "Source code spell checker"
+homepage = "https://github.com/crate-ci/typos"
+license = ""
+type = "cli"
+
+[discovery]
+github = "crate-ci/typos"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/crate-ci/typos/releases/download/v{{version}}/typos-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["typos"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

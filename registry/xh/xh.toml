@@ -1,0 +1,35 @@
+[package]
+name = "xh"
+version = "0.25.3"
+description = "Friendly and fast tool for sending HTTP requests"
+homepage = "https://github.com/ducaale/xh"
+license = ""
+type = "cli"
+
+[discovery]
+github = "ducaale/xh"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/ducaale/xh/releases/download/v{{version}}/xh-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["xh"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

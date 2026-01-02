@@ -1,0 +1,31 @@
+[package]
+name = "hugo"
+version = "0.154.1"
+description = "The world's fastest framework for building websites"
+homepage = "https://github.com/gohugoio/hugo"
+license = ""
+type = "cli"
+
+[discovery]
+github = "gohugoio/hugo"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/gohugoio/hugo/releases/download/v{{version}}/hugo_{{version}}_darwin-universal.pkg"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["hugo"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

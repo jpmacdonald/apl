@@ -1,0 +1,35 @@
+[package]
+name = "tealdeer"
+version = "1.8.1"
+description = "A very fast implementation of tldr in Rust"
+homepage = "https://github.com/dbrgn/tealdeer"
+license = ""
+type = "cli"
+
+[discovery]
+github = "tealdeer-rs/tealdeer"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/tealdeer-rs/tealdeer/releases/download/v{{version}}/tealdeer-macos-{{target}}"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64"
+arm64 = "aarch64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["tealdeer"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

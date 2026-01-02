@@ -1,0 +1,34 @@
+[package]
+name = "gh"
+version = "2.83.2"
+description = "GitHub on the command line"
+homepage = "https://github.com/cli/cli"
+license = ""
+type = "cli"
+
+[discovery]
+github = "cli/cli"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/cli/cli/releases/download/v{{version}}/gh_{{version}}_macOS_{{target}}.zip"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["gh"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

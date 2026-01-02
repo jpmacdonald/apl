@@ -1,0 +1,35 @@
+[package]
+name = "diskus"
+version = "0.9.0"
+description = "A minimal, fast alternative to 'du -sh'"
+homepage = "https://github.com/sharkdp/diskus"
+license = ""
+type = "cli"
+
+[discovery]
+github = "sharkdp/diskus"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/sharkdp/diskus/releases/download/v{{version}}/diskus-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["diskus"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

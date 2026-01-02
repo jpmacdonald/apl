@@ -9,6 +9,35 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Hash algorithm type for binary verification
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HashType {
+    /// BLAKE3 hash (64 hex characters)
+    Blake3,
+    /// SHA256 hash (64 hex characters)
+    Sha256,
+    /// SHA512 hash (128 hex characters)
+    Sha512,
+}
+
+impl HashType {
+    /// Get the string representation of the hash type
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HashType::Blake3 => "blake3",
+            HashType::Sha256 => "sha256",
+            HashType::Sha512 => "sha512",
+        }
+    }
+}
+
+impl Default for HashType {
+    fn default() -> Self {
+        HashType::Blake3
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum IndexError {
     #[error("IO error: {0}")]
@@ -27,19 +56,22 @@ pub enum IndexError {
 /// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
-    /// Architecture (e.g., "aarch64-apple-darwin")
+    /// Architecture (e.g., "aarch64-apple-darwin", "arm64", "x86_64", "universal")
     pub arch: String,
     /// Download URL
     pub url: String,
-    /// BLAKE3 hash
-    pub blake3: String,
+    /// Hash value (hex string)
+    pub hash: String,
+    /// Hash algorithm type
+    pub hash_type: HashType,
 }
 
 /// Source artifact info
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexSource {
     pub url: String,
-    pub blake3: String,
+    pub hash: String,
+    pub hash_type: HashType,
 }
 
 /// Compact release info (one version)
@@ -309,7 +341,8 @@ mod tests {
                 binaries: vec![IndexBinary {
                     arch: "aarch64-apple-darwin".to_string(),
                     url: "https://example.com/nvim.tar.zst".to_string(),
-                    blake3: "abc123".to_string(),
+                    hash: "abc123".to_string(),
+                    hash_type: HashType::Blake3,
                 }],
                 deps: vec!["libuv".to_string()],
                 build_deps: vec![],
@@ -396,7 +429,8 @@ mod tests {
                 binaries: vec![IndexBinary {
                     arch: "aarch64-apple-darwin".to_string(),
                     url: "https://example.com/rg".to_string(),
-                    blake3: "rg123".to_string(),
+                    hash: "rg123".to_string(),
+                    hash_type: HashType::Blake3,
                 }],
                 deps: vec![],
                 build_deps: vec![],

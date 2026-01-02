@@ -5,6 +5,10 @@ use serde::Deserialize;
 pub struct GithubRelease {
     pub tag_name: String,
     pub assets: Vec<GithubAsset>,
+    #[serde(default)]
+    pub draft: bool,
+    #[serde(default)]
+    pub prerelease: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,9 +247,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
         return Ok(false);
     }
 
-    println!(
-        "      New version found: {current_version} -> {latest_tag}"
-    );
+    println!("      New version found: {current_version} -> {latest_tag}");
 
     let asset_discovery = find_best_asset(&release, name);
 
@@ -310,47 +312,126 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     Ok(true)
 }
 
+/// Fetch all releases (paginated) and filter/sort by SemVer
+pub async fn fetch_all_releases(
+    client: &reqwest::Client,
+    owner: &str,
+    repo: &str,
+) -> Result<Vec<GithubRelease>> {
+    let mut all_releases = Vec::new();
+    let mut page = 1;
+
+    loop {
+        let url = format!(
+            "https://api.github.com/repos/{owner}/{repo}/releases?per_page=100&page={page}"
+        );
+        let resp = client.get(&url).send().await?;
+
+        if !resp.status().is_success() {
+            // If it's a 404 on the first page, try tags fallback
+            if page == 1 && resp.status() == 404 {
+                // Fallback: fetch all tags (paginated)
+                return fetch_all_tags(client, owner, repo).await;
+            }
+            break;
+        }
+
+        let releases: Vec<GithubRelease> = resp.json().await?;
+        if releases.is_empty() {
+            break;
+        }
+
+        all_releases.extend(releases);
+        page += 1;
+
+        // Safety break to prevent infinite loops (e.g. 100 pages = 10k releases)
+        if page > 100 {
+            break;
+        }
+    }
+
+    // Filter and sort by SemVer
+    // We treat the tag_name as the source of truth
+    let mut valid_releases: Vec<GithubRelease> = all_releases
+        .into_iter()
+        .filter(|r| !r.draft) // We can include prereleases if they are valid SemVer
+        .collect();
+
+    // Sort by SemVer descending
+    valid_releases.sort_by(|a, b| {
+        let ver_a = strip_tag_prefix(&a.tag_name, repo);
+        let ver_b = strip_tag_prefix(&b.tag_name, repo);
+
+        let sem_a = semver::Version::parse(&ver_a).ok();
+        let sem_b = semver::Version::parse(&ver_b).ok();
+
+        match (sem_a, sem_b) {
+            (Some(va), Some(vb)) => vb.cmp(&va),         // Descending
+            (Some(_), None) => std::cmp::Ordering::Less, // Valid > Invalid (so Invalid comes last? No, we want valid first)
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => ver_b.cmp(&ver_a), // String compare fallback
+        }
+    });
+
+    Ok(valid_releases)
+}
+
+/// Helper to fetch tags if releases endpoint fails
+async fn fetch_all_tags(
+    client: &reqwest::Client,
+    owner: &str,
+    repo: &str,
+) -> Result<Vec<GithubRelease>> {
+    let mut all_tags = Vec::new();
+    let mut page = 1;
+
+    loop {
+        let url =
+            format!("https://api.github.com/repos/{owner}/{repo}/tags?per_page=100&page={page}");
+        let resp = client.get(&url).send().await?;
+
+        if !resp.status().is_success() {
+            break;
+        }
+
+        #[derive(Deserialize)]
+        struct GithubTag {
+            name: String,
+        }
+
+        let tags: Vec<GithubTag> = resp.json().await?;
+        if tags.is_empty() {
+            break;
+        }
+
+        // Convert tags to minimal releases
+        for tag in tags {
+            all_tags.push(GithubRelease {
+                tag_name: tag.name,
+                assets: vec![], // Tags don't have attached assets in this view
+                draft: false,
+                prerelease: false, // Assume stable if it's a tag? Or unknown.
+            });
+        }
+        page += 1;
+        if page > 50 {
+            break;
+        }
+    }
+
+    Ok(all_tags)
+}
+
+// Keep the old function for backward compatibility or single-fetch scenarios if needed,
+// but for the indexer we will use fetch_all_releases.
 pub async fn fetch_latest_release(
     client: &reqwest::Client,
     owner: &str,
     repo: &str,
 ) -> Result<GithubRelease> {
-    let url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/releases/latest"
-    );
-    let resp = client.get(&url).send().await?;
-
-    if !resp.status().is_success() {
-        if resp.status() == 404 {
-            // Fallback 1: fetch all releases and pick the most recent one
-            let releases_url = format!("https://api.github.com/repos/{owner}/{repo}/releases");
-            let releases_resp = client.get(&releases_url).send().await?;
-            if releases_resp.status().is_success() {
-                let releases: Vec<GithubRelease> = releases_resp.json().await?;
-                if let Some(first) = releases.into_iter().next() {
-                    return Ok(first);
-                }
-            }
-
-            // Fallback 2: fetch all tags and pick the most recent one (for repos without formal releases)
-            let tags_url = format!("https://api.github.com/repos/{owner}/{repo}/tags");
-            let tags_resp = client.get(&tags_url).send().await?;
-            if tags_resp.status().is_success() {
-                #[derive(Deserialize)]
-                struct GithubTag {
-                    name: String,
-                }
-                let tags: Vec<GithubTag> = tags_resp.json().await?;
-                if let Some(first) = tags.into_iter().next() {
-                    return Ok(GithubRelease {
-                        tag_name: first.name,
-                        assets: vec![], // No assets for a tag
-                    });
-                }
-            }
-        }
-        anyhow::bail!("GitHub API error: {} for {}", resp.status(), url);
-    }
-
-    Ok(resp.json().await?)
+    let releases = fetch_all_releases(client, owner, repo).await?;
+    releases
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("No releases found for {owner}/{repo}"))
 }

@@ -1,0 +1,35 @@
+[package]
+name = "exa"
+version = "0.10.1"
+description = "A modern replacement for 'ls'"
+homepage = "https://github.com/ogham/exa"
+license = ""
+type = "cli"
+
+[discovery]
+github = "ogham/exa"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/ogham/exa/releases/download/v{{version}}/exa-macos-{{target}}-v{{version}}.zip"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64"
+arm64 = "x86_64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["exa"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

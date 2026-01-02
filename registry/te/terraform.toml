@@ -1,0 +1,31 @@
+[package]
+name = "terraform"
+version = "1.14.3"
+description = "Infrastructure as Code tool"
+homepage = "https://github.com/hashicorp/terraform"
+license = "BUSL-1.1"
+type = "cli"
+
+[discovery]
+github = "hashicorp/terraform"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/hashicorp/terraform/archive/refs/tags/v{{version}}.tar.gz"
+universal = false
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["terraform"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = "Note: This is the latest version. Homebrew is frozen at v1.5.7 due to license changes."

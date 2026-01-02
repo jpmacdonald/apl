@@ -1,0 +1,35 @@
+[package]
+name = "starship"
+version = "1.24.2"
+description = "The minimal, blazing-fast, and infinitely customizable prompt for any shell!"
+homepage = "https://github.com/starship/starship"
+license = ""
+type = "cli"
+
+[discovery]
+github = "starship/starship"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/starship/starship/releases/download/v{{version}}/starship-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["starship"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,35 @@
+[package]
+name = "fx"
+version = "39.2.0"
+description = "Terminal JSON viewer & processor"
+homepage = "https://github.com/antonmedv/fx"
+license = ""
+type = "cli"
+
+[discovery]
+github = "antonmedv/fx"
+tag_pattern = "{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/antonmedv/fx/releases/download/{{version}}/fx_darwin_{{target}}"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+x86_64 = "amd64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["fx"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

@@ -1,0 +1,35 @@
+[package]
+name = "amber"
+version = "0.6.0"
+description = "A code search / replace tool"
+homepage = "https://github.com/dalance/amber"
+license = ""
+type = "cli"
+
+[discovery]
+github = "dalance/amber"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/dalance/amber/releases/download/v{{version}}/amber-v{{version}}-{{target}}-mac.zip"
+universal = false
+
+[assets.targets]
+x86_64 = "x86_64"
+arm64 = "x86_64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["amber"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

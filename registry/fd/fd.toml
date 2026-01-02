@@ -1,0 +1,35 @@
+[package]
+name = "fd"
+version = "10.3.0"
+description = "A simple, fast and user-friendly alternative to 'find'"
+homepage = "https://github.com/sharkdp/fd"
+license = ""
+type = "cli"
+
+[discovery]
+github = "sharkdp/fd"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/sharkdp/fd/releases/download/v{{version}}/fd-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["fd"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

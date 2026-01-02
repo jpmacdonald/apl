@@ -1,0 +1,34 @@
+[package]
+name = "pulumi"
+version = "3.214.0"
+description = "Infrastructure as Code in any programming language"
+homepage = "https://github.com/pulumi/pulumi"
+license = ""
+type = "cli"
+
+[discovery]
+github = "pulumi/pulumi"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/pulumi/pulumi/releases/download/v{{version}}/pulumi-v{{version}}-darwin-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "arm64"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["pulumi"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

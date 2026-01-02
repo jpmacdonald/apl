@@ -1,0 +1,35 @@
+[package]
+name = "bat"
+version = "0.26.1"
+description = "A cat clone with wings"
+homepage = "https://github.com/sharkdp/bat"
+license = ""
+type = "cli"
+
+[discovery]
+github = "sharkdp/bat"
+tag_pattern = "v{{version}}"
+semver_only = true
+include_prereleases = false
+
+[assets]
+url_template = "https://github.com/sharkdp/bat/releases/download/v{{version}}/bat-v{{version}}-{{target}}.tar.gz"
+universal = false
+
+[assets.targets]
+arm64 = "aarch64-apple-darwin"
+x86_64 = "x86_64-apple-darwin"
+
+[checksums]
+vendor_type = "sha256"
+skip = false
+
+[install]
+strategy = "link"
+bin = ["bat"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

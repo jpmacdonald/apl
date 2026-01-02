@@ -1,0 +1,38 @@
+name: Generate Index
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  push:
+    branches: [ main ]
+    paths:
+      - 'registry/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        
+      - name: Cache HashCache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/apl/hash_cache.json
+          key: ${{ runner.os }}-hash-cache-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-hash-cache-
+            
+      - name: Generate Index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo run --bin apl-pkg -- index
+        
+      - name: Release Index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload latest index.bin --clobber || gh release create latest index.bin --title "Latest Registry Index" --notes "Automated index generation"
