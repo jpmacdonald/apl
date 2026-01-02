@@ -21,6 +21,7 @@ x86_64 = "amd64"
 arm64 = "amd64"
 
 [checksums]
+url_template = "https://github.com/caddyserver/caddy/releases/download/v{{version}}/caddy_{{version}}_checksums.txt"
 vendor_type = "sha256"
 skip = false
 

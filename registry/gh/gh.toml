@@ -20,6 +20,7 @@ universal = false
 arm64 = "arm64"
 
 [checksums]
+url_template = "https://github.com/cli/cli/releases/download/v{{version}}/gh_{{version}}_checksums.txt"
 vendor_type = "sha256"
 skip = false
 

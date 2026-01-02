@@ -309,22 +309,6 @@ async fn fetch_and_parse_checksum(
     anyhow::bail!("Hash not found in checksum file for {filename}")
 }
 
-/// Download binary and compute its BLAKE3 hash
-async fn get_or_download_hash(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<(String, apl::index::HashType)> {
-    use apl::index::HashType;
-    let resp = client.get(url).send().await?;
-    if !resp.status().is_success() {
-        anyhow::bail!("Failed to download binary: {}", resp.status());
-    }
-
-    let bytes = resp.bytes().await?;
-    let hash = blake3::hash(&bytes);
-    Ok((hash.to_string(), HashType::Blake3))
-}
-
 /// Discover versions from a template's discovery configuration
 async fn discover_versions(
     client: &reqwest::Client,
@@ -634,28 +618,21 @@ async fn generate_index_from_registry(
                                         hash_cache.insert(url.clone(), h.clone(), hash_type);
                                         (h, hash_type)
                                     }
-                                    Err(_) => {
-                                        // Fallback to binary download if checksum fetch fails
-                                        match get_or_download_hash(&client, &url).await {
-                                            Ok((h, ht)) => {
-                                                hash_cache.insert(url.clone(), h.clone(), ht);
-                                                (h, ht)
-                                            }
-                                            Err(_) => continue,
-                                        }
+                                    Err(e) => {
+                                        // Skip version if checksum fetch fails (no fallback to binary download)
+                                        eprintln!(
+                                            "     ⚠ Checksum fetch failed for {}: {}",
+                                            url, e
+                                        );
+                                        continue;
                                     }
                                 }
-                            } else if !template.checksums.skip {
-                                // Fallback to binary download if no checksum template provided
-                                match get_or_download_hash(&client, &url).await {
-                                    Ok((h, ht)) => {
-                                        hash_cache.insert(url.clone(), h.clone(), ht);
-                                        (h, ht)
-                                    }
-                                    Err(_) => continue,
-                                }
+                            } else if template.checksums.skip {
+                                // Explicitly skipped - use empty hash (will be verified at install time)
+                                ("".to_string(), HashType::Blake3)
                             } else {
-                                // No checksum config and skip is true? Skip it.
+                                // No checksum template and skip=false - skip version with warning
+                                eprintln!("     ⚠ No checksum config for {} - skipping", url);
                                 continue;
                             };
 

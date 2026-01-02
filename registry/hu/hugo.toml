@@ -17,6 +17,7 @@ url_template = "https://github.com/gohugoio/hugo/releases/download/v{{version}}/
 universal = false
 
 [checksums]
+url_template = "https://github.com/gohugoio/hugo/releases/download/v{{version}}/hugo_{{version}}_checksums.txt"
 vendor_type = "sha256"
 skip = false
 
