@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Hash algorithm type for binary verification
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HashType {
     /// BLAKE3 hash (64 hex characters)
+    #[default]
     Blake3,
     /// SHA256 hash (64 hex characters)
     Sha256,
@@ -29,12 +30,6 @@ impl HashType {
             HashType::Sha256 => "sha256",
             HashType::Sha512 => "sha512",
         }
-    }
-}
-
-impl Default for HashType {
-    fn default() -> Self {
-        HashType::Blake3
     }
 }
 

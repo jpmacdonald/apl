@@ -212,7 +212,7 @@ fn registry_path(registry_dir: &Path, name: &str) -> std::path::PathBuf {
     } else {
         name[..2].to_lowercase()
     };
-    registry_dir.join(prefix).join(format!("{}.toml", name))
+    registry_dir.join(prefix).join(format!("{name}.toml"))
 }
 
 /// Simple persistent hash cache to avoid re-downloading thousands of versions
@@ -281,7 +281,7 @@ async fn fetch_and_parse_checksum(
 ) -> Result<String> {
     let resp = client.get(checksum_url).send().await?;
     if !resp.status().is_success() {
-        anyhow::bail!("Checksum file not found: {}", checksum_url);
+        anyhow::bail!("Checksum file not found: {checksum_url}");
     }
 
     let text = resp.text().await?;
@@ -289,7 +289,7 @@ async fn fetch_and_parse_checksum(
     // Extract filename from asset URL
     let filename = asset_url
         .split('/')
-        .last()
+        .next_back()
         .ok_or_else(|| anyhow::anyhow!("Invalid asset URL"))?;
 
     // Parse checksum files (formats: "hash  filename" or "hash filename" or "hash *filename")
@@ -306,7 +306,7 @@ async fn fetch_and_parse_checksum(
         }
     }
 
-    anyhow::bail!("Hash not found in checksum file for {}", filename)
+    anyhow::bail!("Hash not found in checksum file for {filename}")
 }
 
 /// Download binary and compute its BLAKE3 hash
@@ -341,7 +341,7 @@ async fn discover_versions(
         } => {
             let (owner, repo) = github
                 .split_once('/')
-                .ok_or_else(|| anyhow::anyhow!("Invalid GitHub repo format: {}", github))?;
+                .ok_or_else(|| anyhow::anyhow!("Invalid GitHub repo format: {github}"))?;
 
             let releases = github::fetch_all_releases(client, owner, repo).await?;
 
@@ -420,13 +420,13 @@ async fn cli_migrate(packages_dir: &Path, registry_dir: &Path) -> Result<()> {
 
         if path.extension().is_some_and(|e| e == "toml") {
             let name = path.file_stem().unwrap().to_string_lossy().to_string();
-            println!("   Migrating {}...", name);
+            println!("   Migrating {name}...");
 
             let toml_str = fs::read_to_string(&path)?;
             let pkg: Package = match toml::from_str(&toml_str) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("     ⚠ Failed to parse {}: {}", name, e);
+                    eprintln!("     ⚠ Failed to parse {name}: {e}");
                     continue;
                 }
             };
@@ -480,12 +480,12 @@ async fn cli_migrate(packages_dir: &Path, registry_dir: &Path) -> Result<()> {
                 fs::write(target_path, template_toml)?;
                 count += 1;
             } else {
-                println!("     ⚠ Could not guess GitHub repo for {}, skipping.", name);
+                println!("     ⚠ Could not guess GitHub repo for {name}, skipping.");
             }
         }
     }
 
-    println!("   Migrated {} packages.", count);
+    println!("   Migrated {count} packages.");
     Ok(())
 }
 
@@ -590,7 +590,7 @@ async fn generate_index_from_registry(registry_dir: &Path) -> Result<PackageInde
                 let versions = match discover_versions(&client, &template.discovery).await {
                     Ok(v) => v,
                     Err(e) => {
-                        eprintln!("     ⚠ Failed to discover versions: {}", e);
+                        eprintln!("     ⚠ Failed to discover versions: {e}");
                         continue;
                     }
                 };
@@ -749,7 +749,7 @@ async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
                     let (hash, _hash_type) = if let Some(cached) = hash_cache.get(&url) {
                         cached
                     } else {
-                        println!("       Downloading {}...", ver_str);
+                        println!("       Downloading {ver_str}...");
                         match client.get(&url).send().await {
                             Ok(resp) => {
                                 if let Ok(bytes) = resp.bytes().await {
@@ -757,12 +757,12 @@ async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
                                     hash_cache.insert(url.clone(), h.clone(), HashType::Blake3);
                                     (h, HashType::Blake3)
                                 } else {
-                                    eprintln!("       Failed to read bytes for {}", url);
+                                    eprintln!("       Failed to read bytes for {url}");
                                     continue;
                                 }
                             }
                             Err(e) => {
-                                eprintln!("       Failed to download {}: {}", url, e);
+                                eprintln!("       Failed to download {url}: {e}");
                                 continue;
                             }
                         }
@@ -911,7 +911,7 @@ async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
                                         // In a real implementation we would download here.
                                         // For prototype: we skip un-cached historical versions to be safe?
                                         // No, let's download!
-                                        println!("       Downloading {}...", ver_str);
+                                        println!("       Downloading {ver_str}...");
                                         match client.get(&asset.browser_download_url).send().await {
                                             Ok(resp) => {
                                                 if let Ok(bytes) = resp.bytes().await {
@@ -997,7 +997,7 @@ async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("     Failed to fetch history: {}", e);
+                            eprintln!("     Failed to fetch history: {e}");
                         }
                     }
                 }

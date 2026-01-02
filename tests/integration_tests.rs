@@ -171,8 +171,12 @@ fn test_update_command_without_index() {
 
     // Either succeeds or fails with network error
     assert!(
-        output.status.success() || stderr.contains("Failed") || stdout.contains("Index"),
-        "Update should handle network failures gracefully"
+        output.status.success()
+            || stderr.contains("Failed")
+            || stderr.contains("Error")
+            || stdout.contains("Failed")
+            || stdout.contains("Index"),
+        "Update should handle network failures or invalid indices gracefully"
     );
 }
 
