@@ -1,20 +1,20 @@
 [package]
 name = "hugo"
-version = "0.154.0"
+version = "0.154.1"
 description = "The world's fastest framework for building websites"
 homepage = "https://github.com/gohugoio/hugo"
 license = ""
 type = "cli"
 
 [source]
-url = "https://github.com/gohugoio/hugo/releases/download/v0.154.0/hugo_0.154.0_darwin-universal.pkg"
-blake3 = "c409b8907616a9761028e31d5db05fc5cc448d4e8dff64b9045caf04e5bd8e8b"
+url = "https://github.com/gohugoio/hugo/releases/download/v0.154.1/hugo_0.154.1_darwin-universal.pkg"
+blake3 = "a3de5a84c78626df28c0a1b5190887ca37e74f3253468bb17905114bb5ec9be1"
 format = "pkg"
 strip_components = 1
 
 [binary.arm64]
-url = "https://github.com/gohugoio/hugo/releases/download/v0.154.0/hugo_0.154.0_darwin-universal.pkg"
-blake3 = "c409b8907616a9761028e31d5db05fc5cc448d4e8dff64b9045caf04e5bd8e8b"
+url = "https://github.com/gohugoio/hugo/releases/download/v0.154.1/hugo_0.154.1_darwin-universal.pkg"
+blake3 = "a3de5a84c78626df28c0a1b5190887ca37e74f3253468bb17905114bb5ec9be1"
 format = "pkg"
 arch = "arm64"
 macos = "14.0"
