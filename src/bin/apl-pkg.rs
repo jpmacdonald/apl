@@ -566,6 +566,7 @@ async fn generate_index_from_registry(
 
     let mut hash_cache = HashCache::load();
     let mut index = PackageIndex::default();
+    let mut error_count = 0;
 
     // Scan all prefix directories
     for prefix_entry in fs::read_dir(registry_dir)? {
@@ -593,6 +594,7 @@ async fn generate_index_from_registry(
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("     ⚠ Failed to discover versions: {e}");
+                        error_count += 1;
                         continue;
                     }
                 };
@@ -697,6 +699,11 @@ async fn generate_index_from_registry(
                 }
             }
         }
+    }
+
+    if error_count > 0 {
+        hash_cache.save()?; // Save whatever progress we made
+        anyhow::bail!("Index generation failed with {} errors", error_count);
     }
 
     hash_cache.save()?;

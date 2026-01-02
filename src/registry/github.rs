@@ -333,17 +333,17 @@ pub async fn fetch_all_releases(
                 // Fallback: fetch all tags (paginated)
                 return fetch_all_tags(client, owner, repo).await;
             }
-            // Log the error
-            eprintln!(
-                "   Warning: Failed to fetch releases for {}/{}: HTTP {}",
+
+            // Error!
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to fetch releases for {}/{}: HTTP {} - {}",
                 owner,
                 repo,
-                resp.status()
+                status,
+                body
             );
-            if let Ok(text) = resp.text().await {
-                eprintln!("   Body: {}", text);
-            }
-            break;
         }
 
         let releases: Vec<GithubRelease> = resp.json().await?;
@@ -401,16 +401,15 @@ async fn fetch_all_tags(
         let resp = client.get(&url).send().await?;
 
         if !resp.status().is_success() {
-            eprintln!(
-                "   Warning: Failed to fetch tags for {}/{}: HTTP {}",
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to fetch tags for {}/{}: HTTP {} - {}",
                 owner,
                 repo,
-                resp.status()
+                status,
+                body
             );
-            if let Ok(text) = resp.text().await {
-                eprintln!("   Body: {}", text);
-            }
-            break;
         }
 
         #[derive(Deserialize)]
