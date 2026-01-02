@@ -15,7 +15,7 @@ pub fn build_github_client(token: Option<&str>) -> Result<reqwest::Client> {
     if let Some(t) = token {
         headers.insert(
             header::AUTHORIZATION,
-            header::HeaderValue::from_str(&format!("Bearer {}", t))?,
+            header::HeaderValue::from_str(&format!("Bearer {t}"))?,
         );
     }
 

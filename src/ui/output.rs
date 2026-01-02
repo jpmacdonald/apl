@@ -4,6 +4,7 @@
 //! All operations are sent as events to the UI actor for sequential processing.
 
 use super::actor::{UiActor, UiEvent};
+use crate::{PackageName, Version};
 use std::sync::{OnceLock, mpsc};
 
 /// Singleton instance of the UI actor channel.
@@ -39,7 +40,7 @@ impl Output {
     }
 
     /// Prepare table for a pipeline of packages.
-    pub fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
+    pub fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
         let _ = self.sender.send(UiEvent::PreparePipeline {
             items: packages.to_vec(),
         });
@@ -53,46 +54,46 @@ impl Output {
     }
 
     /// Reports progress for a file download.
-    pub fn downloading(&self, name: &str, version: &str, current: u64, total: u64) {
+    pub fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
         let _ = self.sender.send(UiEvent::Downloading {
-            name: name.to_string(),
-            version: version.to_string(),
+            name: name.clone(),
+            version: version.clone(),
             current,
             total,
         });
     }
 
     /// Transitions a package display to the 'installing' state.
-    pub fn installing(&self, name: &str, version: &str) {
+    pub fn installing(&self, name: &PackageName, version: &Version) {
         let _ = self.sender.send(UiEvent::Installing {
-            name: name.to_string(),
-            version: version.to_string(),
+            name: name.clone(),
+            version: version.clone(),
         });
     }
 
     /// Transitions a package display to the 'removing' state.
-    pub fn removing(&self, name: &str, version: &str) {
+    pub fn removing(&self, name: &PackageName, version: &Version) {
         let _ = self.sender.send(UiEvent::Removing {
-            name: name.to_string(),
-            version: version.to_string(),
+            name: name.clone(),
+            version: version.clone(),
         });
     }
 
     /// Signals completion of a package operation.
-    pub fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>) {
+    pub fn done(&self, name: &PackageName, version: &Version, detail: &str, size: Option<u64>) {
         let _ = self.sender.send(UiEvent::Done {
-            name: name.to_string(),
-            version: version.to_string(),
+            name: name.clone(),
+            version: version.clone(),
             detail: detail.to_string(),
             size,
         });
     }
 
     /// Marks a package operation as failed with a visible reason.
-    pub fn failed(&self, name: &str, version: &str, reason: &str) {
+    pub fn failed(&self, name: &PackageName, version: &Version, reason: &str) {
         let _ = self.sender.send(UiEvent::Failed {
-            name: name.to_string(),
-            version: version.to_string(),
+            name: name.clone(),
+            version: version.clone(),
             reason: reason.to_string(),
         });
     }
@@ -158,7 +159,7 @@ impl Output {
 }
 
 impl super::reporter::Reporter for Output {
-    fn prepare_pipeline(&self, packages: &[(String, Option<String>)]) {
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
         self.prepare_pipeline(packages);
     }
 
@@ -166,23 +167,23 @@ impl super::reporter::Reporter for Output {
         self.section(title);
     }
 
-    fn downloading(&self, name: &str, version: &str, current: u64, total: u64) {
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
         self.downloading(name, version, current, total);
     }
 
-    fn installing(&self, name: &str, version: &str) {
+    fn installing(&self, name: &PackageName, version: &Version) {
         self.installing(name, version);
     }
 
-    fn removing(&self, name: &str, version: &str) {
+    fn removing(&self, name: &PackageName, version: &Version) {
         self.removing(name, version);
     }
 
-    fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>) {
+    fn done(&self, name: &PackageName, version: &Version, detail: &str, size: Option<u64>) {
         self.done(name, version, detail, size);
     }
 
-    fn failed(&self, name: &str, version: &str, reason: &str) {
+    fn failed(&self, name: &PackageName, version: &Version, reason: &str) {
         self.failed(name, version, reason);
     }
 

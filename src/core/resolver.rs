@@ -1,9 +1,13 @@
+use crate::PackageName;
 use crate::core::index::PackageIndex;
 use anyhow::{Context, Result, bail};
 use std::collections::HashSet;
 
 /// Resolves dependencies for a set of packages and returns them in installation order.
-pub fn resolve_dependencies(pkg_names: &[String], index: &PackageIndex) -> Result<Vec<String>> {
+pub fn resolve_dependencies(
+    pkg_names: &[PackageName],
+    index: &PackageIndex,
+) -> Result<Vec<PackageName>> {
     let mut resolved_order = Vec::new();
     let mut visited = HashSet::new();
     let mut visiting = HashSet::new();
@@ -22,11 +26,11 @@ pub fn resolve_dependencies(pkg_names: &[String], index: &PackageIndex) -> Resul
 }
 
 fn resolve_recursive(
-    name: &str,
+    name: &PackageName,
     index: &PackageIndex,
-    order: &mut Vec<String>,
-    visited: &mut HashSet<String>,
-    visiting: &mut HashSet<String>,
+    order: &mut Vec<PackageName>,
+    visited: &mut HashSet<PackageName>,
+    visiting: &mut HashSet<PackageName>,
 ) -> Result<()> {
     if visited.contains(name) {
         return Ok(());
@@ -36,7 +40,7 @@ fn resolve_recursive(
         bail!("Circular dependency detected involving package: {name}");
     }
 
-    visiting.insert(name.to_string());
+    visiting.insert(name.clone());
 
     let entry = index
         .find(name)
@@ -46,12 +50,13 @@ fn resolve_recursive(
         .latest()
         .with_context(|| format!("Package '{name}' has no releases"))?;
     for dep in &latest.deps {
-        resolve_recursive(dep, index, order, visited, visiting)?;
+        let dep_name = PackageName::new(dep);
+        resolve_recursive(&dep_name, index, order, visited, visiting)?;
     }
 
     visiting.remove(name);
-    visited.insert(name.to_string());
-    order.push(name.to_string());
+    visited.insert(name.clone());
+    order.push(name.clone());
 
     Ok(())
 }

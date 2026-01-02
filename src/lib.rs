@@ -15,6 +15,7 @@ pub use core::package;
 pub use core::resolver;
 pub use io::download as downloader;
 pub use io::extract as extractor;
+pub use store::DbHandle;
 pub use store::db;
 
 use dirs::home_dir;
@@ -61,7 +62,7 @@ pub fn log_dir() -> PathBuf {
 /// Generate a build log path for a package
 pub fn build_log_path(package: &str, version: &str) -> PathBuf {
     let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-    log_dir().join(format!("build-{}-{}-{}.log", package, version, timestamp))
+    log_dir().join(format!("build-{package}-{version}-{timestamp}.log"))
 }
 
 /// Temp path: ~/.apl/tmp (guaranteed same volume as store)
@@ -69,20 +70,277 @@ pub fn tmp_path() -> PathBuf {
     apl_home().join("tmp")
 }
 
-/// Architecture constants
-pub mod arch {
+/// Architecture enum
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Arch {
     /// ARM64 architecture (Apple Silicon)
-    pub const ARM64: &str = "arm64";
+    Arm64,
     /// x86_64 architecture (Intel)
-    pub const X86_64: &str = "x86_64";
+    X86_64,
+}
 
-    /// Get the current architecture string
-    pub fn current() -> &'static str {
-        if cfg!(target_arch = "aarch64") {
-            ARM64
-        } else {
-            X86_64
+impl Arch {
+    /// Get the current architecture
+    pub fn current() -> Self {
+        #[cfg(target_arch = "aarch64")]
+        {
+            Self::Arm64
         }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            Self::X86_64
+        }
+    }
+
+    /// Convert to string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Arm64 => "arm64",
+            Self::X86_64 => "x86_64",
+        }
+    }
+}
+
+impl std::fmt::Display for Arch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl std::str::FromStr for Arch {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "arm64" | "aarch64" => Ok(Self::Arm64),
+            "x86_64" | "amd64" => Ok(Self::X86_64),
+            _ => Err(format!("Unknown architecture: {s}")),
+        }
+    }
+}
+
+/// Newtype for a package name, ensuring normalization (lowercase)
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub struct PackageName(String);
+
+impl PackageName {
+    pub fn new(name: &str) -> Self {
+        Self(name.to_lowercase())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for PackageName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::ops::Deref for PackageName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for PackageName {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for PackageName {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<std::path::Path> for PackageName {
+    fn as_ref(&self) -> &std::path::Path {
+        std::path::Path::new(&self.0)
+    }
+}
+
+impl PartialEq<&str> for PackageName {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<str> for PackageName {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<String> for PackageName {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
+impl From<String> for PackageName {
+    fn from(s: String) -> Self {
+        Self::new(&s)
+    }
+}
+
+impl From<&str> for PackageName {
+    fn from(s: &str) -> Self {
+        Self::new(s)
+    }
+}
+
+impl std::str::FromStr for PackageName {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::new(s))
+    }
+}
+
+/// Newtype for a package version
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub struct Version(String);
+
+impl Version {
+    pub fn new(v: &str) -> Self {
+        Self(v.to_string())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Version {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::ops::Deref for Version {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Version {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for Version {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<std::path::Path> for Version {
+    fn as_ref(&self) -> &std::path::Path {
+        std::path::Path::new(&self.0)
+    }
+}
+
+impl PartialEq<&str> for Version {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<str> for Version {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<String> for Version {
+    fn eq(&self, other: &String) -> bool {
+        &self.0 == other
+    }
+}
+
+impl From<String> for Version {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for Version {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl std::str::FromStr for Version {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::new(s))
+    }
+}
+
+/// Newtype for a BLAKE3 hash string (64 hex characters).
+///
+/// Provides compile-time distinction from other strings and optional runtime validation.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct Blake3Hash(String);
+
+impl Blake3Hash {
+    /// Create a new Blake3Hash without validation (for index/deserialized data).
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    /// Create a validated Blake3Hash (64 hex characters).
+    pub fn validated(s: &str) -> Result<Self, String> {
+        if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(format!(
+                "Invalid BLAKE3 hash: expected 64 hex chars, got '{s}'"
+            ))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Blake3Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Blake3Hash {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for Blake3Hash {
+    fn from(s: String) -> Self {
+        Self::new(s)
+    }
+}
+
+impl From<&str> for Blake3Hash {
+    fn from(s: &str) -> Self {
+        Self::new(s)
     }
 }
 

@@ -22,6 +22,7 @@
 use super::buffer::OutputBuffer;
 use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
+use crate::{PackageName, Version};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -31,32 +32,32 @@ use std::time::Duration;
 pub enum UiEvent {
     /// Prepare the table for a pipeline of packages
     PreparePipeline {
-        items: Vec<(String, Option<String>)>,
+        items: Vec<(PackageName, Option<Version>)>,
     },
     /// Print a simple header section
     PrintHeader { title: String },
     /// Update package state to downloading
     Downloading {
-        name: String,
-        version: String,
+        name: PackageName,
+        version: Version,
         current: u64,
         total: u64,
     },
     /// Update package state to installing
-    Installing { name: String, version: String },
+    Installing { name: PackageName, version: Version },
     /// Update package state to removing
-    Removing { name: String, version: String },
+    Removing { name: PackageName, version: Version },
     /// Mark package as successfully done
     Done {
-        name: String,
-        version: String,
+        name: PackageName,
+        version: Version,
         detail: String,
         size: Option<u64>,
     },
     /// Mark package as failed
     Failed {
-        name: String,
-        version: String,
+        name: PackageName,
+        version: Version,
         reason: String,
     },
     /// Print info message
@@ -236,8 +237,8 @@ mod tests {
         assert!(matches!(event, UiEvent::Info(_)));
 
         let event2 = UiEvent::Downloading {
-            name: "pkg".to_string(),
-            version: "1.0.0".to_string(),
+            name: PackageName::new("pkg"),
+            version: Version::from("1.0.0"),
             current: 100,
             total: 200,
         };

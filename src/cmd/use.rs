@@ -9,8 +9,8 @@ pub fn use_package(pkg_spec: &str, dry_run: bool) -> Result<()> {
     // Parse input
     let spec = PackageSpec::parse(pkg_spec)?;
     let version = spec
-        .version()
-        .map(|v| v.to_string())
+        .version
+        .clone()
         .context("Version is required for use (e.g., 'apl use jq@1.6')")?;
 
     apl::ops::switch::switch_version(&spec.name, &version, dry_run, &output)

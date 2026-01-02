@@ -105,7 +105,7 @@ fn run_shell(
     let apl_path_str = env::join_paths(new_path_entries)?
         .into_string()
         .map_err(|_| anyhow!("Failed to construct PATH"))?;
-    let new_path = format!("{}:{}", apl_path_str, current_path);
+    let new_path = format!("{apl_path_str}:{current_path}");
 
     // 6. Spawn Shell
     let shell_bin = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
@@ -115,7 +115,7 @@ fn run_shell(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "apl".to_string());
-    let ps1_prefix = format!("(apl:{}) ", project_name);
+    let ps1_prefix = format!("(apl:{project_name}) ");
 
     output.success("Entering apl shell environment...");
 
@@ -178,7 +178,7 @@ fn is_lockfile_synced(manifest: &Manifest, lockfile: &Lockfile) -> bool {
 
         match locked {
             Some(pkg) => {
-                if !version_satisfies_requirement(&pkg.version, version_req) {
+                if !apl::core::version::version_satisfies_requirement(&pkg.version, version_req) {
                     return false;
                 }
             }
@@ -187,11 +187,6 @@ fn is_lockfile_synced(manifest: &Manifest, lockfile: &Lockfile) -> bool {
     }
 
     true
-}
-
-/// Check if a version satisfies a requirement using the shared version module
-fn version_satisfies_requirement(version: &str, requirement: &str) -> bool {
-    apl::core::version::version_satisfies_requirement(version, requirement)
 }
 
 /// Extract bin directory from .apl-meta.json if available
@@ -224,15 +219,10 @@ async fn ensure_installed(
 
         output.installing(&pkg.name, &pkg.version);
 
-        let prepared = apl::ops::install::prepare_download(
-            client,
-            &pkg.name,
-            Some(&pkg.version),
-            Some(index),
-            output,
-        )
-        .await?
-        .ok_or_else(|| anyhow!("Failed to prepare package {}", pkg.name))?;
+        let unresolved =
+            apl::ops::flow::UnresolvedPackage::new(pkg.name.clone(), Some(pkg.version.clone()));
+        let resolved = unresolved.resolve(Some(index))?;
+        let prepared = resolved.prepare(client, output).await?;
 
         apl::ops::install::install_to_store_only(prepared)?;
 

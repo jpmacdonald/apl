@@ -34,20 +34,20 @@ impl OutputBuffer {
     pub fn write_at(&mut self, row: u16, col: u16, text: &str, color: Color) {
         let _ = self.stdout.queue(cursor::MoveTo(col, row));
         let _ = self.stdout.queue(SetForegroundColor(color));
-        let _ = write!(self.stdout, "{}", text);
+        let _ = write!(self.stdout, "{text}");
         let _ = self.stdout.queue(SetForegroundColor(Color::Reset));
     }
 
     /// Write text on a new line with color
     pub fn write_line(&mut self, text: &str, color: Color) {
         let _ = self.stdout.queue(SetForegroundColor(color));
-        let _ = writeln!(self.stdout, "{}", text);
+        let _ = writeln!(self.stdout, "{text}");
         let _ = self.stdout.queue(SetForegroundColor(Color::Reset));
     }
 
     /// Write text without newline
     pub fn write(&mut self, text: &str) {
-        let _ = write!(self.stdout, "{}", text);
+        let _ = write!(self.stdout, "{text}");
     }
 
     /// Move cursor to position
@@ -83,8 +83,7 @@ mod tests {
 
     #[test]
     fn test_buffer_creation() {
+        // Verify buffer can be created without panicking
         let _buffer = OutputBuffer::default();
-        // Just verify it can be created
-        assert!(true);
     }
 }

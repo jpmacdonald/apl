@@ -3,9 +3,9 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
-use apl::apl_home;
-use apl::ops::install::prepare_download;
+use apl::ops::flow::UnresolvedPackage;
 use apl::ui::Output;
+use apl::{PackageName, apl_home};
 
 /// Run a package transiently without global installation
 pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> {
@@ -16,10 +16,10 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
     let index_path = apl_home().join("index.bin");
     let index = apl::core::index::PackageIndex::load(&index_path).ok();
 
-    let prepared = prepare_download(&client, pkg_name, None, index.as_ref(), &output)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?
-        .context(format!("Could not find or download package '{pkg_name}'"))?;
+    let pkg_name_new = PackageName::from(pkg_name);
+    let unresolved = UnresolvedPackage::new(pkg_name_new, None);
+    let resolved = unresolved.resolve(index.as_ref())?;
+    let prepared = resolved.prepare(&client, &output).await?;
 
     // 2. Already Extracted (by prepare_download_new)
     let extract_dir = prepared.extracted_path;
@@ -29,7 +29,7 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
         .bin_list
         .first()
         .cloned()
-        .unwrap_or_else(|| prepared.name.clone());
+        .unwrap_or_else(|| prepared.resolved.name.to_string());
 
     // Find the binary path in the extracted files
     let bin_path = walkdir::WalkDir::new(&extract_dir)

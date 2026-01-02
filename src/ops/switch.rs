@@ -1,17 +1,18 @@
 use crate::db::StateDb;
 use crate::ui::Reporter;
+use crate::{PackageName, Version};
 use crate::{bin_path, ops::InstallError, store_path};
 
 /// Updates symlinks and database state to point to a different installed version.
 pub fn switch_version<R: Reporter>(
-    name: &str,
-    version: &str,
+    name: &PackageName,
+    version: &Version,
     dry_run: bool,
     reporter: &R,
 ) -> Result<(), InstallError> {
     let db = StateDb::open().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
     let pkg = db
-        .get_package_version(name, version)
+        .get_package_version(name.as_str(), version.as_str())
         .map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
 
     match pkg {
@@ -86,16 +87,20 @@ pub fn switch_version<R: Reporter>(
             db.add_history(&p.name, "switch", None, Some(&p.version), true)
                 .map_err(|e| InstallError::Other(e.to_string()))?;
 
-            reporter.done(&p.name, &p.version, "switched", None);
+            reporter.done(
+                &PackageName::new(&p.name),
+                &Version::from(p.version.as_str()),
+                "switched",
+                None,
+            );
         }
         None => {
             let versions = db
-                .list_package_versions(name)
+                .list_package_versions(name.as_str())
                 .map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
             if versions.is_empty() {
                 return Err(InstallError::Validation(format!(
-                    "Package '{}' is not installed.",
-                    name
+                    "Package '{name}' is not installed."
                 )));
             } else {
                 let available = versions
@@ -104,8 +109,7 @@ pub fn switch_version<R: Reporter>(
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(InstallError::Validation(format!(
-                    "Version '{}' of '{}' is not installed.\nInstalled versions: {}",
-                    version, name, available
+                    "Version '{version}' of '{name}' is not installed.\nInstalled versions: {available}"
                 )));
             }
         }

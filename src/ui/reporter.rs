@@ -3,27 +3,29 @@
 //! This trait allows core logic to report progress and status without
 //! being coupled to a specific TUI or GUI implementation.
 
+use crate::{PackageName, Version};
+
 pub trait Reporter: Send + Sync {
     /// Reserve space for a set of packages in the output display.
-    fn prepare_pipeline(&self, packages: &[(String, Option<String>)]);
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]);
 
     /// Indicates a new section or phase has started (e.g. "Fetching", "Installing").
     fn section(&self, title: &str);
 
     /// Updates the progress of a download.
-    fn downloading(&self, name: &str, version: &str, current: u64, total: u64);
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64);
 
     /// Updates the state of a package to 'installing'.
-    fn installing(&self, name: &str, version: &str);
+    fn installing(&self, name: &PackageName, version: &Version);
 
     /// Updates the state of a package to 'removing'.
-    fn removing(&self, name: &str, version: &str);
+    fn removing(&self, name: &PackageName, version: &Version);
 
     /// Marks a package operation as successfully completed.
-    fn done(&self, name: &str, version: &str, detail: &str, size: Option<u64>);
+    fn done(&self, name: &PackageName, version: &Version, detail: &str, size: Option<u64>);
 
     /// Marks a package operation as failed with a specific reason.
-    fn failed(&self, name: &str, version: &str, reason: &str);
+    fn failed(&self, name: &PackageName, version: &Version, reason: &str);
 
     /// Log an informational message.
     fn info(&self, msg: &str);

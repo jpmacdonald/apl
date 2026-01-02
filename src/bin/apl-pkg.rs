@@ -8,6 +8,7 @@ use apl::package::{
     Source,
 };
 use apl::registry::{build_github_client, github};
+use apl::{Arch, PackageName, Version};
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
 use std::fs;
@@ -53,9 +54,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Add { repos } => {
             for repo in repos {
-                println!("Adding {}...", repo);
+                println!("Adding {repo}...");
                 if let Err(e) = add_package(&client, &repo, &packages_dir).await {
-                    eprintln!("   Failed: {}", e);
+                    eprintln!("   Failed: {e}");
                 }
             }
         }
@@ -102,7 +103,7 @@ async fn main() -> Result<()> {
                             }
                         }
                         Err(e) => {
-                            eprintln!("   Failed to update {}: {}", file_name, e); // Keep inline error for context
+                            eprintln!("   Failed to update {file_name}: {e}"); // Keep inline error for context
                             results.push(UpdateResult {
                                 name: file_name,
                                 status: UpdateStatus::Failed(e.to_string()),
@@ -131,7 +132,7 @@ async fn main() -> Result<()> {
                 println!("\n{:=^40}", " Update Summary ");
 
                 if updated_count > 0 {
-                    println!("\nUpdated ({})", updated_count);
+                    println!("\nUpdated ({updated_count})");
                     for r in results
                         .iter()
                         .filter(|r| matches!(r.status, UpdateStatus::Updated))
@@ -141,7 +142,7 @@ async fn main() -> Result<()> {
                 }
 
                 if failed_count > 0 {
-                    println!("\nFailed ({})", failed_count);
+                    println!("\nFailed ({failed_count})");
                     for r in results
                         .iter()
                         .filter(|r| matches!(r.status, UpdateStatus::Failed(_)))
@@ -185,7 +186,7 @@ async fn main() -> Result<()> {
             if errors == 0 {
                 println!("   All packages valid.");
             } else {
-                anyhow::bail!("Registry check failed with {} errors.", errors);
+                anyhow::bail!("Registry check failed with {errors} errors.");
             }
         }
         Commands::Index => {
@@ -232,14 +233,14 @@ fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
                 .binary
                 .iter()
                 .map(|(arch, binary)| IndexBinary {
-                    arch: arch.clone(),
+                    arch: arch.as_str().to_string(),
                     url: binary.url.clone(),
                     blake3: binary.blake3.clone(),
                 })
                 .collect();
 
             let release = VersionInfo {
-                version: pkg.package.version.clone(),
+                version: pkg.package.version.to_string(),
                 binaries,
                 deps: pkg.dependencies.runtime.clone(),
                 build_deps: pkg.dependencies.build.clone(),
@@ -343,15 +344,15 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
         println!("   Found ARM64 asset: {}", asset.name);
         println!("   Downloading...");
         let (url, hash) = download_asset(client, asset).await?;
-        println!("   ARM64 BLAKE3: {}", hash);
+        println!("   ARM64 BLAKE3: {hash}");
 
         binary_map.insert(
-            "arm64".to_string(),
+            Arch::Arm64,
             Binary {
                 url: url.clone(),
                 blake3: hash.clone(),
                 format: format.clone(),
-                arch: "arm64".to_string(),
+                arch: Arch::Arm64,
                 macos: "14.0".to_string(),
             },
         );
@@ -370,15 +371,15 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
         println!("   Found x86_64 asset: {}", asset.name);
         println!("   Downloading...");
         let (url, hash) = download_asset(client, asset).await?;
-        println!("   x86_64 BLAKE3: {}", hash);
+        println!("   x86_64 BLAKE3: {hash}");
 
         binary_map.insert(
-            "x86_64".to_string(),
+            Arch::X86_64,
             Binary {
                 url: url.clone(),
                 blake3: hash.clone(),
                 format: format.clone(),
-                arch: "x86_64".to_string(),
+                arch: Arch::X86_64,
                 macos: "14.0".to_string(),
             },
         );
@@ -390,10 +391,10 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
 
             let package = Package {
                 package: PackageInfo {
-                    name: repo_name.to_string(),
-                    version: version.to_string(),
+                    name: PackageName::from(repo_name.to_string()),
+                    version: Version::from(version.to_string()),
                     description: "".to_string(),
-                    homepage: format!("https://github.com/{}", repo),
+                    homepage: format!("https://github.com/{repo}"),
                     license: "".to_string(),
                     type_: PackageType::Cli,
                 },
@@ -416,7 +417,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             };
 
             let toml_content = package.to_toml()?;
-            let toml_path = out_dir.join(format!("{}.toml", repo_name));
+            let toml_path = out_dir.join(format!("{repo_name}.toml"));
             fs::write(&toml_path, toml_content)?;
             println!("   Created {}", toml_path.display());
             return Ok(());
@@ -425,10 +426,10 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
 
     let package = Package {
         package: PackageInfo {
-            name: repo_name.to_string(),
-            version: version.to_string(),
+            name: PackageName::from(repo_name.to_string()),
+            version: Version::from(version.to_string()),
             description: "".to_string(),
-            homepage: format!("https://github.com/{}", repo),
+            homepage: format!("https://github.com/{repo}"),
             license: "".to_string(),
             type_: PackageType::Cli,
         },
@@ -451,7 +452,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     };
 
     let toml_content = package.to_toml()?;
-    let toml_path = out_dir.join(format!("{}.toml", repo_name));
+    let toml_path = out_dir.join(format!("{repo_name}.toml"));
     fs::write(&toml_path, toml_content)?;
     println!("   Created {}", toml_path.display());
 

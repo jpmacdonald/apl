@@ -9,6 +9,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::{Arch, PackageName, Version};
+
 #[derive(Error, Debug)]
 pub enum PackageError {
     #[error("IO error: {0}")]
@@ -56,8 +58,8 @@ pub enum InstallStrategy {
 /// Package metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
-    pub name: String,
-    pub version: String,
+    pub name: PackageName,
+    pub version: Version,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
@@ -85,16 +87,16 @@ pub struct Binary {
     pub url: String,
     pub blake3: String,
     pub format: ArtifactFormat,
-    /// Target architecture: "arm64" or "x86_64"
+    /// Target architecture
     #[serde(default = "default_arch")]
-    pub arch: String,
+    pub arch: Arch,
     /// Minimum macOS version
     #[serde(default = "default_macos")]
     pub macos: String,
 }
 
-fn default_arch() -> String {
-    crate::arch::ARM64.to_string()
+fn default_arch() -> Arch {
+    crate::Arch::Arm64
 }
 
 fn default_macos() -> String {
@@ -120,7 +122,7 @@ pub struct Package {
     /// Pre-built binaries by architecture
     #[serde(default)]
     #[serde(alias = "bottle")] // Backwards compatibility
-    pub binary: HashMap<String, Binary>,
+    pub binary: HashMap<Arch, Binary>,
     #[serde(default)]
     pub dependencies: Dependencies,
     #[serde(default)]
@@ -192,8 +194,8 @@ impl Package {
 
     /// Get binary for current architecture
     pub fn binary_for_current_arch(&self) -> Option<&Binary> {
-        let arch = crate::arch::current();
-        self.binary.get(arch)
+        let arch = crate::Arch::current();
+        self.binary.get(&arch)
     }
 }
 
@@ -249,8 +251,8 @@ bin = ["nvim"]
     fn test_parse_package() {
         let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
 
-        assert_eq!(pkg.package.name, "neovim");
-        assert_eq!(pkg.package.version, "0.10.0");
+        assert_eq!(pkg.package.name, PackageName::from("neovim"));
+        assert_eq!(pkg.package.version, Version::from("0.10.0".to_string()));
         assert_eq!(pkg.source.blake3, "abc123def456");
         assert_eq!(pkg.dependencies.runtime.len(), 3);
         assert_eq!(pkg.binary.len(), 2);
@@ -287,7 +289,7 @@ blake3 = "abc123"
         use std::str::FromStr;
         let pkg: Result<Package, _> = Package::from_str(EXAMPLE_PACKAGE);
         assert!(pkg.is_ok());
-        assert_eq!(pkg.unwrap().package.name, "neovim");
+        assert_eq!(pkg.unwrap().package.name, PackageName::from("neovim"));
     }
 
     #[test]

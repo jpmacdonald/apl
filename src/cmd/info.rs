@@ -1,24 +1,25 @@
 //! Info command
 
 use anyhow::{Context, Result, bail};
-use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
+use apl::{PackageName, apl_home};
 use crossterm::style::Stylize;
 
 /// Show info about a specific package
-pub fn info(package: &str) -> Result<()> {
+pub fn info(package_str: &str) -> Result<()> {
+    let package = PackageName::new(package_str);
     let db = StateDb::open().context("Failed to open state database")?;
 
     // Check if installed
-    let installed = db.get_package(package)?;
+    let installed = db.get_package(package.as_str())?;
 
     // Check index for more info
     let index_path = apl_home().join("index.bin");
     let index_entry = if index_path.exists() {
         PackageIndex::load(&index_path)
             .ok()
-            .and_then(|idx| idx.find(package).cloned())
+            .and_then(|idx| idx.find(&package).cloned())
     } else {
         None
     };
@@ -60,7 +61,7 @@ pub fn info(package: &str) -> Result<()> {
 
     if let Some(pkg) = &installed {
         println!("  Status: Installed ({})", pkg.version);
-        let files = db.get_package_files(package)?;
+        let files = db.get_package_files(package.as_str())?;
         if !files.is_empty() {
             println!("  Files:");
             for file in files {

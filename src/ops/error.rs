@@ -24,8 +24,24 @@ pub enum InstallError {
     #[error("Build/Install script failed: {0}")]
     Script(String),
 
+    #[error("{context}: {message}")]
+    Context {
+        context: &'static str,
+        message: String,
+    },
+
     #[error("{0}")]
     Other(String),
+}
+
+impl InstallError {
+    /// Create an error with context for better debugging.
+    pub fn context(ctx: &'static str, msg: impl std::fmt::Display) -> Self {
+        Self::Context {
+            context: ctx,
+            message: msg.to_string(),
+        }
+    }
 }
 
 impl From<anyhow::Error> for InstallError {

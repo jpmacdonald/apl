@@ -1,6 +1,7 @@
 //! Package management commands
 
 use anyhow::{Context, Result};
+use apl::Version;
 use apl::package::Package;
 use std::path::Path;
 
@@ -102,18 +103,18 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
 
     // Update package file
     let mut pkg = apl::package::Package::from_file(path)?;
-    pkg.package.version = version.to_string();
+    pkg.package.version = Version::from(version.to_string());
 
     // Update the binary URL and hash for current arch
-    let arch = apl::arch::current();
-    if let Some(binary) = pkg.binary.get_mut(arch) {
+    let arch = apl::Arch::current();
+    if let Some(binary) = pkg.binary.get_mut(&arch) {
         binary.url = url.to_string();
         binary.blake3 = hash.clone();
     } else {
         pkg.binary.insert(
-            arch.to_string(),
+            arch,
             apl::package::Binary {
-                arch: arch.to_string(),
+                arch,
                 url: url.to_string(),
                 blake3: hash.clone(),
                 format: apl::package::ArtifactFormat::Binary,

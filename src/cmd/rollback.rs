@@ -42,10 +42,12 @@ pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
     }
 
     let output = apl::ui::Output::new();
-    output.info(&format!("Rolling back {pkg_name} to {target_version}..."));
+    let name = apl::PackageName::new(pkg_name);
+    let version = apl::Version::from(target_version);
+    output.info(&format!("Rolling back {pkg_name} to {version}..."));
 
     // Execute switch using the shared logic
-    apl::ops::switch::switch_version(pkg_name, &target_version, dry_run, &output)
+    apl::ops::switch::switch_version(&name, &version, dry_run, &output)
         .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())

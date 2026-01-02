@@ -98,8 +98,9 @@ impl IndexEntry {
     }
 
     /// Find a specific version
-    pub fn find_version(&self, version: &str) -> Option<&VersionInfo> {
-        self.releases.iter().find(|r| r.version == version)
+    pub fn find_version(&self, version: impl AsRef<str>) -> Option<&VersionInfo> {
+        let v = version.as_ref();
+        self.releases.iter().find(|r| r.version == v)
     }
 }
 
@@ -230,8 +231,9 @@ impl PackageIndex {
     }
 
     /// Find a package by name
-    pub fn find(&self, name: &str) -> Option<&IndexEntry> {
-        self.packages.iter().find(|e| e.name == name)
+    pub fn find(&self, name: impl AsRef<str>) -> Option<&IndexEntry> {
+        let n = name.as_ref();
+        self.packages.iter().find(|e| e.name == n)
     }
 
     /// Search packages by prefix

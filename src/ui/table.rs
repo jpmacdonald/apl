@@ -8,6 +8,7 @@ use super::buffer::OutputBuffer;
 use super::engine::RelativeFrame;
 use super::progress::{ProgressIndicator, format_download_progress};
 use super::theme::{Theme, format_size};
+use crate::{PackageName, Version};
 use crossterm::style::Stylize;
 use std::io::Write;
 
@@ -33,7 +34,7 @@ pub enum PackageState {
 /// A single package row in the table
 #[derive(Clone)]
 struct PackageRow {
-    name: String,
+    name: PackageName,
     version: String,
     state: PackageState,
     size: u64,
@@ -73,7 +74,7 @@ impl TableRenderer {
     pub fn prepare_pipeline(
         &mut self,
         buffer: &mut OutputBuffer,
-        items: &[(String, Option<String>)],
+        items: &[(PackageName, Option<Version>)],
     ) {
         buffer.hide_cursor();
         // 1. Clear old state
@@ -82,7 +83,7 @@ impl TableRenderer {
 
         // 2. Initialize package data
         for (name, version) in items {
-            let ver = version.as_deref().unwrap_or("-");
+            let ver = version.as_ref().map(|v| v.as_str()).unwrap_or("-");
             self.packages.push(PackageRow {
                 name: name.clone(),
                 version: ver.to_string(),
@@ -126,12 +127,12 @@ impl TableRenderer {
     /// Update a package's state by name
     pub fn update_package(
         &mut self,
-        name: &str,
-        version: Option<&str>,
+        name: &PackageName,
+        version: Option<&Version>,
         state: PackageState,
         size: Option<u64>,
     ) {
-        if let Some(pkg) = self.packages.iter_mut().find(|p| p.name == name) {
+        if let Some(pkg) = self.packages.iter_mut().find(|p| p.name == *name) {
             pkg.state = state;
             if let Some(v) = version {
                 pkg.version = v.to_string();
@@ -272,7 +273,7 @@ impl TableRenderer {
                     status_text.with(status_color)
                 );
 
-                write!(stdout, "{}", line)?;
+                write!(stdout, "{line}")?;
                 Ok(())
             });
         }

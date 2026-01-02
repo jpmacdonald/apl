@@ -237,7 +237,7 @@ pub fn extract_pkg(
     let temp_dir = tempfile::Builder::new()
         .prefix("apl-pkg-")
         .tempdir()
-        .map_err(|e| ExtractError::Io(e))?;
+        .map_err(ExtractError::Io)?;
 
     // 2. Run: xar -xf <archive> -C <temp>
     let status = std::process::Command::new("xar")
@@ -248,7 +248,7 @@ pub fn extract_pkg(
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::inherit())
         .status()
-        .map_err(|e| ExtractError::Io(e))?;
+        .map_err(ExtractError::Io)?;
 
     if !status.success() {
         return Err(ExtractError::Archive("xar extraction failed".to_string()));
@@ -294,13 +294,13 @@ pub fn extract_pkg(
         .arg(payload)
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| ExtractError::Io(e))?;
+        .map_err(ExtractError::Io)?;
 
     let gunzip = std::process::Command::new("gunzip")
         .stdin(cat.stdout.unwrap())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| ExtractError::Io(e))?;
+        .map_err(ExtractError::Io)?;
 
     let cpio = std::process::Command::new("cpio")
         .arg("-i")
@@ -308,7 +308,7 @@ pub fn extract_pkg(
         .stdin(gunzip.stdout.unwrap())
         .current_dir(dest_dir)
         .status()
-        .map_err(|e| ExtractError::Io(e))?;
+        .map_err(ExtractError::Io)?;
 
     if !cpio.success() {
         return Err(ExtractError::Archive("cpio extraction failed".to_string()));

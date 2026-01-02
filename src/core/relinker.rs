@@ -77,7 +77,7 @@ impl Relinker {
     /// Re-applies ad-hoc code signing to validity patched binaries.
     pub fn resign(path: &Path) -> Result<()> {
         let _ = Command::new("codesign")
-            .args(&[
+            .args([
                 "-s",
                 "-",
                 "--force",

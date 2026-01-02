@@ -1,8 +1,8 @@
 //! Status command to check for updates and health
 use anyhow::{Context, Result};
-use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
+use apl::{PackageName, Version, apl_home};
 
 /// Check status of installed packages
 pub fn status() -> Result<()> {
@@ -53,14 +53,17 @@ pub fn status() -> Result<()> {
             if !pkg.active {
                 continue;
             }
-            if let Some(entry) = idx.find(&pkg.name) {
+            let pkg_name = PackageName::new(&pkg.name);
+            let pkg_version = Version::from(pkg.version.as_str());
+
+            if let Some(entry) = idx.find(&pkg_name) {
                 let latest = match entry.latest() {
                     Some(v) => v.version.clone(),
                     None => continue,
                 };
                 // Only show update if latest is actually newer (not just different)
-                if apl::core::version::is_newer(&pkg.version, &latest) {
-                    update_list.push((pkg.name.clone(), pkg.version.clone(), latest));
+                if apl::core::version::is_newer(pkg_version.as_str(), &latest) {
+                    update_list.push((pkg_name, pkg_version, latest));
                 }
             }
         }
@@ -87,7 +90,7 @@ pub fn status() -> Result<()> {
         "   {:<18} {}",
         "Index:".with(theme.colors.secondary),
         if index.is_some() {
-            format!("{} (up to date)", index_date).with(theme.colors.success)
+            format!("{index_date} (up to date)").with(theme.colors.success)
         } else {
             "Not found".to_string().with(theme.colors.error)
         }

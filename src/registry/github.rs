@@ -60,8 +60,8 @@ pub const MACOS_UNIVERSAL_PATTERNS: &[&str] = &["universal", "macos", "mac"];
 pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
     let mut version = tag;
     let prefixes = [
-        format!("{}-", package_name),
-        format!("{}_", package_name),
+        format!("{package_name}-"),
+        format!("{package_name}_"),
         "v".to_string(),
     ];
 
@@ -233,7 +233,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     let owner = &captures[1];
     let repo_name = captures[2].trim_end_matches(".git");
 
-    println!("   Checking {} ({}/{})...", name, owner, repo_name);
+    println!("   Checking {name} ({owner}/{repo_name})...");
 
     let release = fetch_latest_release(client, owner, repo_name).await?;
     let latest_tag_raw = &release.tag_name;
@@ -244,8 +244,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     }
 
     println!(
-        "      New version found: {} -> {}",
-        current_version, latest_tag
+        "      New version found: {current_version} -> {latest_tag}"
     );
 
     let asset_discovery = find_best_asset(&release, name);
@@ -284,9 +283,9 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
                 println!("      Source-only update detected (no binary asset found)");
                 let new_url = src_url
                     .replace(&current_version, &latest_tag)
-                    .replace(&release.tag_name, &latest_tag_raw); // just in case
+                    .replace(&release.tag_name, latest_tag_raw); // just in case
 
-                println!("      Downloading source archive {}...", new_url);
+                println!("      Downloading source archive {new_url}...");
                 let bytes = client.get(&new_url).send().await?.bytes().await?;
                 let hash = blake3::hash(&bytes).to_hex().to_string();
 
@@ -317,15 +316,14 @@ pub async fn fetch_latest_release(
     repo: &str,
 ) -> Result<GithubRelease> {
     let url = format!(
-        "https://api.github.com/repos/{}/{}/releases/latest",
-        owner, repo
+        "https://api.github.com/repos/{owner}/{repo}/releases/latest"
     );
     let resp = client.get(&url).send().await?;
 
     if !resp.status().is_success() {
         if resp.status() == 404 {
             // Fallback 1: fetch all releases and pick the most recent one
-            let releases_url = format!("https://api.github.com/repos/{}/{}/releases", owner, repo);
+            let releases_url = format!("https://api.github.com/repos/{owner}/{repo}/releases");
             let releases_resp = client.get(&releases_url).send().await?;
             if releases_resp.status().is_success() {
                 let releases: Vec<GithubRelease> = releases_resp.json().await?;
@@ -335,7 +333,7 @@ pub async fn fetch_latest_release(
             }
 
             // Fallback 2: fetch all tags and pick the most recent one (for repos without formal releases)
-            let tags_url = format!("https://api.github.com/repos/{}/{}/tags", owner, repo);
+            let tags_url = format!("https://api.github.com/repos/{owner}/{repo}/tags");
             let tags_resp = client.get(&tags_url).send().await?;
             if tags_resp.status().is_success() {
                 #[derive(Deserialize)]

@@ -15,6 +15,7 @@ use crossterm::style::Color;
 
 /// Default theme for APL UI
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Theme {
     /// Colors for different UI elements
     pub colors: ColorScheme,
@@ -24,22 +25,6 @@ pub struct Theme {
     pub layout: Layout,
 }
 
-impl Theme {
-    /// Create the default APL theme
-    pub fn default() -> Self {
-        Self {
-            colors: ColorScheme::default(),
-            icons: Icons::default(),
-            layout: Layout::default(),
-        }
-    }
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self::default()
-    }
-}
 
 /// Color scheme for UI elements
 #[derive(Debug, Clone)]

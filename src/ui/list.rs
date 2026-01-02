@@ -9,7 +9,7 @@ use crossterm::style::Stylize;
 /// Print list table header
 pub fn print_list_header(buffer: &mut OutputBuffer) {
     let theme = Theme::default();
-    buffer.write_line(&format!("{}", ""), theme.colors.header); // Empty line spacer
+    buffer.write_line("", theme.colors.header); // Empty line spacer
 
     // Pad the strings BEFORE applying color
     let pkg_header = format!("{: <width$}", "PACKAGE", width = theme.layout.name_width);

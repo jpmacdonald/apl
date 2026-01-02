@@ -18,6 +18,9 @@ pub enum DbError {
 
     #[error("Package not found: {0}")]
     PackageNotFound(String),
+
+    #[error("Database actor died")]
+    ActorDied,
 }
 
 /// Metadata for a specific package version stored in the database.

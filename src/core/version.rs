@@ -6,11 +6,13 @@
 
 use anyhow::{Result, bail};
 
+use crate::{PackageName, Version};
+
 /// Parsed package specifier with optional version
 #[derive(Debug, Clone)]
 pub struct PackageSpec {
-    pub name: String,
-    pub version: Option<String>,
+    pub name: PackageName,
+    pub version: Option<Version>,
 }
 
 impl PackageSpec {
@@ -28,16 +30,16 @@ impl PackageSpec {
             let version = if version == "latest" {
                 None
             } else {
-                Some(version.to_string())
+                Some(Version::from(version.to_string()))
             };
 
             Ok(Self {
-                name: name.to_string(),
+                name: PackageName::from(name.to_string()),
                 version,
             })
         } else {
             Ok(Self {
-                name: spec.to_string(),
+                name: PackageName::from(spec.to_string()),
                 version: None,
             })
         }
@@ -155,21 +157,21 @@ mod tests {
     #[test]
     fn test_parse_simple() {
         let spec = PackageSpec::parse("jq").unwrap();
-        assert_eq!(spec.name, "jq");
+        assert_eq!(spec.name, PackageName::from("jq"));
         assert_eq!(spec.version, None);
     }
 
     #[test]
     fn test_parse_versioned() {
         let spec = PackageSpec::parse("jq@1.7.1").unwrap();
-        assert_eq!(spec.name, "jq");
-        assert_eq!(spec.version, Some("1.7.1".to_string()));
+        assert_eq!(spec.name, PackageName::from("jq"));
+        assert_eq!(spec.version, Some(Version::from("1.7.1".to_string())));
     }
 
     #[test]
     fn test_parse_latest() {
         let spec = PackageSpec::parse("jq@latest").unwrap();
-        assert_eq!(spec.name, "jq");
+        assert_eq!(spec.name, PackageName::from("jq"));
         assert_eq!(spec.version, None);
     }
 

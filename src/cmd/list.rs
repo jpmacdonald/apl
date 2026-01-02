@@ -1,8 +1,7 @@
-//! List command
-
 use anyhow::{Context, Result};
 use apl::db::StateDb;
 use apl::ui::list::{print_list_footer, print_list_header, print_list_row};
+use apl::{PackageName, Version};
 
 /// List all installed packages
 pub fn list() -> Result<()> {
@@ -37,7 +36,10 @@ pub fn list() -> Result<()> {
             .format("%Y-%m-%d")
             .to_string();
 
-        print_list_row(&mut buffer, &pkg.name, &pkg.version, pkg_size, &dt, " ");
+        let pkg_name = PackageName::new(&pkg.name);
+        let pkg_version = Version::from(pkg.version.as_str());
+
+        print_list_row(&mut buffer, &pkg_name, &pkg_version, pkg_size, &dt, " ");
     }
 
     print_list_footer(&mut buffer, packages.len(), total_size);

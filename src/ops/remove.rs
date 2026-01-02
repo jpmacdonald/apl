@@ -1,11 +1,11 @@
 use futures::future::join_all;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Instant;
 
-use crate::db::StateDb;
+use crate::DbHandle;
 use crate::ops::InstallError;
 use crate::ui::Reporter;
+use crate::{PackageName, Version};
 
 /// Resolves and removes packages, deleting active files and updating the database.
 pub async fn remove_packages<R: Reporter + Clone + 'static>(
@@ -14,16 +14,17 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
     force: bool,
     dry_run: bool,
 ) -> Result<(), InstallError> {
-    let db = StateDb::open().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
+    let db = DbHandle::spawn().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
 
-    let mut task_list = Vec::new();
+    let mut task_list: Vec<(PackageName, Option<Version>)> = Vec::new();
 
     // 1. Resolve package status
-    for pkg_name in packages {
-        if let Ok(Some(info)) = db.get_package(pkg_name) {
-            task_list.push((pkg_name.clone(), Some(info.version)));
+    for pkg_name_str in packages {
+        let pkg_name = PackageName::new(pkg_name_str);
+        if let Ok(Some(info)) = db.get_package(pkg_name.to_string()).await {
+            task_list.push((pkg_name, Some(Version::from(info.version))));
         } else {
-            task_list.push((pkg_name.clone(), None));
+            task_list.push((pkg_name, None));
         }
     }
 
@@ -36,37 +37,35 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
 
     let mut remove_count = 0;
     let mut handles = Vec::new();
-    let db_arc = Arc::new(db);
 
     for (pkg, version_opt) in task_list {
         if version_opt.is_none() {
-            reporter.failed(&pkg, "-", "not installed");
+            reporter.failed(&pkg, &Version::from("-"), "not installed");
             continue;
         }
         let version = version_opt.unwrap();
 
         // Get files for this package
-        let files = db_arc
-            .get_package_files(&pkg)
+        let files = db
+            .get_package_files(pkg.to_string())
+            .await
             .map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
 
         if files.is_empty() && !force {
             reporter.failed(&pkg, &version, "no files tracked");
             continue;
         }
-
         if files.is_empty() && force {
             reporter.warning(&format!(
-                "No files tracked for {}, but forcing metadata cleanup",
-                pkg
+                "No files tracked for {pkg}, but forcing metadata cleanup"
             ));
         }
 
         reporter.removing(&pkg, &version);
 
         let files_to_delete = files;
-        let pkg_name = pkg.clone();
-        let version_str = version.clone();
+        let pkg_name = pkg;
+        let version_final = version;
         let reporter_clone = reporter.clone();
 
         handles.push(tokio::spawn(async move {
@@ -91,9 +90,9 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
                 }
             }
             if success {
-                Some((pkg_name, version_str))
+                Some((pkg_name, version_final))
             } else {
-                reporter_clone.failed(&pkg_name, &version_str, "partial removal");
+                reporter_clone.failed(&pkg_name, &version_final, "partial removal");
                 None
             }
         }));
@@ -101,24 +100,30 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
 
     let results = join_all(handles).await;
 
-    for res in results {
-        if let Ok(Some((name, version))) = res {
-            if !dry_run {
-                let _ = db_arc.remove_package(&name);
-                let _ = db_arc.add_history(&name, "remove", Some(&version), None, true);
-            }
-            reporter.done(
-                &name,
-                &version,
-                if dry_run {
-                    "(dry run)"
-                } else {
-                    "unlinked from bin"
-                },
-                None,
-            );
-            remove_count += 1;
+    for (name, version) in results.into_iter().flatten().flatten() {
+        if !dry_run {
+            let _ = db.remove_package(name.to_string()).await;
+            let _ = db
+                .add_history(
+                    name.to_string(),
+                    "remove".to_string(),
+                    Some(version.to_string()),
+                    None,
+                    true,
+                )
+                .await;
         }
+        reporter.done(
+            &name,
+            &version,
+            if dry_run {
+                "(dry run)"
+            } else {
+                "unlinked from bin"
+            },
+            None,
+        );
+        remove_count += 1;
     }
 
     if remove_count > 0 {

@@ -81,13 +81,12 @@ pub fn attach(dmg_path: &Path) -> Result<MountPoint> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!(
-            "hdiutil attach failed: {}\n\
+            "hdiutil attach failed: {stderr}\n\
              This may indicate:\n\
              1. DMG requires user interaction (EULA)\n\
              2. DMG is corrupted or incompatible\n\
              3. Insufficient disk space\n\
-             4. Another process is using the file",
-            stderr
+             4. Another process is using the file"
         );
     }
 
@@ -107,7 +106,7 @@ pub fn attach(dmg_path: &Path) -> Result<MountPoint> {
         }
     }
 
-    bail!("Could not find mount point in hdiutil output:\n{}", stdout);
+    bail!("Could not find mount point in hdiutil output:\n{stdout}");
 }
 
 /// Detach a volume with retries

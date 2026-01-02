@@ -32,8 +32,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     // Fetch releases from GitHub
     let client = Client::new();
     let url = format!(
-        "https://api.github.com/repos/{}/{}/releases",
-        APL_REPO_OWNER, APL_REPO_NAME
+        "https://api.github.com/repos/{APL_REPO_OWNER}/{APL_REPO_NAME}/releases"
     );
 
     let response = client

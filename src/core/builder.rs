@@ -81,7 +81,7 @@ impl<'a> Builder<'a> {
                 // Show last 20 lines from log
                 if let Ok(tail) = read_last_lines(log_path, 20) {
                     eprintln!("\nBuild failed. Last 20 lines:");
-                    eprintln!("{}", tail);
+                    eprintln!("{tail}");
                     eprintln!("\nFull log: {}", log_path.display());
                 }
             }
@@ -124,7 +124,7 @@ fn read_last_lines(path: &Path, n: usize) -> Result<String> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
-    let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
+    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
     let start = lines.len().saturating_sub(n);
     Ok(lines[start..].join("\n"))

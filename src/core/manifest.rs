@@ -1,3 +1,4 @@
+use crate::{PackageName, Version};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -7,7 +8,7 @@ use tokio::fs;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub project: ProjectObj,
-    pub dependencies: HashMap<String, String>,
+    pub dependencies: HashMap<PackageName, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,8 +23,8 @@ pub struct Lockfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockPackage {
-    pub name: String,
-    pub version: String,
+    pub name: PackageName,
+    pub version: Version,
     pub url: String,
     pub blake3: String,
     pub timestamp: Option<i64>,
