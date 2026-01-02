@@ -333,6 +333,16 @@ pub async fn fetch_all_releases(
                 // Fallback: fetch all tags (paginated)
                 return fetch_all_tags(client, owner, repo).await;
             }
+            // Log the error
+            eprintln!(
+                "   Warning: Failed to fetch releases for {}/{}: HTTP {}",
+                owner,
+                repo,
+                resp.status()
+            );
+            if let Ok(text) = resp.text().await {
+                eprintln!("   Body: {}", text);
+            }
             break;
         }
 
@@ -391,6 +401,15 @@ async fn fetch_all_tags(
         let resp = client.get(&url).send().await?;
 
         if !resp.status().is_success() {
+            eprintln!(
+                "   Warning: Failed to fetch tags for {}/{}: HTTP {}",
+                owner,
+                repo,
+                resp.status()
+            );
+            if let Ok(text) = resp.text().await {
+                eprintln!("   Body: {}", text);
+            }
             break;
         }
 
