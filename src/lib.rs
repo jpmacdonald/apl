@@ -1,6 +1,30 @@
 //! apl - A Package Layer
 //!
 //! Fast, minimal package manager for macOS CLI tools.
+//!
+//! # Overview
+//!
+//! APL provides a streamlined way to install, manage, and update command-line tools
+//! on macOS. It uses a binary package index for fast lookups and supports both
+//! pre-compiled binaries and building from source.
+//!
+//! # Architecture
+//!
+//! - **Typestate Pattern**: The installation flow uses `UnresolvedPackage` →
+//!   `ResolvedPackage` → `PreparedPackage` to enforce correct ordering at compile time.
+//! - **Actor Pattern**: Database access is serialized through `DbHandle` for thread safety.
+//! - **Newtypes**: `PackageName`, `Version`, and `Blake3Hash` provide type-safe identifiers.
+//!
+//! # Directory Layout
+//!
+//! ```text
+//! ~/.apl/
+//! ├── bin/        # Symlinks to active binaries
+//! ├── store/      # Package artifacts by name/version
+//! ├── cache/      # Downloaded archives (by hash)
+//! ├── index.bin   # Binary package index
+//! └── state.db    # SQLite database
+//! ```
 
 pub mod core;
 pub mod io;
@@ -70,13 +94,26 @@ pub fn tmp_path() -> PathBuf {
     apl_home().join("tmp")
 }
 
-/// Architecture enum
+/// Target CPU architecture for macOS.
+///
+/// APL supports both Apple Silicon (ARM64) and Intel (x86_64) Macs.
+/// The architecture is used to select the correct pre-compiled binary
+/// from the package index.
+///
+/// # Example
+///
+/// ```
+/// use apl::Arch;
+///
+/// let current = Arch::current();
+/// println!("Running on: {}", current);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Arch {
-    /// ARM64 architecture (Apple Silicon)
+    /// ARM64 architecture (Apple Silicon: M1, M2, M3, etc.)
     Arm64,
-    /// x86_64 architecture (Intel)
+    /// x86_64 architecture (Intel Macs)
     X86_64,
 }
 
@@ -120,17 +157,32 @@ impl std::str::FromStr for Arch {
     }
 }
 
-/// Newtype for a package name, ensuring normalization (lowercase)
+/// A normalized package name.
+///
+/// Package names are automatically lowercased to ensure consistent lookups
+/// and comparisons. This prevents issues with case-sensitive package names
+/// like `JQ` vs `jq`.
+///
+/// # Example
+///
+/// ```
+/// use apl::PackageName;
+///
+/// let name = PackageName::new("JQ");
+/// assert_eq!(name.as_str(), "jq");
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 pub struct PackageName(String);
 
 impl PackageName {
+    /// Create a new package name, automatically normalizing to lowercase.
     pub fn new(name: &str) -> Self {
         Self(name.to_lowercase())
     }
 
+    /// Get the normalized package name as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -206,17 +258,32 @@ impl std::str::FromStr for PackageName {
     }
 }
 
-/// Newtype for a package version
+/// A semantic version string.
+///
+/// Versions are stored as strings to support arbitrary version formats
+/// (e.g., `1.2.3`, `2024.01.01`, `nightly`). Comparison and ordering
+/// are performed using semantic version parsing where applicable.
+///
+/// # Example
+///
+/// ```
+/// use apl::Version;
+///
+/// let version = Version::new("1.7.1");
+/// assert_eq!(version.as_str(), "1.7.1");
+/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 pub struct Version(String);
 
 impl Version {
+    /// Create a new version from a string.
     pub fn new(v: &str) -> Self {
         Self(v.to_string())
     }
 
+    /// Get the version string.
     pub fn as_str(&self) -> &str {
         &self.0
     }

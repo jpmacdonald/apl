@@ -1,9 +1,24 @@
 //! Installation Flow Typestate Pattern
 //!
 //! Models the installation pipeline as a series of explicit state transitions:
-//! `UnresolvedPackage` -> `ResolvedPackage` -> `PreparedPackage`
 //!
-//! This enforces at compile-time that you cannot prepare a package before resolving it.
+//! ```text
+//! UnresolvedPackage --[resolve()]--> ResolvedPackage --[prepare()]--> PreparedPackage
+//! ```
+//!
+//! This enforces at compile-time that you cannot prepare a package before resolving it,
+//! preventing logic errors where code attempts to extract an archive that hasn't been
+//! downloaded yet.
+//!
+//! # Usage
+//!
+//! ```ignore
+//! use apl::ops::flow::UnresolvedPackage;
+//!
+//! let unresolved = UnresolvedPackage::new(name, None);
+//! let resolved = unresolved.resolve(Some(&index))?;
+//! let prepared = resolved.prepare(&client, &reporter).await?;
+//! ```
 
 use reqwest::Client;
 use std::path::{Path, PathBuf};
@@ -19,56 +34,108 @@ use crate::package::{
 use crate::ui::Reporter;
 use crate::{Arch, PackageName, Version};
 
-/// Represents the source of the artifact to be downloaded/built.
+/// Represents the source of the artifact to be downloaded or built.
+///
+/// This enum distinguishes between pre-compiled binaries and source archives,
+/// allowing the installation logic to handle them differently (e.g., source
+/// packages may require building).
 #[derive(Debug, Clone)]
 pub enum ArtifactKind {
     /// A pre-compiled binary for the current architecture.
-    Binary { url: String, hash: String },
+    Binary {
+        /// Download URL for the binary archive.
+        url: String,
+        /// BLAKE3 hash for verification.
+        hash: String,
+    },
     /// Source code that requires building.
-    Source { url: String, hash: String },
+    Source {
+        /// Download URL for the source archive.
+        url: String,
+        /// BLAKE3 hash for verification.
+        hash: String,
+    },
 }
 
 impl ArtifactKind {
+    /// Get the download URL for this artifact.
     pub fn url(&self) -> &str {
         match self {
             Self::Binary { url, .. } | Self::Source { url, .. } => url,
         }
     }
 
+    /// Get the BLAKE3 hash for verification.
     pub fn hash(&self) -> &str {
         match self {
             Self::Binary { hash, .. } | Self::Source { hash, .. } => hash,
         }
     }
 
+    /// Returns `true` if this is a source artifact requiring building.
     pub fn is_source(&self) -> bool {
         matches!(self, Self::Source { .. })
     }
 }
 
-/// Step 1: A package that has been requested but not yet matched against an index or filesystem.
+/// State 1: A package that has been requested but not yet resolved.
+///
+/// This is the initial state in the installation pipeline. The package name
+/// is known, but the version, download URL, and metadata have not yet been
+/// determined.
+///
+/// # Transitions
+///
+/// - [`resolve()`](Self::resolve) → [`ResolvedPackage`]
 pub struct UnresolvedPackage {
+    /// The requested package name.
     pub name: PackageName,
+    /// Optional requested version (None = latest).
     pub requested: Option<Version>,
 }
 
-/// Step 2: A package whose version, metadata, and artifact location have been determined.
+/// State 2: A package whose version and metadata have been determined.
+///
+/// At this stage, we know exactly which version to install, where to download
+/// the artifact from, and the expected hash for verification.
+///
+/// # Transitions
+///
+/// - [`prepare()`](Self::prepare) → [`PreparedPackage`]
 pub struct ResolvedPackage {
+    /// The resolved package name.
     pub name: PackageName,
+    /// The resolved version to install.
     pub version: Version,
+    /// Full package definition with metadata.
     pub def: Package,
+    /// The artifact (binary or source) to download.
     pub artifact: ArtifactKind,
 }
 
-/// Step 3: A package whose archive has been downloaded and extracted into a temporary directory.
+/// State 3: A package that has been downloaded and extracted.
+///
+/// This is the final state before installation. The archive has been downloaded,
+/// verified, and extracted to a temporary directory. The package is ready to be
+/// moved to the store and linked.
 pub struct PreparedPackage {
+    /// The resolved package information.
     pub resolved: ResolvedPackage,
+    /// Path to the extracted contents.
     pub extracted_path: PathBuf,
+    /// List of binaries to install.
     pub bin_list: Vec<String>,
+    /// Temporary directory (cleaned up on drop).
     pub temp_dir: TempDir,
 }
 
 impl UnresolvedPackage {
+    /// Create a new unresolved package request.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The package name to install
+    /// * `requested` - Optional specific version (None = latest)
     pub fn new(name: PackageName, requested: Option<Version>) -> Self {
         Self { name, requested }
     }

@@ -1,3 +1,15 @@
+//! Package installation operations.
+//!
+//! This module provides the core installation logic for APL, including:
+//!
+//! - Resolving package names to specific versions
+//! - Downloading and verifying artifacts
+//! - Extracting archives and linking binaries
+//! - Managing symlinks in `~/.apl/bin`
+//!
+//! The main entry point is [`install_packages`], which handles the full
+//! installation workflow including dependency resolution and parallel downloads.
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
