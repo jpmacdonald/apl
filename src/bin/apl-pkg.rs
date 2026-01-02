@@ -127,7 +127,7 @@ async fn main() -> Result<()> {
                 .count();
 
             if updated_count > 0 {
-                cli_index(&packages_dir, &index_path).await?;
+                cli_index(&client, &packages_dir, &index_path).await?;
             }
 
             // Print Summary
@@ -193,7 +193,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Index => {
-            cli_index(&packages_dir, &index_path).await?;
+            cli_index(&client, &packages_dir, &index_path).await?;
         }
         Commands::Migrate => {
             cli_migrate(&packages_dir, &registry_dir).await?;
@@ -381,17 +381,17 @@ fn extract_version_from_tag(tag: &str, pattern: &str) -> String {
     }
 }
 
-async fn cli_index(packages_dir: &Path, index_path: &Path) -> Result<()> {
+async fn cli_index(client: &reqwest::Client, packages_dir: &Path, index_path: &Path) -> Result<()> {
     println!("Regenerating index...");
 
     // Check if we should use new registry/ or old packages/
     let registry_dir = Path::new("registry");
     let index = if registry_dir.exists() && registry_dir.is_dir() {
         println!("   Using algorithmic registry (registry/)...");
-        generate_index_from_registry(registry_dir).await?
+        generate_index_from_registry(client, registry_dir).await?
     } else {
         println!("   Using legacy packages directory...");
-        generate_index_from_dir(packages_dir).await?
+        generate_index_from_dir(client, packages_dir).await?
     };
 
     index.save_compressed(index_path)?;
@@ -558,10 +558,12 @@ fn guess_targets(pkg: &apl::package::Package) -> Option<HashMap<String, String>>
 }
 
 /// Generate index from algorithmic registry templates
-async fn generate_index_from_registry(registry_dir: &Path) -> Result<PackageIndex> {
+async fn generate_index_from_registry(
+    client: &reqwest::Client,
+    registry_dir: &Path,
+) -> Result<PackageIndex> {
     use apl::package::PackageTemplate;
 
-    let client = build_github_client(None)?;
     let mut hash_cache = HashCache::load();
     let mut index = PackageIndex::default();
 
@@ -701,7 +703,7 @@ async fn generate_index_from_registry(registry_dir: &Path) -> Result<PackageInde
     Ok(index)
 }
 
-async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
+async fn generate_index_from_dir(client: &reqwest::Client, dir: &Path) -> Result<PackageIndex> {
     let mut index = PackageIndex::new();
     index.updated_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -709,8 +711,6 @@ async fn generate_index_from_dir(dir: &Path) -> Result<PackageIndex> {
         .as_secs() as i64;
 
     let mut hash_cache = HashCache::load();
-    let token = std::env::var("GITHUB_TOKEN").ok();
-    let client = build_github_client(token.as_deref())?;
 
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
