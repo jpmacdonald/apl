@@ -2,6 +2,7 @@
 
 pub mod builder;
 pub mod index;
+pub mod manifest;
 pub mod package;
 pub mod relinker;
 pub mod resolver;

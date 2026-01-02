@@ -12,6 +12,7 @@ pub mod remove;
 pub mod rollback;
 pub mod run;
 pub mod search;
+pub mod shell;
 pub mod status;
 pub mod update;
 pub mod update_self;

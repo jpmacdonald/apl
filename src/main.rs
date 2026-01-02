@@ -127,6 +127,18 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Enter a project-scoped shell environment
+    Shell {
+        /// Fail if lockfile is missing or out of sync (for CI)
+        #[arg(long)]
+        frozen: bool,
+        /// Force re-resolution even if lockfile is valid
+        #[arg(long)]
+        update: bool,
+        /// Optional command to run inside the shell
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Option<Vec<String>>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -205,5 +217,10 @@ async fn main() -> Result<()> {
             println!("Preparing to run '{package}'...");
             cmd::run::run(&package, &args, dry_run).await
         }
+        Commands::Shell {
+            frozen,
+            update,
+            command,
+        } => cmd::shell::shell(frozen, update, command).await,
     }
 }

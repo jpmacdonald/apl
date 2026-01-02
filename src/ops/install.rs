@@ -603,23 +603,8 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallErr
         return perform_app_install(pkg);
     }
 
-    let pkg_store_path = store_path().join(&pkg.name).join(&pkg.version);
-    if pkg_store_path.exists() {
-        std::fs::remove_dir_all(&pkg_store_path).map_err(InstallError::Io)?;
-    }
-    std::fs::create_dir_all(pkg_store_path.parent().unwrap()).map_err(InstallError::Io)?;
-
-    if pkg.build_required {
-        perform_source_build(&pkg, &pkg_store_path, package_def)?;
-    } else {
-        std::fs::rename(&pkg.extracted_path, &pkg_store_path).map_err(|_| {
-            InstallError::Other("Cross-volume move failed. APL requires store to be on the same volume as temp dir.".to_string())
-        })?;
-    }
-
-    if !pkg.build_required {
-        let _ = crate::io::extract::strip_components(&pkg_store_path);
-    }
+    let blake3_copy = pkg.blake3.clone(); // Preserve hash
+    let (package_def, pkg_store_path, size_bytes) = install_to_store_only(pkg)?;
 
     relink_macho_files(&pkg_store_path);
 
@@ -682,14 +667,62 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallErr
         files_to_record.push((target.to_string_lossy().to_string(), "SYMLINK".to_string()));
     }
 
-    let size_bytes = calculate_dir_size(&pkg_store_path);
-
     Ok(InstallInfo {
         package: package_def.package.clone(),
-        blake3: pkg.blake3,
+        blake3: blake3_copy,
         files_to_record,
         size_bytes,
     })
+}
+
+/// Publicly exposed helper for 'apl shell': moves package to store but does NOT link globally.
+/// Note: This function does NOT support App or Pkg install strategies.
+/// The caller (perform_local_install) routes those to perform_app_install.
+pub fn install_to_store_only(
+    pkg: PreparedPackage,
+) -> Result<(Package, PathBuf, u64), InstallError> {
+    let package_def = pkg
+        .package_def
+        .as_ref()
+        .ok_or_else(|| InstallError::Validation("Missing package definition".to_string()))?;
+
+    let pkg_store_path = store_path().join(&pkg.name).join(&pkg.version);
+    if pkg_store_path.exists() {
+        std::fs::remove_dir_all(&pkg_store_path).map_err(InstallError::Io)?;
+    }
+    std::fs::create_dir_all(pkg_store_path.parent().unwrap()).map_err(InstallError::Io)?;
+
+    if pkg.build_required {
+        perform_source_build(&pkg, &pkg_store_path, package_def)?;
+    } else {
+        std::fs::rename(&pkg.extracted_path, &pkg_store_path).map_err(|_| {
+            InstallError::Other("Cross-volume move failed. APL requires store to be on the same volume as temp dir.".to_string())
+        })?;
+    }
+
+    if !pkg.build_required {
+        let _ = crate::io::extract::strip_components(&pkg_store_path);
+    }
+
+    // We intentionally do NOT relink_macho_files here yet?
+    // Actually we should, to make them runnable.
+    relink_macho_files(&pkg_store_path);
+
+    // Write package metadata for apl shell bin path lookup
+    let meta = serde_json::json!({
+        "name": pkg.name,
+        "version": pkg.version,
+        "bin": package_def.install.bin,
+    });
+    let meta_path = pkg_store_path.join(".apl-meta.json");
+    if let Ok(meta_content) = serde_json::to_string_pretty(&meta) {
+        let _ = std::fs::write(&meta_path, meta_content);
+    }
+
+    let size_bytes = calculate_dir_size(&pkg_store_path);
+    let def_clone = package_def.clone();
+
+    Ok((def_clone, pkg_store_path, size_bytes))
 }
 
 fn perform_source_build(

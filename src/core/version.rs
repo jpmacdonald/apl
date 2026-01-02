@@ -108,6 +108,46 @@ pub fn is_newer(current: &str, latest: &str) -> bool {
     false
 }
 
+/// Check if a version satisfies a requirement using semver.
+/// Falls back to segment-based prefix matching for non-semver specs.
+pub fn version_satisfies_requirement(version: &str, requirement: &str) -> bool {
+    // Handle "latest" and "*" specially
+    if requirement == "latest" || requirement == "*" {
+        return true;
+    }
+
+    // Exact match
+    if version == requirement {
+        return true;
+    }
+
+    // Try semver parsing
+    if let (Ok(ver), Ok(req)) = (
+        semver::Version::parse(version),
+        semver::VersionReq::parse(requirement),
+    ) {
+        return req.matches(&ver);
+    }
+
+    // Fallback: segment-based prefix match
+    version_matches_segments(version, requirement)
+}
+
+/// Check if a version string matches a requirement by comparing segments.
+/// "0.2" matches "0.2.0", "0.2.1" but NOT "0.20.0"
+pub fn version_matches_segments(version: &str, requirement: &str) -> bool {
+    let v_parts: Vec<&str> = version.split('.').collect();
+    let r_parts: Vec<&str> = requirement.split('.').collect();
+
+    // Requirement must not have more segments than version
+    if r_parts.len() > v_parts.len() {
+        return false;
+    }
+
+    // Each segment of the requirement must match the corresponding version segment
+    r_parts.iter().zip(v_parts.iter()).all(|(r, v)| r == v)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +214,39 @@ mod tests {
         assert!(is_newer("1.0.0-alpha", "1.0.0-beta"));
         assert!(is_newer("1.0.0-beta", "1.0.0-rc.1"));
         assert!(!is_newer("1.0.0-beta.2", "1.0.0-beta.1"));
+    }
+
+    #[test]
+    fn test_version_satisfies_requirement_exact() {
+        assert!(version_satisfies_requirement("1.2.3", "1.2.3"));
+        assert!(!version_satisfies_requirement("1.2.3", "1.2.4"));
+    }
+
+    #[test]
+    fn test_version_satisfies_requirement_latest() {
+        assert!(version_satisfies_requirement("1.2.3", "latest"));
+        assert!(version_satisfies_requirement("0.0.1", "*"));
+    }
+
+    #[test]
+    fn test_version_satisfies_requirement_semver() {
+        assert!(version_satisfies_requirement("0.26.1", "^0.26"));
+        assert!(version_satisfies_requirement("0.26.0", "^0.26"));
+        assert!(!version_satisfies_requirement("0.27.0", "^0.26"));
+    }
+
+    #[test]
+    fn test_version_satisfies_requirement_prefix() {
+        assert!(version_satisfies_requirement("20.12.0", "20"));
+        assert!(version_satisfies_requirement("20.0.0", "20"));
+        assert!(!version_satisfies_requirement("21.0.0", "20"));
+    }
+
+    #[test]
+    fn test_version_matches_segments() {
+        assert!(version_matches_segments("0.2.0", "0.2"));
+        assert!(version_matches_segments("0.2.1", "0.2"));
+        assert!(!version_matches_segments("0.20.0", "0.2"));
+        assert!(!version_matches_segments("10.0.0", "1"));
     }
 }
