@@ -309,6 +309,62 @@ async fn fetch_and_parse_checksum(
     anyhow::bail!("Hash not found in checksum file for {filename}")
 }
 
+/// Fetch SHA256 digest directly from GitHub API for a release asset
+/// GitHub provides `digest` field for every asset, no separate checksum file needed
+async fn get_github_asset_digest(
+    client: &reqwest::Client,
+    github_repo: &str,
+    tag: &str,
+    asset_filename: &str,
+) -> Result<String> {
+    // Construct API URL for the release
+    let api_url = format!(
+        "https://api.github.com/repos/{}/releases/tags/{}",
+        github_repo, tag
+    );
+
+    let resp = client
+        .get(&api_url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "apl-pkg")
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("GitHub API error: {}", resp.status());
+    }
+
+    let release: serde_json::Value = resp.json().await?;
+
+    // Build list of filename variants to try (darwin vs macos)
+    let variants = vec![
+        asset_filename.to_string(),
+        asset_filename.replace("macos", "darwin"),
+        asset_filename.replace("darwin", "macos"),
+        asset_filename.replace("-macos-", "-osx-"),
+        asset_filename.replace("-osx-", "-macos-"),
+    ];
+
+    // Find the asset with matching name (try all variants)
+    if let Some(assets) = release["assets"].as_array() {
+        for variant in &variants {
+            for asset in assets {
+                if let Some(name) = asset["name"].as_str() {
+                    if name == variant {
+                        if let Some(digest) = asset["digest"].as_str() {
+                            // digest is "sha256:abc123..."
+                            let hash = digest.strip_prefix("sha256:").unwrap_or(digest);
+                            return Ok(hash.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    anyhow::bail!("Asset '{}' not found in release {}", asset_filename, tag)
+}
+
 /// Discover versions from a template's discovery configuration
 async fn discover_versions(
     client: &reqwest::Client,
@@ -603,37 +659,87 @@ async fn generate_index_from_registry(
                             // Try cache first
                             let (hash, hash_type) = if let Some(cached) = hash_cache.get(&url) {
                                 cached
-                            } else if let Some(checksum_template) = &template.checksums.url_template
-                            {
-                                let checksum_url = checksum_template
-                                    .replace("{{version}}", version)
-                                    .replace("{{target}}", target_str);
+                            } else {
+                                // Extract filename from URL for API lookup
+                                let asset_filename = url.split('/').next_back().unwrap_or("");
+                                // Extract GitHub info from discovery config (if it's GitHub-hosted)
+                                let github_info = match &template.discovery {
+                                    apl::package::DiscoveryConfig::GitHub {
+                                        github,
+                                        tag_pattern,
+                                        ..
+                                    } => Some((
+                                        github.clone(),
+                                        tag_pattern.replace("{{version}}", version),
+                                    )),
+                                    _ => None,
+                                };
 
-                                match fetch_and_parse_checksum(&client, &checksum_url, &url).await {
-                                    Ok(h) => {
-                                        let hash_type = template
-                                            .checksums
-                                            .vendor_type
-                                            .unwrap_or(HashType::Sha256);
-                                        hash_cache.insert(url.clone(), h.clone(), hash_type);
-                                        (h, hash_type)
+                                // Hash resolution hierarchy:
+                                // 1. GitHub API digest (if GitHub-hosted)
+                                // 2. Vendor checksum file (if template provided)
+                                // 3. Error (no fallback to download)
+
+                                let resolved = if let Some((github_repo, tag)) = &github_info {
+                                    // Try GitHub API digest first
+                                    match get_github_asset_digest(
+                                        &client,
+                                        github_repo,
+                                        tag,
+                                        asset_filename,
+                                    )
+                                    .await
+                                    {
+                                        Ok(h) => Some((h, HashType::Sha256)),
+                                        Err(_) => None,
                                     }
-                                    Err(e) => {
-                                        // Skip version if checksum fetch fails (no fallback to binary download)
-                                        eprintln!(
-                                            "     ⚠ Checksum fetch failed for {}: {}",
-                                            url, e
-                                        );
+                                } else {
+                                    None
+                                };
+
+                                // Fall back to vendor checksum file if API failed or not GitHub
+                                let resolved = match resolved {
+                                    Some(r) => Some(r),
+                                    None => {
+                                        if let Some(checksum_template) =
+                                            &template.checksums.url_template
+                                        {
+                                            let checksum_url = checksum_template
+                                                .replace("{{version}}", version)
+                                                .replace("{{target}}", target_str);
+                                            match fetch_and_parse_checksum(
+                                                &client,
+                                                &checksum_url,
+                                                &url,
+                                            )
+                                            .await
+                                            {
+                                                Ok(h) => {
+                                                    let hash_type = template
+                                                        .checksums
+                                                        .vendor_type
+                                                        .unwrap_or(HashType::Sha256);
+                                                    Some((h, hash_type))
+                                                }
+                                                Err(_) => None,
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                };
+
+                                match resolved {
+                                    Some((h, ht)) => {
+                                        hash_cache.insert(url.clone(), h.clone(), ht);
+                                        (h, ht)
+                                    }
+                                    None => {
+                                        // No hash source available - skip this version
+                                        eprintln!("     ⚠ No hash source for {} - skipping", url);
                                         continue;
                                     }
                                 }
-                            } else if template.checksums.skip {
-                                // Explicitly skipped - use empty hash (will be verified at install time)
-                                ("".to_string(), HashType::Blake3)
-                            } else {
-                                // No checksum template and skip=false - skip version with warning
-                                eprintln!("     ⚠ No checksum config for {} - skipping", url);
-                                continue;
                             };
 
                             binaries.push(IndexBinary {

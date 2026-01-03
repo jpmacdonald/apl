@@ -18,7 +18,7 @@ universal = false
 
 [checksums]
 vendor_type = "sha256"
-skip = true
+skip = false
 
 [install]
 strategy = "link"

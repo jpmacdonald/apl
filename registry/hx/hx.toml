@@ -22,7 +22,7 @@ x86_64 = "aarch64"
 
 [checksums]
 vendor_type = "sha256"
-skip = true
+skip = false
 
 [install]
 strategy = "link"

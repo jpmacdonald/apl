@@ -21,7 +21,7 @@ x86_64 = "x86_64-apple-darwin"
 
 [checksums]
 vendor_type = "sha256"
-skip = true
+skip = false
 
 [install]
 strategy = "link"
