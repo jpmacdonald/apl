@@ -81,7 +81,7 @@ pub fn switch_version<R: Reporter>(
             }
 
             // Persistence
-            db.install_package(&p.name, &p.version, &p.blake3)
+            db.install_package(&p.name, &p.version, &p.sha256)
                 .map_err(|e| InstallError::Other(e.to_string()))?;
 
             db.add_history(&p.name, "switch", None, Some(&p.version), true)

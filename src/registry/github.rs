@@ -1,8 +1,10 @@
 use anyhow::Result;
 use serde::Deserialize;
+use sha2::Digest;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
+    pub id: u64,
     pub tag_name: String,
     pub assets: Vec<GithubAsset>,
     #[serde(default)]
@@ -11,7 +13,7 @@ pub struct GithubRelease {
     pub prerelease: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
@@ -259,19 +261,19 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
             .await?
             .bytes()
             .await?;
-        let hash = blake3::hash(&bytes).to_hex().to_string();
+        let hash = hex::encode(sha2::Sha256::digest(&bytes));
 
         // Update TOML
         doc["package"]["version"] = value(latest_tag);
 
         if doc.get("source").is_some() {
             doc["source"]["url"] = value(asset.browser_download_url.clone());
-            doc["source"]["blake3"] = value(hash.clone());
+            doc["source"]["sha256"] = value(hash.clone());
         }
 
         if doc.get("binary").and_then(|b| b.get("arm64")).is_some() {
             doc["binary"]["arm64"]["url"] = value(asset.browser_download_url.clone());
-            doc["binary"]["arm64"]["blake3"] = value(hash);
+            doc["binary"]["arm64"]["sha256"] = value(hash);
         }
     } else {
         // Fallback for source-only or custom binary updates
@@ -289,11 +291,11 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
 
                 println!("      Downloading source archive {new_url}...");
                 let bytes = client.get(&new_url).send().await?.bytes().await?;
-                let hash = blake3::hash(&bytes).to_hex().to_string();
+                let hash = hex::encode(sha2::Sha256::digest(&bytes));
 
                 doc["package"]["version"] = value(latest_tag);
                 doc["source"]["url"] = value(new_url);
-                doc["source"]["blake3"] = value(hash);
+                doc["source"]["sha256"] = value(hash);
             } else {
                 anyhow::bail!(
                     "No compatible asset found for Darwin ARM64 and source URL is not a standard tag archive"
@@ -425,6 +427,7 @@ async fn fetch_all_tags(
         // Convert tags to minimal releases
         for tag in tags {
             all_tags.push(GithubRelease {
+                id: 0,
                 tag_name: tag.name,
                 assets: vec![], // Tags don't have attached assets in this view
                 draft: false,

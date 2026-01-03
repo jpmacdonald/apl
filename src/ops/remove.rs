@@ -74,7 +74,7 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
                 for file_record in files_to_delete {
                     let path = PathBuf::from(&file_record.path);
                     if path.exists() {
-                        let is_app_bundle = file_record.blake3 == "APP_BUNDLE";
+                        let is_app_bundle = file_record.sha256 == "APP_BUNDLE";
                         let is_dir = path.is_dir();
 
                         let result = if is_app_bundle || is_dir {

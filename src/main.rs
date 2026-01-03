@@ -72,7 +72,7 @@ enum Commands {
         /// Package name
         package: String,
     },
-    /// Compute BLAKE3 hash of a file (for package authoring)
+    /// Compute SHA256 hash of a file (for package authoring)
     #[command(hide = true)]
     Hash {
         /// Files to hash

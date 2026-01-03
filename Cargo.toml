@@ -8,7 +8,8 @@ repository = "https://github.com/jpmacdonald/apl"
 
 [dependencies]
 # Hashing
-blake3 = "1.5"
+sha2 = "0.10"
+hex = "0.4"
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }

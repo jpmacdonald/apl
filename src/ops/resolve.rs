@@ -1,13 +1,9 @@
 use crate::core::index::{IndexEntry, PackageIndex, VersionInfo};
 use crate::core::manifest::{LockPackage, Lockfile, Manifest};
 use crate::core::version::is_newer;
-use crate::{Arch, PackageName, Version};
+use crate::{PackageName, Version};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
-use std::str::FromStr;
-
-/// Universal binary architecture for macOS
-const UNIVERSAL_ARCH: &str = "universal-apple-darwin";
 
 /// Resolve manifest dependencies against the index to produce a Lockfile
 /// This includes transitive dependencies (deps of deps).
@@ -80,12 +76,12 @@ fn resolve_package_recursive(
     let binary = version_info
         .binaries
         .iter()
-        .find(|b| Arch::from_str(&b.arch).ok() == Some(target_arch))
+        .find(|b| b.arch == target_arch)
         .or_else(|| {
             version_info
                 .binaries
                 .iter()
-                .find(|b| b.arch == UNIVERSAL_ARCH)
+                .find(|b| b.arch == crate::Arch::Universal)
         })
         .with_context(|| {
             format!(
@@ -108,7 +104,7 @@ fn resolve_package_recursive(
         name: name.clone(),
         version: Version::from(version_info.version.clone()),
         url: binary.url.clone(),
-        blake3: binary.hash.clone(),
+        sha256: binary.hash.to_string(),
         timestamp: Some(timestamp),
     });
 
@@ -215,10 +211,10 @@ mod tests {
                 .map(|v| VersionInfo {
                     version: v.to_string(),
                     binaries: vec![IndexBinary {
-                        arch: crate::Arch::current().as_str().to_string(),
+                        arch: crate::Arch::current(),
                         url: "http://test".to_string(),
-                        hash: "hash".to_string(),
-                        hash_type: crate::core::index::HashType::Blake3,
+                        hash: crate::Sha256Hash::new("hash"),
+                        hash_type: crate::core::index::HashType::Sha256,
                     }],
                     deps: vec![],
                     build_deps: vec![],
@@ -286,7 +282,7 @@ mod tests {
                 name: PackageName::from("node".to_string()),
                 version: Version::from("20.12.0".to_string()),
                 url: "http://old".to_string(),
-                blake3: "oldhash".to_string(),
+                sha256: "oldhash".to_string(),
                 timestamp: Some(old_timestamp),
             }],
         };

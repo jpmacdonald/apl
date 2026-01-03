@@ -39,7 +39,7 @@ pub enum DbEvent {
         name: String,
         action: String,
         version: Option<String>,
-        blake3: Option<String>,
+        sha256: Option<String>,
         success: bool,
         resp: oneshot::Sender<Result<(), DbError>>,
     },
@@ -47,7 +47,7 @@ pub enum DbEvent {
     InstallComplete {
         name: String,
         version: String,
-        blake3: String,
+        sha256: String,
         size_bytes: u64,
         artifacts: Vec<(String, String)>,
         active_files: Vec<(String, String)>,
@@ -119,14 +119,14 @@ impl DbHandle {
         name: String,
         action: String,
         version: Option<String>,
-        blake3: Option<String>,
+        sha256: Option<String>,
         success: bool,
     ) -> Result<(), DbError> {
         self.request(|resp| DbEvent::AddHistory {
             name,
             action,
             version,
-            blake3,
+            sha256,
             success,
             resp,
         })
@@ -137,7 +137,7 @@ impl DbHandle {
         &self,
         name: String,
         version: String,
-        blake3: String,
+        sha256: String,
         size_bytes: u64,
         artifacts: Vec<(String, String)>,
         active_files: Vec<(String, String)>,
@@ -145,7 +145,7 @@ impl DbHandle {
         self.request(|resp| DbEvent::InstallComplete {
             name,
             version,
-            blake3,
+            sha256,
             size_bytes,
             artifacts,
             active_files,
@@ -179,7 +179,7 @@ fn run_db_event_loop(db: StateDb, receiver: mpsc::Receiver<DbEvent>) {
                 name,
                 action,
                 version,
-                blake3,
+                sha256,
                 success,
                 resp,
             } => {
@@ -187,14 +187,14 @@ fn run_db_event_loop(db: StateDb, receiver: mpsc::Receiver<DbEvent>) {
                     &name,
                     &action,
                     version.as_deref(),
-                    blake3.as_deref(),
+                    sha256.as_deref(),
                     success,
                 ));
             }
             DbEvent::InstallComplete {
                 name,
                 version,
-                blake3,
+                sha256,
                 size_bytes,
                 artifacts,
                 active_files,
@@ -203,7 +203,7 @@ fn run_db_event_loop(db: StateDb, receiver: mpsc::Receiver<DbEvent>) {
                 let _ = resp.send(db.install_complete_package(
                     &name,
                     &version,
-                    &blake3,
+                    &sha256,
                     size_bytes,
                     &artifacts,
                     &active_files,

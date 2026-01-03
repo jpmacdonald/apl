@@ -28,7 +28,7 @@ pub enum DbError {
 pub struct Package {
     pub name: String,
     pub version: String,
-    pub blake3: String,
+    pub sha256: String,
     pub installed_at: i64,
     /// Whether this is the currently linked version
     pub active: bool,
@@ -41,7 +41,7 @@ pub struct Artifact {
     pub package: String,
     pub version: String,
     pub path: String, // Relative path (e.g. "bin/jq") usually, but absolute allowed for legacy migration
-    pub blake3: String,
+    pub sha256: String,
 }
 
 /// Installed file symlink (active on disk)
@@ -49,7 +49,7 @@ pub struct Artifact {
 pub struct InstalledFile {
     pub path: String, // Absolute path
     pub package: String,
-    pub blake3: String,
+    pub sha256: String,
 }
 
 /// SQLite database handle.
@@ -189,7 +189,7 @@ impl StateDb {
             CREATE TABLE IF NOT EXISTS packages (
                 name TEXT NOT NULL,
                 version TEXT NOT NULL,
-                blake3 TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
                 installed_at INTEGER NOT NULL,
                 active BOOLEAN NOT NULL DEFAULT 0,
                 size_bytes INTEGER NOT NULL DEFAULT 0,
@@ -200,7 +200,7 @@ impl StateDb {
                 package TEXT NOT NULL,
                 version TEXT NOT NULL,
                 path TEXT NOT NULL,
-                blake3 TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
                 PRIMARY KEY (package, version, path),
                 FOREIGN KEY(package, version) REFERENCES packages(name, version) ON DELETE CASCADE
             );
@@ -208,7 +208,7 @@ impl StateDb {
             CREATE TABLE IF NOT EXISTS files (
                 path TEXT PRIMARY KEY,
                 package TEXT NOT NULL,
-                blake3 TEXT NOT NULL
+                sha256 TEXT NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS idx_artifacts_pkg_ver ON artifacts(package, version);
@@ -236,23 +236,23 @@ impl StateDb {
         // 3. Migrate Data
         // Assume all existing packages in V1 are 'active'
         self.conn.execute(
-            "INSERT INTO packages (name, version, blake3, installed_at, active)
-             SELECT name, version, blake3, installed_at, 1 FROM packages_old",
+            "INSERT INTO packages (name, version, sha256, installed_at, active)
+             SELECT name, version, sha256, installed_at, 1 FROM packages_old",
             [],
         )?;
 
         // Migrate files -> files (no FK now)
         self.conn.execute(
-            "INSERT INTO files (path, package, blake3)
-             SELECT path, package, blake3 FROM files_old",
+            "INSERT INTO files (path, package, sha256)
+             SELECT path, package, sha256 FROM files_old",
             [],
         )?;
 
         // Backfill artifacts from files_old
         // Since V1 didn't track artifacts separately, we assume current files are the artifacts for current version
         self.conn.execute(
-            "INSERT INTO artifacts (package, version, path, blake3)
-             SELECT f.package, p.version, f.path, f.blake3 
+            "INSERT INTO artifacts (package, version, path, sha256)
+             SELECT f.package, p.version, f.path, f.sha256 
              FROM files_old f 
              JOIN packages_old p ON f.package = p.name",
             [],
@@ -277,10 +277,10 @@ impl StateDb {
         &self,
         name: &str,
         version: &str,
-        blake3: &str,
+        sha256: &str,
         size_bytes: u64,
-        artifacts: &[(String, String)],    // (path, blake3)
-        active_files: &[(String, String)], // (path, blake3)
+        artifacts: &[(String, String)],    // (path, sha256)
+        active_files: &[(String, String)], // (path, sha256)
     ) -> Result<(), DbError> {
         // Implementation Note: Atomic Transactions
         //
@@ -303,13 +303,13 @@ impl StateDb {
 
         // 2. Insert package
         tx.execute(
-            "INSERT OR REPLACE INTO packages (name, version, blake3, installed_at, active, size_bytes)
+            "INSERT OR REPLACE INTO packages (name, version, sha256, installed_at, active, size_bytes)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![name, version, blake3, now, true, size_bytes],
+            params![name, version, sha256, now, true, size_bytes],
         )?;
 
         // 3. Insert artifacts
-        let mut stmt_art = tx.prepare("INSERT OR REPLACE INTO artifacts (package, version, path, blake3) VALUES (?1, ?2, ?3, ?4)")?;
+        let mut stmt_art = tx.prepare("INSERT OR REPLACE INTO artifacts (package, version, path, sha256) VALUES (?1, ?2, ?3, ?4)")?;
         for (path, hash) in artifacts {
             stmt_art.execute(params![name, version, path, hash])?;
         }
@@ -317,7 +317,7 @@ impl StateDb {
 
         // 4. Insert active files
         let mut stmt_file =
-            tx.prepare("INSERT OR REPLACE INTO files (path, package, blake3) VALUES (?1, ?2, ?3)")?;
+            tx.prepare("INSERT OR REPLACE INTO files (path, package, sha256) VALUES (?1, ?2, ?3)")?;
         for (path, hash) in active_files {
             stmt_file.execute(params![path, name, hash])?;
         }
@@ -328,8 +328,8 @@ impl StateDb {
     }
 
     /// Records a package version as active, deactivating any prior versions.
-    pub fn install_package(&self, name: &str, version: &str, blake3: &str) -> Result<(), DbError> {
-        self.install_package_version(name, version, blake3, true)
+    pub fn install_package(&self, name: &str, version: &str, sha256: &str) -> Result<(), DbError> {
+        self.install_package_version(name, version, sha256, true)
     }
 
     /// Inserts or updates a package version record.
@@ -337,7 +337,7 @@ impl StateDb {
         &self,
         name: &str,
         version: &str,
-        blake3: &str,
+        sha256: &str,
         active: bool,
     ) -> Result<(), DbError> {
         let now = SystemTime::now()
@@ -356,9 +356,9 @@ impl StateDb {
         }
 
         tx.execute(
-            "INSERT OR REPLACE INTO packages (name, version, blake3, installed_at, active)
+            "INSERT OR REPLACE INTO packages (name, version, sha256, installed_at, active)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![name, version, blake3, now, active],
+            params![name, version, sha256, now, active],
         )?;
 
         tx.commit()?;
@@ -371,22 +371,22 @@ impl StateDb {
         package: &str,
         version: &str,
         path: &str,
-        blake3: &str,
+        sha256: &str,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO artifacts (package, version, path, blake3)
+            "INSERT OR REPLACE INTO artifacts (package, version, path, sha256)
              VALUES (?1, ?2, ?3, ?4)",
-            params![package, version, path, blake3],
+            params![package, version, path, sha256],
         )?;
         Ok(())
     }
 
     /// Record an active installed file (symlink)
-    pub fn add_file(&self, path: &str, package: &str, blake3: &str) -> Result<(), DbError> {
+    pub fn add_file(&self, path: &str, package: &str, sha256: &str) -> Result<(), DbError> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO files (path, package, blake3)
+            "INSERT OR REPLACE INTO files (path, package, sha256)
              VALUES (?1, ?2, ?3)",
-            params![path, package, blake3],
+            params![path, package, sha256],
         )?;
         Ok(())
     }
@@ -415,7 +415,7 @@ impl StateDb {
     /// Retrieves the currently active version of a package.
     pub fn get_package(&self, name: &str) -> Result<Option<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND active = 1",
+            "SELECT name, version, sha256, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND active = 1",
         )?;
 
         let mut rows = stmt.query(params![name])?;
@@ -424,7 +424,7 @@ impl StateDb {
             Ok(Some(Package {
                 name: row.get(0)?,
                 version: row.get(1)?,
-                blake3: row.get(2)?,
+                sha256: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
                 size_bytes: row.get(5)?,
@@ -441,7 +441,7 @@ impl StateDb {
         version: &str,
     ) -> Result<Option<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND version = ?2",
+            "SELECT name, version, sha256, installed_at, active, size_bytes FROM packages WHERE name = ?1 AND version = ?2",
         )?;
 
         let mut rows = stmt.query(params![name, version])?;
@@ -450,7 +450,7 @@ impl StateDb {
             Ok(Some(Package {
                 name: row.get(0)?,
                 version: row.get(1)?,
-                blake3: row.get(2)?,
+                sha256: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
                 size_bytes: row.get(5)?,
@@ -463,14 +463,14 @@ impl StateDb {
     /// List all ACTIVE installed packages
     pub fn list_packages(&self) -> Result<Vec<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE active = 1 ORDER BY name",
+            "SELECT name, version, sha256, installed_at, active, size_bytes FROM packages WHERE active = 1 ORDER BY name",
         )?;
 
         let packages = stmt.query_map([], |row| {
             Ok(Package {
                 name: row.get(0)?,
                 version: row.get(1)?,
-                blake3: row.get(2)?,
+                sha256: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
                 size_bytes: row.get(5)?,
@@ -483,14 +483,14 @@ impl StateDb {
     /// List ALL installed versions of a package
     pub fn list_package_versions(&self, name: &str) -> Result<Vec<Package>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT name, version, blake3, installed_at, active, size_bytes FROM packages WHERE name = ?1 ORDER BY version DESC",
+            "SELECT name, version, sha256, installed_at, active, size_bytes FROM packages WHERE name = ?1 ORDER BY version DESC",
         )?;
 
         let packages = stmt.query_map(params![name], |row| {
             Ok(Package {
                 name: row.get(0)?,
                 version: row.get(1)?,
-                blake3: row.get(2)?,
+                sha256: row.get(2)?,
                 installed_at: row.get(3)?,
                 active: row.get(4)?,
                 size_bytes: row.get(5)?,
@@ -503,14 +503,14 @@ impl StateDb {
     /// Get all artifacts for a specific package version
     pub fn get_artifacts(&self, package: &str, version: &str) -> Result<Vec<Artifact>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT package, version, path, blake3 FROM artifacts WHERE package = ?1 AND version = ?2",
+            "SELECT package, version, path, sha256 FROM artifacts WHERE package = ?1 AND version = ?2",
         )?;
         let rows = stmt.query_map(params![package, version], |row| {
             Ok(Artifact {
                 package: row.get(0)?,
                 version: row.get(1)?,
                 path: row.get(2)?,
-                blake3: row.get(3)?,
+                sha256: row.get(3)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -589,13 +589,13 @@ impl StateDb {
     pub fn get_package_files(&self, package: &str) -> Result<Vec<InstalledFile>, DbError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path, package, blake3 FROM files WHERE package = ?1")?;
+            .prepare("SELECT path, package, sha256 FROM files WHERE package = ?1")?;
 
         let files = stmt.query_map(params![package], |row| {
             Ok(InstalledFile {
                 path: row.get(0)?,
                 package: row.get(1)?,
-                blake3: row.get(2)?,
+                sha256: row.get(2)?,
             })
         })?;
 

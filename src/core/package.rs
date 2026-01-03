@@ -75,7 +75,7 @@ pub struct PackageInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
     pub url: String,
-    pub blake3: String,
+    pub sha256: String,
     pub format: ArtifactFormat,
     #[serde(default)]
     pub strip_components: u32,
@@ -89,7 +89,7 @@ pub struct Source {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Binary {
     pub url: String,
-    pub blake3: String,
+    pub sha256: String,
     pub format: ArtifactFormat,
     /// Target architecture
     #[serde(default = "default_arch")]
@@ -248,6 +248,15 @@ pub enum DiscoveryConfig {
     },
 }
 
+impl DiscoveryConfig {
+    pub fn tag_pattern(&self) -> &str {
+        match self {
+            Self::GitHub { tag_pattern, .. } => tag_pattern,
+            Self::Manual { .. } => "{{version}}",
+        }
+    }
+}
+
 fn default_tag_pattern() -> String {
     "{{version}}".to_string()
 }
@@ -292,18 +301,18 @@ license = "Apache-2.0"
 
 [source]
 url = "https://github.com/neovim/neovim/archive/v0.10.0.tar.gz"
-blake3 = "abc123def456"
+sha256 = "abc123def456"
 format = "tar.gz"
 
 [binary.arm64]
 url = "https://cdn.example.com/neovim-0.10.0-arm64.tar.zst"
-blake3 = "binary123"
+sha256 = "binary123"
 format = "tar.zst"
 macos = "14.0"
 
 [binary.x86_64]
 url = "https://cdn.example.com/neovim-0.10.0-x86_64.tar.zst"
-blake3 = "binary456"
+sha256 = "binary456"
 format = "tar.zst"
 macos = "12.0"
 
@@ -322,7 +331,7 @@ bin = ["nvim"]
 
         assert_eq!(pkg.package.name, PackageName::from("neovim"));
         assert_eq!(pkg.package.version, Version::from("0.10.0".to_string()));
-        assert_eq!(pkg.source.blake3, "abc123def456");
+        assert_eq!(pkg.source.sha256, "abc123def456");
         assert_eq!(pkg.dependencies.runtime.len(), 3);
         assert_eq!(pkg.binary.len(), 2);
     }
@@ -347,7 +356,7 @@ bin = ["nvim"]
         let incomplete = r#"
 [source]
 url = "https://example.com"
-blake3 = "abc123"
+sha256 = "abc123"
 "#;
         let result = Package::parse(incomplete);
         assert!(result.is_err());
@@ -369,7 +378,7 @@ blake3 = "abc123"
 
         assert_eq!(pkg.package.name, reparsed.package.name);
         assert_eq!(pkg.package.version, reparsed.package.version);
-        assert_eq!(pkg.source.blake3, reparsed.source.blake3);
+        assert_eq!(pkg.source.sha256, reparsed.source.sha256);
     }
 
     #[test]
@@ -382,12 +391,12 @@ version = "1.0"
 
 [source]
 url = "https://example.com"
-blake3 = "abc"
+sha256 = "abc"
 format = "tar.gz"
 
 [binary.x86_64]
 url = "https://example.com/x86.tar.gz"
-blake3 = "xyz"
+sha256 = "xyz"
 format = "tar.gz"
 "#;
         let pkg = Package::parse(pkg_with_one_arch).unwrap();

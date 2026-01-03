@@ -24,17 +24,17 @@ type = "cli"
 
 [source]
 url = "https://github.com/OWNER/{name}/archive/refs/tags/v0.1.0.tar.gz"
-blake3 = "PLACEHOLDER"
+sha256 = "PLACEHOLDER"
 format = "tar.gz"
 
 [binary.arm64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-arm64.tar.gz"
-blake3 = "PLACEHOLDER"
+sha256 = "PLACEHOLDER"
 format = "tar.gz"
 
 [binary.x86_64]
 url = "https://example.com/releases/download/v0.1.0/{name}-0.1.0-x86_64.tar.gz"
-blake3 = "PLACEHOLDER"
+sha256 = "PLACEHOLDER"
 format = "tar.gz"
 
 [install]
@@ -109,14 +109,14 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     let arch = apl::Arch::current();
     if let Some(binary) = pkg.binary.get_mut(&arch) {
         binary.url = url.to_string();
-        binary.blake3 = hash.clone();
+        binary.sha256 = hash.clone();
     } else {
         pkg.binary.insert(
             arch,
             apl::package::Binary {
                 arch,
                 url: url.to_string(),
-                blake3: hash.clone(),
+                sha256: hash.clone(),
                 format: apl::package::ArtifactFormat::Binary,
                 macos: "11.0".to_string(),
             },
@@ -132,12 +132,13 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Compute BLAKE3 hash of a file
+/// Compute SHA256 hash of a file
 fn compute_file_hash(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
     use std::io::Read;
 
     let mut file = std::fs::File::open(path)?;
-    let mut hasher = blake3::Hasher::new();
+    let mut hasher = Sha256::new();
     let mut buffer = [0u8; 65536];
 
     loop {
@@ -148,5 +149,5 @@ fn compute_file_hash(path: &Path) -> Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    Ok(hasher.finalize().to_hex().to_string())
+    Ok(hex::encode(hasher.finalize()))
 }

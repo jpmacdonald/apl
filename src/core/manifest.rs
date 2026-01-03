@@ -26,7 +26,7 @@ pub struct LockPackage {
     pub name: PackageName,
     pub version: Version,
     pub url: String,
-    pub blake3: String,
+    pub sha256: String,
     pub timestamp: Option<i64>,
 }
 

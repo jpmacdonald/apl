@@ -1,5 +1,6 @@
 //! Unified registry management logic
 pub mod github;
+pub mod graphql;
 
 use anyhow::Result;
 use reqwest::header;

@@ -1,5 +1,6 @@
 //! Core modules - pure, stateless logic
 
+pub mod asset_pattern;
 pub mod builder;
 pub mod index;
 pub mod manifest;

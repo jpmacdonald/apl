@@ -13,10 +13,8 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HashType {
-    /// BLAKE3 hash (64 hex characters)
-    #[default]
-    Blake3,
     /// SHA256 hash (64 hex characters)
+    #[default]
     Sha256,
     /// SHA512 hash (128 hex characters)
     Sha512,
@@ -26,7 +24,6 @@ impl HashType {
     /// Get the string representation of the hash type
     pub fn as_str(&self) -> &'static str {
         match self {
-            HashType::Blake3 => "blake3",
             HashType::Sha256 => "sha256",
             HashType::Sha512 => "sha512",
         }
@@ -51,12 +48,12 @@ pub enum IndexError {
 /// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
-    /// Architecture (e.g., "aarch64-apple-darwin", "arm64", "x86_64", "universal")
-    pub arch: String,
+    /// Architecture (arm64, x86_64, or universal)
+    pub arch: crate::Arch,
     /// Download URL
     pub url: String,
     /// Hash value (hex string)
-    pub hash: String,
+    pub hash: crate::Sha256Hash,
     /// Hash algorithm type
     pub hash_type: HashType,
 }
@@ -65,7 +62,7 @@ pub struct IndexBinary {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexSource {
     pub url: String,
-    pub hash: String,
+    pub hash: crate::Sha256Hash,
     pub hash_type: HashType,
 }
 
@@ -334,10 +331,10 @@ mod tests {
             releases: vec![VersionInfo {
                 version: "0.10.0".to_string(),
                 binaries: vec![IndexBinary {
-                    arch: "aarch64-apple-darwin".to_string(),
+                    arch: crate::Arch::Arm64,
                     url: "https://example.com/nvim.tar.zst".to_string(),
-                    hash: "abc123".to_string(),
-                    hash_type: HashType::Blake3,
+                    hash: crate::Sha256Hash::new("abc123"),
+                    hash_type: HashType::Sha256,
                 }],
                 deps: vec!["libuv".to_string()],
                 build_deps: vec![],
@@ -422,10 +419,10 @@ mod tests {
             VersionInfo {
                 version: "14.0.0".to_string(),
                 binaries: vec![IndexBinary {
-                    arch: "aarch64-apple-darwin".to_string(),
+                    arch: crate::Arch::Arm64,
                     url: "https://example.com/rg".to_string(),
-                    hash: "rg123".to_string(),
-                    hash_type: HashType::Blake3,
+                    hash: crate::Sha256Hash::new("rg123"),
+                    hash_type: HashType::Sha256,
                 }],
                 deps: vec![],
                 build_deps: vec![],

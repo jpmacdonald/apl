@@ -13,7 +13,7 @@
 //! - **Typestate Pattern**: The installation flow uses `UnresolvedPackage` →
 //!   `ResolvedPackage` → `PreparedPackage` to enforce correct ordering at compile time.
 //! - **Actor Pattern**: Database access is serialized through `DbHandle` for thread safety.
-//! - **Newtypes**: `PackageName`, `Version`, and `Blake3Hash` provide type-safe identifiers.
+//! - **Newtypes**: `PackageName`, `Version`, and `Sha256Hash` provide type-safe identifiers.
 //!
 //! # Directory Layout
 //!
@@ -27,6 +27,7 @@
 //! ```
 
 pub mod core;
+pub mod indexer;
 pub mod io;
 pub mod ops;
 pub mod registry;
@@ -108,13 +109,18 @@ pub fn tmp_path() -> PathBuf {
 /// let current = Arch::current();
 /// println!("Running on: {}", current);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Arch {
     /// ARM64 architecture (Apple Silicon: M1, M2, M3, etc.)
+    #[default]
     Arm64,
     /// x86_64 architecture (Intel Macs)
     X86_64,
+    /// Universal binary (works on both architectures)
+    Universal,
 }
 
 impl Arch {
@@ -135,6 +141,7 @@ impl Arch {
         match self {
             Self::Arm64 => "arm64",
             Self::X86_64 => "x86_64",
+            Self::Universal => "universal",
         }
     }
 }
@@ -152,6 +159,7 @@ impl std::str::FromStr for Arch {
         match s.to_lowercase().as_str() {
             "arm64" | "aarch64" => Ok(Self::Arm64),
             "x86_64" | "amd64" => Ok(Self::X86_64),
+            "universal" => Ok(Self::Universal),
             _ => Err(format!("Unknown architecture: {s}")),
         }
     }
@@ -359,25 +367,25 @@ impl std::str::FromStr for Version {
     }
 }
 
-/// Newtype for a BLAKE3 hash string (64 hex characters).
+/// Newtype for a SHA256 hash string (64 hex characters).
 ///
 /// Provides compile-time distinction from other strings and optional runtime validation.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct Blake3Hash(String);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default)]
+pub struct Sha256Hash(String);
 
-impl Blake3Hash {
-    /// Create a new Blake3Hash without validation (for index/deserialized data).
+impl Sha256Hash {
+    /// Create a new Sha256Hash without validation (for index/deserialized data).
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
 
-    /// Create a validated Blake3Hash (64 hex characters).
+    /// Create a validated Sha256Hash (64 hex characters).
     pub fn validated(s: &str) -> Result<Self, String> {
         if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
             Ok(Self(s.to_string()))
         } else {
             Err(format!(
-                "Invalid BLAKE3 hash: expected 64 hex chars, got '{s}'"
+                "Invalid SHA256 hash: expected 64 hex chars, got '{s}'"
             ))
         }
     }
@@ -387,28 +395,103 @@ impl Blake3Hash {
     }
 }
 
-impl std::fmt::Display for Blake3Hash {
+impl std::fmt::Display for Sha256Hash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl AsRef<str> for Blake3Hash {
+impl AsRef<str> for Sha256Hash {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl From<String> for Blake3Hash {
+impl From<String> for Sha256Hash {
     fn from(s: String) -> Self {
         Self::new(s)
     }
 }
 
-impl From<&str> for Blake3Hash {
+impl From<&str> for Sha256Hash {
     fn from(s: &str) -> Self {
         Self::new(s)
     }
+}
+
+/// A validated GitHub repository reference in `owner/repo` format.
+///
+/// # Example
+///
+/// ```
+/// use apl::GitHubRepo;
+///
+/// let repo = GitHubRepo::new("jqlang/jq").unwrap();
+/// assert_eq!(repo.owner(), "jqlang");
+/// assert_eq!(repo.name(), "jq");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct GitHubRepo(String);
+
+impl GitHubRepo {
+    /// Create a new GitHubRepo, validating the `owner/repo` format.
+    pub fn new(s: &str) -> Result<Self, String> {
+        if s.contains('/') && s.split('/').count() == 2 {
+            let parts: Vec<&str> = s.split('/').collect();
+            if !parts[0].is_empty() && !parts[1].is_empty() {
+                return Ok(Self(s.to_string()));
+            }
+        }
+        Err(format!(
+            "Invalid GitHub repo format: expected 'owner/repo', got '{s}'"
+        ))
+    }
+
+    /// Create from string without validation (for deserialized data).
+    pub fn from_unchecked(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    /// Get the repository owner.
+    pub fn owner(&self) -> &str {
+        self.0.split('/').next().unwrap_or("")
+    }
+
+    /// Get the repository name.
+    pub fn name(&self) -> &str {
+        self.0.split('/').nth(1).unwrap_or("")
+    }
+
+    /// Get the full `owner/repo` string.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for GitHubRepo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for GitHubRepo {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Extract the filename from a URL.
+///
+/// # Example
+///
+/// ```
+/// use apl::filename_from_url;
+///
+/// assert_eq!(filename_from_url("https://example.com/path/to/file.tar.gz"), "file.tar.gz");
+/// assert_eq!(filename_from_url(""), "");
+/// ```
+pub fn filename_from_url(url: &str) -> &str {
+    url.split('/').next_back().unwrap_or("")
 }
 
 /// Magic bytes for ZSTD compression (Little Endian: 0xFD2FB528 -> 28 B5 2F FD)

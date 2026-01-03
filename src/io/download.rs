@@ -1,14 +1,14 @@
 //! Async download and verification module supporting parallel chunking and progress reporting.
 //!
-//! Handles file downloads with streaming BLAKE3 verification.
+//! Handles file downloads with streaming SHA256 verification.
 
 use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use blake3::Hasher;
 use futures::StreamExt;
 use reqwest::Client;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -130,7 +130,7 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
 
     let mut file = File::create(dest).await?;
     let mut stream = response.bytes_stream();
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
 
     while let Some(chunk) = stream.next().await {
@@ -142,7 +142,7 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
     }
 
     file.flush().await?;
-    let actual_hash = hasher.finalize().to_hex().to_string();
+    let actual_hash = hex::encode(hasher.finalize());
 
     if actual_hash != expected_hash {
         reporter.failed(pkg_name, version, "hash mismatch");
@@ -201,16 +201,16 @@ pub async fn download_and_verify_simple(
 
     let mut file = File::create(dest).await?;
     let mut stream = response.bytes_stream();
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         file.write_all(&chunk).await?;
-        hasher.write_all(&chunk)?;
+        hasher.update(&chunk);
     }
 
     file.flush().await?;
-    let actual_hash = hasher.finalize().to_hex().to_string();
+    let actual_hash = hex::encode(hasher.finalize());
 
     if actual_hash != expected_hash {
         tokio::fs::remove_file(dest).await.ok();
@@ -325,10 +325,18 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
     }
 
     // Final integrity check
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     let mut file = std::fs::File::open(dest)?;
-    std::io::copy(&mut file, &mut hasher)?;
-    let actual_hash = hasher.finalize().to_hex().to_string();
+    let mut buffer = [0u8; 8192];
+    use std::io::Read;
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+    let actual_hash = hex::encode(hasher.finalize());
 
     if actual_hash != expected_hash {
         if let (Some(rep), Some(name), Some(ver)) = (reporter, pkg_name, version) {
@@ -388,7 +396,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
 
     let mut stream = response.bytes_stream();
     let mut file = File::create(cache_dest).await?;
-    let mut hasher = Hasher::new();
+    let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
 
     // Channel for Pipelined Extraction
@@ -450,7 +458,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     drop(tx);
 
     file.flush().await?;
-    let actual_hash = hasher.finalize().to_hex().to_string();
+    let actual_hash = hex::encode(hasher.finalize());
 
     if actual_hash != expected_hash {
         reporter.failed(pkg_name, version, "hash mismatch");
@@ -482,7 +490,7 @@ struct SimpleDownloadOptions<'a, R: Reporter> {
 async fn run_simple_download<R: Reporter>(
     mut stream: impl Unpin + futures::Stream<Item = reqwest::Result<bytes::Bytes>>,
     mut file: File,
-    mut hasher: Hasher,
+    mut hasher: Sha256,
     opts: SimpleDownloadOptions<'_, R>,
 ) -> Result<String, DownloadError> {
     let mut downloaded = 0;
@@ -496,7 +504,7 @@ async fn run_simple_download<R: Reporter>(
     }
     file.flush().await?;
 
-    let actual_hash = hasher.finalize().to_hex().to_string();
+    let actual_hash = hex::encode(hasher.finalize());
     if actual_hash != opts.expected_hash {
         opts.reporter
             .failed(opts.pkg_name, opts.version, "hash mismatch");

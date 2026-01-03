@@ -341,7 +341,7 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
 
 struct InstallInfo {
     package: PackageInfo,
-    blake3: String,
+    sha256: String,
     files_to_record: Vec<(String, String)>,
     size_bytes: u64,
 }
@@ -362,7 +362,7 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallErr
         return perform_app_install(pkg);
     }
 
-    let blake3_copy = pkg.resolved.artifact.hash().to_string(); // Preserve hash
+    let sha256_copy = pkg.resolved.artifact.hash().to_string(); // Preserve hash
     let (package_def, pkg_store_path, size_bytes) = install_to_store_only(pkg)?;
 
     relink_macho_files(&pkg_store_path);
@@ -428,7 +428,7 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallErr
 
     Ok(InstallInfo {
         package: package_def.package.clone(),
-        blake3: blake3_copy,
+        sha256: sha256_copy,
         files_to_record,
         size_bytes,
     })
@@ -585,7 +585,7 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError
     // allows them to run (otherwise it complains they are from an unidentified developer).
     Ok(InstallInfo {
         package: pkg.resolved.def.package.clone(),
-        blake3: pkg.resolved.artifact.hash().to_string(),
+        sha256: pkg.resolved.artifact.hash().to_string(),
         files_to_record: vec![(
             target_app.to_string_lossy().to_string(),
             "APP_BUNDLE".to_string(),
@@ -602,7 +602,7 @@ async fn commit_installation(
     db.install_complete_package(
         info.package.name.to_string(),
         info.package.version.to_string(),
-        info.blake3.clone(),
+        info.sha256.clone(),
         info.size_bytes,
         vec![],
         info.files_to_record.clone(),

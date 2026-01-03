@@ -22,7 +22,6 @@
 
 use reqwest::Client;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use tempfile::TempDir;
 
 use crate::core::index::{IndexEntry, PackageIndex, VersionInfo};
@@ -45,14 +44,14 @@ pub enum ArtifactKind {
     Binary {
         /// Download URL for the binary archive.
         url: String,
-        /// BLAKE3 hash for verification.
+        /// SHA256 hash for verification.
         hash: String,
     },
     /// Source code that requires building.
     Source {
         /// Download URL for the source archive.
         url: String,
-        /// BLAKE3 hash for verification.
+        /// SHA256 hash for verification.
         hash: String,
     },
 }
@@ -65,7 +64,7 @@ impl ArtifactKind {
         }
     }
 
-    /// Get the BLAKE3 hash for verification.
+    /// Get the SHA256 hash for verification.
     pub fn hash(&self) -> &str {
         match self {
             Self::Binary { hash, .. } | Self::Source { hash, .. } => hash,
@@ -162,7 +161,7 @@ impl UnresolvedPackage {
                 version: package_def.package.version.clone(),
                 artifact: ArtifactKind::Binary {
                     url: bottle.url.clone(),
-                    hash: bottle.blake3.clone(),
+                    hash: bottle.sha256.clone(),
                 },
                 def: package_def,
             })
@@ -172,7 +171,7 @@ impl UnresolvedPackage {
                 version: package_def.package.version.clone(),
                 artifact: ArtifactKind::Source {
                     url: package_def.source.url.clone(),
-                    hash: package_def.source.blake3.clone(),
+                    hash: package_def.source.sha256.clone(),
                 },
                 def: package_def,
             })
@@ -242,13 +241,13 @@ impl UnresolvedPackage {
         let bin_artifact = release
             .binaries
             .iter()
-            .find(|b| Arch::from_str(&b.arch).ok() == Some(current_arch));
+            .find(|b| b.arch == current_arch || b.arch == Arch::Universal);
 
         if let Some(b) = bin_artifact {
             Ok((
                 ArtifactKind::Binary {
                     url: b.url.clone(),
-                    hash: b.hash.clone(),
+                    hash: b.hash.to_string(),
                 },
                 current_arch,
             ))
@@ -256,7 +255,7 @@ impl UnresolvedPackage {
             Ok((
                 ArtifactKind::Source {
                     url: src.url.clone(),
-                    hash: src.hash.clone(),
+                    hash: src.hash.to_string(),
                 },
                 current_arch,
             ))
@@ -280,7 +279,7 @@ impl UnresolvedPackage {
                 current_arch,
                 Binary {
                     url: url.clone(),
-                    blake3: hash.clone(),
+                    sha256: hash.clone(),
                     format: ArtifactFormat::Binary,
                     arch: current_arch,
                     macos: "11.0".to_string(),
@@ -307,7 +306,7 @@ impl UnresolvedPackage {
                 } else {
                     String::new()
                 },
-                blake3: if artifact.is_source() {
+                sha256: if artifact.is_source() {
                     artifact.hash().to_string()
                 } else {
                     String::new()
