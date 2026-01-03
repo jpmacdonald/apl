@@ -19,6 +19,8 @@ pub struct GithubRelease {
 pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
+    #[serde(default)]
+    pub digest: Option<String>,
 }
 
 /// Priority patterns for macOS ARM64 binaries

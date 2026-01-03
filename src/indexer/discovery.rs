@@ -8,6 +8,16 @@ pub async fn resolve_digest_from_github(
     release: &github::GithubRelease,
     asset_filename: &str,
 ) -> Result<String> {
+    // Priority 1: Check if the asset itself has a digest field (from GraphQL/REST)
+    if let Some(asset) = release.assets.iter().find(|a| a.name == asset_filename) {
+        if let Some(digest) = &asset.digest {
+            if let Some(hex) = digest.strip_prefix("sha256:") {
+                return Ok(hex.to_string());
+            }
+            return Ok(digest.to_string());
+        }
+    }
+
     // Look for checksum assets in the release
     for asset in &release.assets {
         let name = asset.name.to_lowercase();

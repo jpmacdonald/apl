@@ -608,6 +608,7 @@ mod indexer_tests {
                 assets: vec![GithubAsset {
                     name: "release-x86_64.tar.gz".to_string(),
                     browser_download_url: "https://example.com/x86_64".to_string(),
+                    digest: None,
                 }],
                 draft: false,
                 prerelease: false,

@@ -54,6 +54,7 @@ struct AssetNode {
     name: String,
     #[serde(rename = "downloadUrl")]
     download_url: String,
+    digest: Option<String>,
 }
 
 /// Fetch releases for multiple repositories in a single GraphQL request
@@ -84,6 +85,7 @@ pub async fn fetch_batch_releases(
                             nodes {{
                                 name
                                 downloadUrl
+                                digest
                             }}
                         }}
                     }}
@@ -147,6 +149,7 @@ pub async fn fetch_batch_releases(
                     .map(|a| GithubAsset {
                         name: a.name.clone(),
                         browser_download_url: a.download_url.clone(),
+                        digest: a.digest.clone(),
                     })
                     .collect();
 
