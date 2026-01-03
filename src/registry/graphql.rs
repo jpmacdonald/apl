@@ -41,6 +41,7 @@ struct ReleaseNode {
     is_prerelease: bool,
     #[serde(rename = "releaseAssets")]
     release_assets: AssetConnection,
+    description: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -76,7 +77,9 @@ pub async fn fetch_batch_releases(
                     nodes {{
                         tagName
                         isDraft
+                        isDraft
                         isPrerelease
+                        description
                         releaseAssets(first: 100) {{
                             nodes {{
                                 name
@@ -108,7 +111,16 @@ pub async fn fetch_batch_releases(
     }
 
     // Parse into a dynamic map of "repo_N" -> RepositoryData
-    let raw_body: GraphQlResponse<HashMap<String, Option<RepositoryData>>> = resp.json().await?;
+    let text = resp.text().await?;
+    let raw_body: GraphQlResponse<HashMap<String, Option<RepositoryData>>> =
+        serde_json::from_str(&text).map_err(|e| {
+            let snippet: String = text.chars().take(500).collect();
+            anyhow::anyhow!(
+                "Failed to parse GraphQL JSON: {}. Response snippet: {}",
+                e,
+                snippet
+            )
+        })?;
 
     if let Some(errors) = raw_body.errors {
         if !errors.is_empty() {
@@ -143,6 +155,7 @@ pub async fn fetch_batch_releases(
                     tag_name: node.tag_name.clone(),
                     draft: node.is_draft,
                     prerelease: node.is_prerelease,
+                    body: node.description.clone().unwrap_or_default(),
                     assets,
                 });
             }

@@ -13,8 +13,12 @@ semver_only = true
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_macOS-ARM64.tar.gz"
+url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_{{target}}.tar.gz"
 universal = false
+
+[assets.targets]
+x86_64 = "macOS-64bit"
+arm64 = "macOS-ARM64"
 
 [checksums]
 url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_checksums.txt"

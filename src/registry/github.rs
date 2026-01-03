@@ -11,6 +11,8 @@ pub struct GithubRelease {
     pub draft: bool,
     #[serde(default)]
     pub prerelease: bool,
+    #[serde(default)]
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -432,6 +434,7 @@ async fn fetch_all_tags(
                 assets: vec![], // Tags don't have attached assets in this view
                 draft: false,
                 prerelease: false, // Assume stable if it's a tag? Or unknown.
+                body: String::new(),
             });
         }
         page += 1;

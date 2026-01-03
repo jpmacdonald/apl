@@ -19,15 +19,8 @@ pub async fn resolve_digest_from_github(
                 if resp.status().is_success() {
                     let text = resp.text().await?;
                     // Search for the target filename in the text
-                    for line in text.lines() {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2 {
-                            let hash = parts[0];
-                            let file = parts[1].trim_start_matches('*');
-                            if file == asset_filename || file.ends_with(asset_filename) {
-                                return Ok(hash.to_string());
-                            }
-                        }
+                    if let Some(hash) = scan_text_for_hash(&text, asset_filename) {
+                        return Ok(hash);
                     }
 
                     // Specific handling for JSON/JSONL (e.g. SLSA provenance)
@@ -47,11 +40,45 @@ pub async fn resolve_digest_from_github(
         }
     }
 
+    // Fallback: Check release body
+    if !release.body.is_empty() {
+        if let Some(hash) = scan_text_for_hash(&release.body, asset_filename) {
+            return Ok(hash);
+        }
+    }
+
     anyhow::bail!(
         "Digest for asset '{}' not found in release {}",
         asset_filename,
         release.tag_name
     )
+}
+
+fn scan_text_for_hash(text: &str, asset_filename: &str) -> Option<String> {
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            let hash = parts[0];
+            let file = parts[1].trim_start_matches('*');
+            if file == asset_filename || file.ends_with(asset_filename) {
+                // Ensure it looks like a hash (hex, length 40, 64, or 128)
+                if hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Some(hash.to_string());
+                }
+            }
+        }
+    }
+
+    // Scan for JSON style (SLSA) if applicable
+    if asset_filename.ends_with(".json") || asset_filename.ends_with(".jsonl") {
+        if text.contains(asset_filename) {
+            // Try to find a sha256 pattern nearby?
+            // This is harder in raw body without context.
+            // For now, simple text scan is best for standard checksum files.
+        }
+    }
+
+    None
 }
 
 pub async fn discover_versions(

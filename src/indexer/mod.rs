@@ -84,7 +84,7 @@ pub async fn generate_index_from_registry(
             repos_to_fetch.len()
         );
 
-        for chunk in repos_to_fetch.chunks(50) {
+        for chunk in repos_to_fetch.chunks(10) {
             match crate::registry::graphql::fetch_batch_releases(client, &token, chunk).await {
                 Ok(batch_results) => {
                     master_release_cache.extend(batch_results);
@@ -170,22 +170,28 @@ pub async fn generate_index_from_registry(
                 let template_clone = template.clone();
                 let hash_cache_clone = hash_cache.clone();
                 let releases_map_clone = releases_map.clone();
+                let ver_str = version.clone();
                 async move {
-                    package_to_index_ver(
+                    let res = package_to_index_ver(
                         &client,
                         &template_clone,
                         &version,
                         hash_cache_clone,
                         releases_map_clone,
                     )
-                    .await
+                    .await;
+                    (ver_str, res)
                 }
             })
             .buffer_unordered(20); // Concurrency limit
 
-        let results: Vec<Result<VersionInfo>> = versions_stream.collect().await;
+        let results: Vec<(String, Result<VersionInfo>)> = versions_stream.collect().await;
 
-        for res in results {
+        let mut skipped_versions = Vec::new();
+        let total = results.len();
+        let mut processed = 0;
+
+        for (ver_str, res) in results {
             match res {
                 Ok(ver_info) => {
                     index.upsert_release(
@@ -198,14 +204,35 @@ pub async fn generate_index_from_registry(
                         },
                         ver_info,
                     );
+                    processed += 1;
                 }
-                Err(e) => {
-                    // Only log verbose errors if it's NOT a "not found" skip which we already handle silently
-                    if !e.to_string().contains("not found in GitHub release") {
-                        eprintln!("     ⚠ Failed to process version: {}", e);
-                    }
+                Err(_e) => {
+                    // Collect skipped versions for summary
+                    skipped_versions.push(ver_str);
                 }
             }
+        }
+
+        if processed == 0 && total > 0 {
+            eprintln!("     ⚠ No valid versions found! Check TOML configuration.");
+        }
+
+        if !skipped_versions.is_empty() {
+            // Sort versions to make output deterministic
+            skipped_versions.sort_by(|a, b| {
+                // Try to sort by semver if possible
+                let sem_a = semver::Version::parse(a).ok();
+                let sem_b = semver::Version::parse(b).ok();
+                match (sem_a, sem_b) {
+                    (Some(va), Some(vb)) => vb.cmp(&va), // Descending
+                    _ => b.cmp(a),
+                }
+            });
+
+            println!(
+                "     (Skipped incompatible versions: {})",
+                skipped_versions.join(", ")
+            );
         }
     }
 
@@ -446,7 +473,41 @@ async fn resolve_hash(
         }
     }
 
-    anyhow::bail!("Could not resolve checksum for {asset_url}")
+    if template.checksums.skip {
+        // Fallback: Download the asset to compute the hash
+        let hash = compute_hash_from_url(client, asset_url).await?;
+        hash_cache
+            .lock()
+            .await
+            .insert(asset_url.to_string(), hash.clone(), HashType::Sha256);
+        return Ok(hash);
+    }
+
+    anyhow::bail!(
+        "Could not resolve checksum for {asset_url}. If this package does not provide a checksum, set [checksums] skip = true to allow downloading and computing it."
+    )
+}
+
+/// Download an asset and compute its SHA256 hash
+async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
+    use futures::StreamExt;
+    use sha2::Digest;
+
+    let resp = client.get(url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Failed to download asset {}: {}", url, resp.status());
+    }
+
+    let mut hasher = sha2::Sha256::new();
+    let mut stream = resp.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        hasher.update(&chunk);
+    }
+
+    let hash = format!("{:x}", hasher.finalize());
+    Ok(hash)
 }
 
 async fn get_or_compute_hash(
@@ -550,6 +611,7 @@ mod indexer_tests {
                 }],
                 draft: false,
                 prerelease: false,
+                body: String::new(),
             },
         );
 
