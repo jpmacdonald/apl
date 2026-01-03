@@ -21,6 +21,7 @@ arm64 = "arm64"
 x86_64 = "amd64"
 
 [checksums]
+url_template = "https://github.com/rclone/rclone/releases/download/v{{version}}/SHA256SUMS"
 vendor_type = "sha256"
 skip = false
 

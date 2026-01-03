@@ -21,6 +21,7 @@ x86_64 = "x86_64"
 arm64 = "arm64"
 
 [checksums]
+url_template = "https://github.com/charmbracelet/mods/releases/download/v{{version}}/checksums.txt"
 vendor_type = "sha256"
 skip = false
 

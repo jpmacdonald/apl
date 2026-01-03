@@ -17,6 +17,7 @@ url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{versi
 universal = false
 
 [checksums]
+url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_checksums.txt"
 vendor_type = "sha256"
 skip = false
 
