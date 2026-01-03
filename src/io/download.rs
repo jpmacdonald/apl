@@ -13,8 +13,8 @@ use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 
+use crate::types::{PackageName, Version};
 use crate::ui::Reporter;
-use crate::{PackageName, Version};
 
 #[derive(Error, Debug)]
 pub enum DownloadError {

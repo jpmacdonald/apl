@@ -1,7 +1,7 @@
 use crate::core::index::{IndexEntry, PackageIndex, VersionInfo};
 use crate::core::manifest::{LockPackage, Lockfile, Manifest};
 use crate::core::version::is_newer;
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 
@@ -71,7 +71,7 @@ fn resolve_package_recursive(
         .with_context(|| format!("No version found for '{name}' matching '{version_req}'"))?;
 
     // Find the binary URL/hash for the current platform
-    let target_arch = crate::Arch::current();
+    let target_arch = crate::types::Arch::current();
 
     let binary = version_info
         .binaries
@@ -81,7 +81,7 @@ fn resolve_package_recursive(
             version_info
                 .binaries
                 .iter()
-                .find(|b| b.arch == crate::Arch::Universal)
+                .find(|b| b.arch == crate::types::Arch::Universal)
         })
         .with_context(|| {
             format!(
@@ -211,9 +211,9 @@ mod tests {
                 .map(|v| VersionInfo {
                     version: v.to_string(),
                     binaries: vec![IndexBinary {
-                        arch: crate::Arch::current(),
+                        arch: crate::types::Arch::current(),
                         url: "http://test".to_string(),
-                        hash: crate::Sha256Hash::new("hash"),
+                        hash: crate::types::Sha256Hash::new("hash"),
                         hash_type: crate::core::index::HashType::Sha256,
                     }],
                     deps: vec![],

@@ -8,7 +8,7 @@ use super::buffer::OutputBuffer;
 use super::engine::RelativeFrame;
 use super::progress::{ProgressIndicator, format_download_progress};
 use super::theme::{Theme, format_size};
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 use crossterm::style::Stylize;
 use std::io::Write;
 

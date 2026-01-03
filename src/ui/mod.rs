@@ -45,7 +45,7 @@
 //!
 //! ```no_run
 //! use apl::ui::Output;
-//! use apl::{PackageName, Version};
+//! use apl::types::{PackageName, Version};
 //!
 //! let output = Output::new();
 //!

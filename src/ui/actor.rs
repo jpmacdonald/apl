@@ -22,7 +22,7 @@
 use super::buffer::OutputBuffer;
 use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;

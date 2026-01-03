@@ -1,8 +1,8 @@
 //! Package management commands
 
 use anyhow::{Context, Result};
-use apl::Version;
 use apl::package::Package;
+use apl::types::Version;
 use std::path::Path;
 
 /// Create a new package template
@@ -106,12 +106,12 @@ pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
     pkg.package.version = Version::from(version.to_string());
 
     // Update the binary URL and hash for current arch
-    let arch = apl::Arch::current();
-    if let Some(binary) = pkg.binary.get_mut(&arch) {
+    let arch = apl::types::Arch::current();
+    if let Some(binary) = pkg.targets.get_mut(&arch) {
         binary.url = url.to_string();
         binary.sha256 = hash.clone();
     } else {
-        pkg.binary.insert(
+        pkg.targets.insert(
             arch,
             apl::package::Binary {
                 arch,

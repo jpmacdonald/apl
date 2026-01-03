@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::Deserialize;
 use sha2::Digest;
 
+use crate::types::Sha256Digest;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
     pub id: u64,
@@ -20,7 +22,7 @@ pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
     #[serde(default)]
-    pub digest: Option<String>,
+    pub digest: Option<Sha256Digest>,
 }
 
 /// Priority patterns for macOS ARM64 binaries

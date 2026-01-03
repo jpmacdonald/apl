@@ -4,7 +4,7 @@
 //! All operations are sent as events to the UI actor for sequential processing.
 
 use super::actor::{UiActor, UiEvent};
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 use std::sync::{OnceLock, mpsc};
 
 /// Singleton instance of the UI actor channel.

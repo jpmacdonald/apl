@@ -6,7 +6,7 @@
 
 use anyhow::{Result, bail};
 
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 
 /// Parsed package specifier with optional version
 #[derive(Debug, Clone)]

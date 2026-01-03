@@ -1,5 +1,6 @@
 use crate::package::{DiscoveryConfig, Package};
 use crate::registry::github;
+use crate::types::Sha256Digest;
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -7,14 +8,11 @@ pub async fn resolve_digest_from_github(
     client: &reqwest::Client,
     release: &github::GithubRelease,
     asset_filename: &str,
-) -> Result<String> {
-    // Priority 1: Check if the asset itself has a digest field (from GraphQL/REST)
+) -> Result<Sha256Digest> {
+    // Priority 1: Check if the asset itself has a digest field (already validated at deserialization)
     if let Some(asset) = release.assets.iter().find(|a| a.name == asset_filename) {
         if let Some(digest) = &asset.digest {
-            if let Some(hex) = digest.strip_prefix("sha256:") {
-                return Ok(hex.to_string());
-            }
-            return Ok(digest.to_string());
+            return Ok(digest.clone());
         }
     }
 
@@ -30,7 +28,7 @@ pub async fn resolve_digest_from_github(
                     let text = resp.text().await?;
                     // Search for the target filename in the text
                     if let Some(hash) = scan_text_for_hash(&text, asset_filename) {
-                        return Ok(hash);
+                        return Sha256Digest::new(hash);
                     }
 
                     // Specific handling for JSON/JSONL (e.g. SLSA provenance)
@@ -41,7 +39,7 @@ pub async fn resolve_digest_from_github(
                             let re = regex::Regex::new(r#"[0-9a-fA-F]{64}"#)?;
                             if let Some(m) = re.find(&text) {
                                 // This is a bit greedy but works for single-subject JSONs
-                                return Ok(m.as_str().to_string());
+                                return Sha256Digest::new(m.as_str().to_string());
                             }
                         }
                     }
@@ -53,7 +51,7 @@ pub async fn resolve_digest_from_github(
     // Fallback: Check release body
     if !release.body.is_empty() {
         if let Some(hash) = scan_text_for_hash(&release.body, asset_filename) {
-            return Ok(hash);
+            return Sha256Digest::new(hash);
         }
     }
 
@@ -102,7 +100,7 @@ pub async fn discover_versions(
             semver_only,
             include_prereleases,
         } => {
-            let repo_ref = crate::GitHubRepo::new(github).map_err(|e| anyhow::anyhow!(e))?;
+            let repo_ref = crate::types::GitHubRepo::new(github).map_err(|e| anyhow::anyhow!(e))?;
             let owner = repo_ref.owner();
             let repo = repo_ref.name();
 
@@ -153,7 +151,7 @@ pub fn guess_url_template(url: &str, version: &str, _repo: &str) -> String {
 
 pub fn guess_targets(pkg: &Package) -> Option<HashMap<String, String>> {
     let mut targets = HashMap::new();
-    for (arch, binary) in &pkg.binary {
+    for (arch, binary) in &pkg.targets {
         let arch_name = arch.as_str();
         // Deduce target string from URL
         // Search for the arch in the filename

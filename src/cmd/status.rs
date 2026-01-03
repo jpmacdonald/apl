@@ -1,8 +1,9 @@
 //! Status command to check for updates and health
 use anyhow::{Context, Result};
+use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
-use apl::{PackageName, Version, apl_home};
+use apl::types::{PackageName, Version};
 
 /// Check status of installed packages
 pub fn status() -> Result<()> {

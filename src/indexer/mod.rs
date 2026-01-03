@@ -31,10 +31,10 @@ pub async fn generate_index_from_registry(
 
     // Pass 1: Collect templates and identify GitHub repos to fetch
     let mut templates = Vec::new();
-    let mut repos_to_fetch = Vec::new();
+    let mut repos_to_fetch: Vec<crate::types::RepoKey> = Vec::new();
     // Map of (owner, repo) -> Vec<PackageName>
     // Multiple packages might share a repo (rare but possible), or we just need to know which package needs which repo
-    let mut pkg_repo_map: HashMap<String, (String, String)> = HashMap::new();
+    let mut pkg_repo_map: HashMap<String, crate::types::RepoKey> = HashMap::new();
 
     for template_path in toml_files {
         let toml_str = match fs::read_to_string(&template_path) {
@@ -60,8 +60,8 @@ pub async fn generate_index_from_registry(
         }
 
         if let DiscoveryConfig::GitHub { github, .. } = &template.discovery {
-            if let Ok(repo_ref) = crate::GitHubRepo::new(github) {
-                let key = (repo_ref.owner().to_string(), repo_ref.name().to_string());
+            if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
+                let key = crate::types::RepoKey::from_github_repo(&repo_ref);
                 if !repos_to_fetch.contains(&key) {
                     repos_to_fetch.push(key.clone());
                 }
@@ -76,7 +76,8 @@ pub async fn generate_index_from_registry(
     // We only have a token in the client if the user provided one, but GraphQL requires it.
     // If no token, we might fail or fall back (but for now we assume token exists for indexer).
     let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
-    let mut master_release_cache: HashMap<(String, String), Vec<GithubRelease>> = HashMap::new();
+    let mut master_release_cache: HashMap<crate::types::RepoKey, Vec<GithubRelease>> =
+        HashMap::new();
 
     if !repos_to_fetch.is_empty() {
         println!(
@@ -270,13 +271,13 @@ pub async fn generate_index_from_dir(
 
             // Convert to VersionInfo
             let mut binaries = Vec::new();
-            for (arch, bin) in pkg.binary {
+            for (arch, bin) in pkg.targets {
                 let hash = get_or_compute_hash(client, &bin.url, hash_cache.clone()).await?;
 
                 binaries.push(IndexBinary {
                     arch,
                     url: bin.url,
-                    hash: crate::Sha256Hash::new(hash),
+                    hash: crate::types::Sha256Hash::new(hash),
                     hash_type: HashType::Sha256,
                 });
             }
@@ -286,7 +287,7 @@ pub async fn generate_index_from_dir(
                 get_or_compute_hash(client, &pkg.source.url, hash_cache.clone()).await?;
             let source = Some(IndexSource {
                 url: pkg.source.url,
-                hash: crate::Sha256Hash::new(source_hash),
+                hash: crate::types::Sha256Hash::new(source_hash),
                 hash_type: HashType::Sha256,
             });
 
@@ -352,14 +353,14 @@ pub async fn package_to_index_ver(
             };
 
             // Parse target as Arch
-            let arch: crate::Arch = target
+            let arch: crate::types::Arch = target
                 .parse()
                 .map_err(|e| anyhow::anyhow!("Invalid architecture '{}': {}", target, e))?;
 
             binaries.push(IndexBinary {
                 arch,
                 url,
-                hash: crate::Sha256Hash::new(hash),
+                hash: crate::types::Sha256Hash::new(hash),
                 hash_type: HashType::Sha256,
             });
         }
@@ -378,9 +379,9 @@ pub async fn package_to_index_ver(
         match hash_res {
             Ok(hash) => {
                 binaries.push(IndexBinary {
-                    arch: crate::Arch::Universal,
+                    arch: crate::types::Arch::Universal,
                     url,
-                    hash: crate::Sha256Hash::new(hash),
+                    hash: crate::types::Sha256Hash::new(hash),
                     hash_type: HashType::Sha256,
                 });
             }
@@ -440,10 +441,10 @@ async fn resolve_hash(
                 if let Ok(hash) = resolve_digest_from_github(client, release, filename).await {
                     hash_cache.lock().await.insert(
                         asset_url.to_string(),
-                        hash.clone(),
+                        hash.as_str().to_string(),
                         HashType::Sha256,
                     );
-                    return Ok(hash);
+                    return Ok(hash.as_str().to_string());
                 }
             }
         }

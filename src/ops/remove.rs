@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use crate::DbHandle;
 use crate::ops::InstallError;
+use crate::types::{PackageName, Version};
 use crate::ui::Reporter;
-use crate::{PackageName, Version};
 
 /// Resolves and removes packages, deleting active files and updating the database.
 pub async fn remove_packages<R: Reporter + Clone + 'static>(

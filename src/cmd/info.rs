@@ -1,9 +1,10 @@
 //! Info command
 
 use anyhow::{Context, Result, bail};
+use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
-use apl::{PackageName, apl_home};
+use apl::types::PackageName;
 use crossterm::style::Stylize;
 
 /// Show info about a specific package

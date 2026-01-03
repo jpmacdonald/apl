@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use apl::db::StateDb;
+use apl::types::{PackageName, Version};
 use apl::ui::list::{print_list_footer, print_list_header, print_list_row};
-use apl::{PackageName, Version};
 
 /// List all installed packages
 pub fn list() -> Result<()> {

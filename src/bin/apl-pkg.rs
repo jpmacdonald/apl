@@ -4,7 +4,7 @@ use apl::package::{
     Source,
 };
 use apl::registry::{build_github_client, github};
-use apl::{Arch, PackageName, Version};
+use apl::types::{Arch, PackageName, Version};
 use clap::{Parser, Subcommand};
 use sha2::Digest;
 use std::collections::HashMap;
@@ -456,7 +456,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
                     url_template: None,
                     versions: None,
                 },
-                binary: binary_map,
+                targets: binary_map,
                 dependencies: Dependencies::default(),
                 install: InstallSpec {
                     bin: vec![repo_name.to_string()],
@@ -493,7 +493,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             url_template: None,
             versions: None,
         },
-        binary: binary_map,
+        targets: binary_map,
         dependencies: Dependencies::default(),
         install: InstallSpec {
             bin: vec![repo_name.to_string()],

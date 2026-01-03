@@ -1,4 +1,5 @@
 use crate::registry::github::{GithubAsset, GithubRelease};
+use crate::types::Sha256Digest;
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -54,15 +55,30 @@ struct AssetNode {
     name: String,
     #[serde(rename = "downloadUrl")]
     download_url: String,
-    digest: Option<String>,
+    #[serde(default)]
+    digest: Option<Sha256Digest>,
+}
+
+/// Escape special characters in GraphQL string literals
+fn escape_graphql_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
+/// Generate a consistent alias for a repository in GraphQL queries
+#[inline]
+fn repo_alias(index: usize) -> String {
+    format!("repo_{}", index)
 }
 
 /// Fetch releases for multiple repositories in a single GraphQL request
 pub async fn fetch_batch_releases(
     client: &Client,
     token: &str,
-    repos: &[(String, String)], // (owner, repo)
-) -> Result<HashMap<(String, String), Vec<GithubRelease>>> {
+    repos: &[crate::types::RepoKey],
+) -> Result<HashMap<crate::types::RepoKey, Vec<GithubRelease>>> {
     if repos.is_empty() {
         return Ok(HashMap::new());
     }
@@ -70,10 +86,10 @@ pub async fn fetch_batch_releases(
     // Build dynamic query with aliases
     // repo_0: repository(owner: "x", name: "y") { ... }
     let mut fragment = String::new();
-    for (i, (owner, name)) in repos.iter().enumerate() {
+    for (i, key) in repos.iter().enumerate() {
         fragment.push_str(&format!(
             r#"
-            repo_{}: repository(owner: "{}", name: "{}") {{
+            {}: repository(owner: "{}", name: "{}") {{
                 releases(first: 20, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                     nodes {{
                         tagName
@@ -92,7 +108,9 @@ pub async fn fetch_batch_releases(
                 }}
             }}
             "#,
-            i, owner, name
+            repo_alias(i),
+            escape_graphql_string(&key.owner),
+            escape_graphql_string(&key.repo)
         ));
     }
 
@@ -136,9 +154,9 @@ pub async fn fetch_batch_releases(
         .ok_or_else(|| anyhow::anyhow!("No data in GraphQL response"))?;
     let mut result = HashMap::new();
 
-    for (i, (owner, name)) in repos.iter().enumerate() {
-        let key = format!("repo_{}", i);
-        if let Some(Some(repo_data)) = data.get(&key) {
+    for (i, key) in repos.iter().enumerate() {
+        let alias = repo_alias(i);
+        if let Some(Some(repo_data)) = data.get(&alias) {
             let mut releases = Vec::new();
 
             for node in &repo_data.releases.nodes {
@@ -162,7 +180,7 @@ pub async fn fetch_batch_releases(
                     assets,
                 });
             }
-            result.insert((owner.clone(), name.clone()), releases);
+            result.insert(key.clone(), releases);
         }
     }
 

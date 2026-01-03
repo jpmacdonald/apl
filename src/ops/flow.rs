@@ -30,8 +30,8 @@ use crate::package::{
     ArtifactFormat, Binary, Dependencies, Hints, InstallSpec, InstallStrategy, Package,
     PackageInfo, PackageType, Source,
 };
+use crate::types::{Arch, PackageName, Version};
 use crate::ui::Reporter;
-use crate::{Arch, PackageName, Version};
 
 /// Represents the source of the artifact to be downloaded or built.
 ///
@@ -316,7 +316,7 @@ impl UnresolvedPackage {
                 url_template: None,
                 versions: None,
             },
-            binary: binary_map,
+            targets: binary_map,
             dependencies: Dependencies {
                 runtime: release.deps.clone(),
                 build: release.build_deps.clone(),

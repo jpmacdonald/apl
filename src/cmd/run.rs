@@ -3,9 +3,10 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
+use apl::apl_home;
 use apl::ops::flow::UnresolvedPackage;
+use apl::types::PackageName;
 use apl::ui::Output;
-use apl::{PackageName, apl_home};
 
 /// Run a package transiently without global installation
 pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> {

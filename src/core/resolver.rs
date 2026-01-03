@@ -1,5 +1,5 @@
-use crate::PackageName;
 use crate::core::index::PackageIndex;
+use crate::types::PackageName;
 use anyhow::{Context, Result, bail};
 use std::collections::HashSet;
 

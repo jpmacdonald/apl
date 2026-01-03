@@ -49,11 +49,11 @@ pub enum IndexError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
     /// Architecture (arm64, x86_64, or universal)
-    pub arch: crate::Arch,
+    pub arch: crate::types::Arch,
     /// Download URL
     pub url: String,
     /// Hash value (hex string)
-    pub hash: crate::Sha256Hash,
+    pub hash: crate::types::Sha256Hash,
     /// Hash algorithm type
     pub hash_type: HashType,
 }
@@ -62,7 +62,7 @@ pub struct IndexBinary {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexSource {
     pub url: String,
-    pub hash: crate::Sha256Hash,
+    pub hash: crate::types::Sha256Hash,
     pub hash_type: HashType,
 }
 
@@ -331,9 +331,9 @@ mod tests {
             releases: vec![VersionInfo {
                 version: "0.10.0".to_string(),
                 binaries: vec![IndexBinary {
-                    arch: crate::Arch::Arm64,
+                    arch: crate::types::Arch::Arm64,
                     url: "https://example.com/nvim.tar.zst".to_string(),
-                    hash: crate::Sha256Hash::new("abc123"),
+                    hash: crate::types::Sha256Hash::new("abc123"),
                     hash_type: HashType::Sha256,
                 }],
                 deps: vec!["libuv".to_string()],
@@ -419,9 +419,9 @@ mod tests {
             VersionInfo {
                 version: "14.0.0".to_string(),
                 binaries: vec![IndexBinary {
-                    arch: crate::Arch::Arm64,
-                    url: "https://example.com/rg".to_string(),
-                    hash: crate::Sha256Hash::new("rg123"),
+                    arch: crate::types::Arch::Arm64,
+                    url: "https://example.com/foo-arm64".to_string(),
+                    hash: crate::types::Sha256Hash::new("hash1"),
                     hash_type: HashType::Sha256,
                 }],
                 deps: vec![],

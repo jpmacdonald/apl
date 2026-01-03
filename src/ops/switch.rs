@@ -1,6 +1,6 @@
 use crate::db::StateDb;
+use crate::types::{PackageName, Version};
 use crate::ui::Reporter;
-use crate::{PackageName, Version};
 use crate::{bin_path, ops::InstallError, store_path};
 
 /// Updates symlinks and database state to point to a different installed version.

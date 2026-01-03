@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{Arch, PackageName, Version};
+use crate::types::{Arch, PackageName, Version};
 
 #[derive(Error, Debug)]
 pub enum PackageError {
@@ -100,7 +100,7 @@ pub struct Binary {
 }
 
 fn default_arch() -> Arch {
-    crate::Arch::Arm64
+    crate::types::Arch::Arm64
 }
 
 fn default_macos() -> String {
@@ -126,7 +126,8 @@ pub struct Package {
     /// Pre-built binaries by architecture
     #[serde(default)]
     #[serde(alias = "bottle")] // Backwards compatibility
-    pub binary: HashMap<Arch, Binary>,
+    #[serde(alias = "binary")] // Backwards compatibility
+    pub targets: HashMap<Arch, Binary>,
     #[serde(default)]
     pub dependencies: Dependencies,
     #[serde(default)]
@@ -198,8 +199,8 @@ impl Package {
 
     /// Get binary for current architecture
     pub fn binary_for_current_arch(&self) -> Option<&Binary> {
-        let arch = crate::Arch::current();
-        self.binary.get(&arch)
+        let arch = crate::types::Arch::current();
+        self.targets.get(&arch)
     }
 }
 
@@ -333,7 +334,7 @@ bin = ["nvim"]
         assert_eq!(pkg.package.version, Version::from("0.10.0".to_string()));
         assert_eq!(pkg.source.sha256, "abc123def456");
         assert_eq!(pkg.dependencies.runtime.len(), 3);
-        assert_eq!(pkg.binary.len(), 2);
+        assert_eq!(pkg.targets.len(), 2);
     }
 
     #[test]

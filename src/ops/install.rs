@@ -21,8 +21,9 @@ use crate::core::relinker::Relinker;
 use crate::core::version::PackageSpec;
 use crate::io::dmg;
 use crate::package::{InstallStrategy, Package, PackageInfo};
+use crate::types::PackageName;
+use crate::types::Version;
 use crate::ui::Reporter;
-use crate::{PackageName, Version};
 use crate::{apl_home, bin_path, ops::InstallError, store_path};
 
 use crate::ops::flow::{PreparedPackage, UnresolvedPackage};

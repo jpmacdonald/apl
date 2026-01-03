@@ -3,7 +3,7 @@
 //! This trait allows core logic to report progress and status without
 //! being coupled to a specific TUI or GUI implementation.
 
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 
 pub trait Reporter: Send + Sync {
     /// Reserve space for a set of packages in the output display.

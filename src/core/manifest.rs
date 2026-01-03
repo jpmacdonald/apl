@@ -1,4 +1,4 @@
-use crate::{PackageName, Version};
+use crate::types::{PackageName, Version};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
