@@ -14,17 +14,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use reqwest::Client;
-
 use crate::DbHandle;
 use crate::core::relinker::Relinker;
 use crate::core::version::PackageSpec;
 use crate::io::dmg;
 use crate::package::{InstallStrategy, Package, PackageInfo};
-use crate::types::PackageName;
-use crate::types::Version;
+use crate::types::{PackageName, Version};
 use crate::ui::Reporter;
-use crate::{apl_home, bin_path, ops::InstallError, ops::link_binaries, store_path};
+use crate::{bin_path, ops::Context, ops::InstallError, ops::link_binaries, store_path};
 
 use crate::ops::flow::{PreparedPackage, UnresolvedPackage};
 
@@ -42,10 +39,9 @@ enum InstallTask {
     AlreadyInstalled(PackageName, Version),
 }
 
-async fn resolve_and_filter_packages<R: Reporter>(
+async fn resolve_and_filter_packages(
     packages: &[String],
-    index: Option<&crate::core::index::PackageIndex>,
-    reporter: &R,
+    ctx: &Context,
 ) -> Result<(Vec<PackageName>, Vec<PackageSpec>), InstallError> {
     let specs: Vec<PackageSpec> = packages
         .iter()
@@ -54,12 +50,13 @@ async fn resolve_and_filter_packages<R: Reporter>(
         .map_err(|e| InstallError::Validation(e.to_string()))?;
 
     let mut valid_names: Vec<PackageName> = Vec::new();
-    if let Some(index_ref) = index {
+    if let Some(index_ref) = ctx.index.as_deref() {
         for spec in &specs {
             if Path::new(&*spec.name).exists() || index_ref.find(&spec.name).is_some() {
                 valid_names.push(spec.name.clone());
             } else {
-                reporter.failed(&spec.name, &Version::from(""), "Package not found in index");
+                ctx.reporter
+                    .failed(&spec.name, &Version::from(""), "Package not found in index");
             }
         }
     } else {
@@ -80,7 +77,7 @@ async fn resolve_and_filter_packages<R: Reporter>(
     let mut resolved_names = if index_names.is_empty() {
         Vec::new()
     } else {
-        let index_ref = index.ok_or_else(|| {
+        let index_ref = ctx.index.as_ref().ok_or_else(|| {
             InstallError::Validation("No index found. Run 'apl update' first.".to_string())
         })?;
 
@@ -102,8 +99,7 @@ async fn resolve_and_filter_packages<R: Reporter>(
 async fn plan_install_tasks(
     resolved_names: &[PackageName],
     specs: &[PackageSpec],
-    index: Option<&crate::core::index::PackageIndex>,
-    db: &DbHandle,
+    ctx: &Context,
 ) -> Result<Vec<InstallTask>, InstallError> {
     let mut tasks = Vec::new();
     let mut processed_names = std::collections::HashSet::new();
@@ -118,7 +114,7 @@ async fn plan_install_tasks(
             .find(|s| &s.name == name)
             .and_then(|s| s.version.clone());
 
-        let target_version = if let Some(index_ref) = index {
+        let target_version = if let Some(index_ref) = ctx.index.as_deref() {
             if let Some(entry) = index_ref.find(name) {
                 match &requested_version {
                     Some(v) if v.as_str() == "latest" => {
@@ -146,7 +142,8 @@ async fn plan_install_tasks(
                 .unwrap_or_else(|| Version::from("latest".to_string()))
         };
 
-        if let Ok(Some(installed)) = db
+        if let Ok(Some(installed)) = ctx
+            .db
             .get_package_version(name.to_string(), target_version.to_string())
             .await
         {
@@ -169,29 +166,16 @@ async fn plan_install_tasks(
 }
 
 /// Resolves, downloads, and installs a set of packages.
-pub async fn install_packages<R: Reporter + Clone + 'static>(
-    reporter: &R,
+pub async fn install_packages(
+    ctx: &Context,
     packages: &[String],
     dry_run: bool,
-    _verbose: bool,
 ) -> Result<(), InstallError> {
-    use crate::core::index::PackageIndex;
-
-    let db = DbHandle::spawn().map_err(|e| InstallError::context("Failed to open database", e))?;
-
-    let index_path = apl_home().join("index.bin");
-    let index = if index_path.exists() {
-        PackageIndex::load(&index_path).ok()
-    } else {
-        None
-    };
-
     // Phase 1: Logic - Resolve Dependencies
-    let (resolved_names, specs) =
-        resolve_and_filter_packages(packages, index.as_ref(), reporter).await?;
+    let (resolved_names, specs) = resolve_and_filter_packages(packages, ctx).await?;
 
     // Phase 2: Planning - Determine Actions
-    let tasks = plan_install_tasks(&resolved_names, &specs, index.as_ref(), &db).await?;
+    let tasks = plan_install_tasks(&resolved_names, &specs, ctx).await?;
 
     if tasks.is_empty() {
         return Ok(());
@@ -206,26 +190,19 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
         })
         .collect();
 
-    reporter.prepare_pipeline(&table_items);
-
-    let client = Client::builder()
-        .tcp_nodelay(true)
-        .pool_max_idle_per_host(20)
-        .build()
-        .map_err(|e| InstallError::Download(crate::io::download::DownloadError::Http(e)))?;
+    ctx.reporter.prepare_pipeline(&table_items);
 
     let start_time = Instant::now();
     let install_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    let index_arc = Arc::new(index);
-    let db_clone = db.clone();
+    let ctx_clone = ctx.clone();
 
     let mut already_installed_count = 0;
     for task in &tasks {
         match task {
             InstallTask::AlreadyInstalled(name, version) => {
                 let size = if !dry_run {
-                    db_clone
+                    ctx.db
                         .get_package_version(name.to_string(), version.to_string())
                         .await
                         .ok()
@@ -234,17 +211,17 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
                 } else {
                     None
                 };
-                reporter.done(name, version, "installed", size);
+                ctx.reporter.done(name, version, "installed", size);
                 already_installed_count += 1;
             }
             InstallTask::Switch(name, version) => {
-                reporter.installing(name, version);
+                ctx.reporter.installing(name, version);
                 if !dry_run {
-                    crate::ops::switch::switch_version(name, version, dry_run, reporter)
+                    crate::ops::switch::switch_version(name, version, dry_run, &ctx.reporter)
                         .map_err(|e| InstallError::Other(e.to_string()))?;
                     install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 } else {
-                    reporter.done(name, version, "(dry run)", None);
+                    ctx.reporter.done(name, version, "(dry run)", None);
                 }
             }
             _ => {}
@@ -264,10 +241,7 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
             tokio::task::JoinSet::new();
 
         for (name, version) in to_download {
-            let client = client.clone();
-            let index = index_arc.clone();
-            let reporter = reporter.clone();
-            let db_task_clone = db.clone();
+            let ctx = ctx_clone.clone();
             let install_count = install_count.clone();
 
             // Implementation Note: Parallel Downloads
@@ -278,26 +252,28 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
             // and the filesystem (which they write to unique temp dirs).
             set.spawn(async move {
                 let unresolved = UnresolvedPackage::new(name, version);
-                let resolved = unresolved.resolve(index.as_ref().as_ref())?;
+                let resolved = unresolved.resolve(ctx.index.as_deref())?;
 
                 if dry_run {
-                    reporter.done(&resolved.name, &resolved.version, "installed", None);
+                    ctx.reporter
+                        .done(&resolved.name, &resolved.version, "installed", None);
                     return Ok(None);
                 }
 
-                let prepared = resolved.prepare(&client, &reporter).await?;
+                let prepared = resolved.prepare(&ctx.client, &ctx.reporter).await?;
                 let pkg_name = prepared.resolved.name.clone();
                 let pkg_version = prepared.resolved.version.clone();
 
-                reporter.installing(&pkg_name, &pkg_version);
+                ctx.reporter.installing(&pkg_name, &pkg_version);
 
                 let installer = get_installer(&prepared);
                 let info = installer.install(prepared).await?;
 
-                let result = commit_installation(&db_task_clone, &info, &reporter).await;
+                let result = commit_installation(&ctx.db, &info).await;
 
                 if result.is_ok() {
-                    reporter.done(&pkg_name, &pkg_version, "installed", Some(info.size_bytes));
+                    ctx.reporter
+                        .done(&pkg_name, &pkg_version, "installed", Some(info.size_bytes));
                     install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     Ok(Some(pkg_name))
                 } else {
@@ -310,17 +286,19 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
             match res {
                 Ok(Ok(Some(_))) => {}
                 Ok(Ok(None)) => {}
-                Ok(Err(e)) => reporter.error(&format!("Install failed: {e}")),
-                Err(e) => reporter.error(&format!("Internal error: {e}")),
+                Ok(Err(e)) => ctx.reporter.error(&format!("Install failed: {e}")),
+                Err(e) => ctx.reporter.error(&format!("Internal error: {e}")),
             }
         }
     }
 
     let count = install_count.load(std::sync::atomic::Ordering::Relaxed);
     if count > 0 {
-        reporter.summary(count, "installed", start_time.elapsed().as_secs_f64());
+        ctx.reporter
+            .summary(count, "installed", start_time.elapsed().as_secs_f64());
     } else if already_installed_count > 0 {
-        reporter.summary_plain(already_installed_count, "already installed");
+        ctx.reporter
+            .summary_plain(already_installed_count, "already installed");
     }
 
     let all_installed: Vec<PackageName> = tasks
@@ -332,7 +310,7 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
         })
         .collect();
 
-    perform_ux_checks(&all_installed, reporter);
+    perform_ux_checks(&all_installed, &ctx.reporter);
 
     Ok(())
 }
@@ -608,11 +586,7 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError
     })
 }
 
-async fn commit_installation(
-    db: &DbHandle,
-    info: &InstallInfo,
-    _reporter: &impl Reporter,
-) -> Result<(), InstallError> {
+async fn commit_installation(db: &DbHandle, info: &InstallInfo) -> Result<(), InstallError> {
     db.install_complete_package(
         info.package.name.to_string(),
         info.package.version.to_string(),

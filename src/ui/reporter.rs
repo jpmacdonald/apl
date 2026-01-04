@@ -45,3 +45,45 @@ pub trait Reporter: Send + Sync {
     /// Display a final summary without timing information.
     fn summary_plain(&self, count: usize, status: &str);
 }
+
+impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
+        (**self).prepare_pipeline(packages)
+    }
+    fn section(&self, title: &str) {
+        (**self).section(title)
+    }
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
+        (**self).downloading(name, version, current, total)
+    }
+    fn installing(&self, name: &PackageName, version: &Version) {
+        (**self).installing(name, version)
+    }
+    fn removing(&self, name: &PackageName, version: &Version) {
+        (**self).removing(name, version)
+    }
+    fn done(&self, name: &PackageName, version: &Version, detail: &str, size: Option<u64>) {
+        (**self).done(name, version, detail, size)
+    }
+    fn failed(&self, name: &PackageName, version: &Version, reason: &str) {
+        (**self).failed(name, version, reason)
+    }
+    fn info(&self, msg: &str) {
+        (**self).info(msg)
+    }
+    fn success(&self, msg: &str) {
+        (**self).success(msg)
+    }
+    fn warning(&self, msg: &str) {
+        (**self).warning(msg)
+    }
+    fn error(&self, msg: &str) {
+        (**self).error(msg)
+    }
+    fn summary(&self, count: usize, action: &str, elapsed_secs: f64) {
+        (**self).summary(count, action, elapsed_secs)
+    }
+    fn summary_plain(&self, count: usize, status: &str) {
+        (**self).summary_plain(count, status)
+    }
+}

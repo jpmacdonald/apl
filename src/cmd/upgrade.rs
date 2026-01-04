@@ -120,8 +120,36 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
     // Extract package names and call install
     let package_names: Vec<String> = to_upgrade.iter().map(|(name, _, _)| name.clone()).collect();
 
-    // Call the install logic directly, reusing our existing reporter
-    apl::ops::install::install_packages(&output, &package_names, false, false)
+    // Initialize full context for install
+    let client = reqwest::Client::builder()
+        .tcp_nodelay(true)
+        .pool_max_idle_per_host(20)
+        .build()?;
+
+    // We already have db and index loaded, reuse them if possible, or recreate handles
+    // Since DbHandle is cloneable and we have index, we can construct context.
+    // However, existing `db` variable in scope is a `StateDb` (synchronous wrapper from `apl::db::StateDb::open()`?), check imports.
+    // Checking imports... `use apl::db::StateDb;` is likely inferred. `db` is declared as `let db = apl::db::StateDb::open()?;`.
+    // Wait, `install_packages` needs `DbHandle` (the actor/async one), not `StateDb`.
+    // The previous code opened `DbHandle` INSIDE simple `install_packages`.
+    // We need to create a `DbHandle` here.
+
+    let db_handle = apl::DbHandle::spawn()?;
+
+    // Output is currently `apl::ui::Output`. Need to wrap in Arc for context.
+    // But `Output` might not implement `Reporter` trait? Let's check imports.
+    // `output` is used as `reporter` in previous calls, so it implements `Reporter`.
+    let reporter = std::sync::Arc::new(output);
+
+    let ctx = apl::ops::Context::new(
+        db_handle,
+        Some(index),
+        client,
+        reporter.clone(), // Clone the Arc
+    );
+
+    // Call the install logic directly
+    apl::ops::install::install_packages(&ctx, &package_names, false)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
