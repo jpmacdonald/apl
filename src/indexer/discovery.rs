@@ -249,6 +249,41 @@ pub fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> 
     }
 }
 
+/// Auto-detect version type and parse the tag.
+/// Tries parsers in order of strictness: SemVer → CalVer → Sequential → Snapshot.
+/// Returns the first successful parse result.
+pub fn auto_parse_version(tag: &str) -> Option<String> {
+    // Try SemVer first (strictest: X.Y.Z)
+    if let Some(v) = parse_version_by_type(tag, &VersionType::SemVer) {
+        return Some(v);
+    }
+
+    // Try CalVer (YY.MM or YY.MM.PATCH - must be 2 or 3 dot-separated numbers)
+    if let Some(v) = parse_version_by_type(tag, &VersionType::CalVer) {
+        return Some(v);
+    }
+
+    // Try Sequential (r40, build-123 - has a leading non-digit prefix)
+    // Only use if the tag starts with non-digit characters
+    if tag
+        .chars()
+        .next()
+        .map(|c| !c.is_ascii_digit())
+        .unwrap_or(false)
+    {
+        if let Some(v) = parse_version_by_type(tag, &VersionType::Sequential) {
+            return Some(v);
+        }
+    }
+
+    // Try Snapshot (date-based like 20240203-110809-hash)
+    if let Some(v) = parse_version_by_type(tag, &VersionType::Snapshot) {
+        return Some(v);
+    }
+
+    None
+}
+
 pub fn guess_github_repo(url: &str) -> Option<String> {
     if url.contains("github.com") {
         let parts: Vec<&str> = url.split('/').collect();

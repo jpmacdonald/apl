@@ -11,7 +11,6 @@ github = "helix-editor/helix"
 tag_pattern = "{{version}}"
 semver_only = false
 include_prereleases = false
-version_type = "calver"
 
 [assets]
 url_template = "https://github.com/helix-editor/helix/releases/download/{{version}}/helix-{{version}}-{{target}}-macos.tar.xz"

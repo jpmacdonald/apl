@@ -89,7 +89,7 @@ pub async fn fetch_batch_releases(
         fragment.push_str(&format!(
             r#"
             {}: repository(owner: "{}", name: "{}") {{
-                releases(first: 20, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
+                releases(first: 50, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                     nodes {{
                         tagName
                         isDraft

@@ -107,9 +107,7 @@ pub async fn generate_index_from_registry(
     }
 
     // Pass 3: Process each package using cached metadata
-    for (template_path, template) in templates {
-        println!("   Processing {}...", template_path.display());
-
+    for (_template_path, template) in templates {
         let pkg_name = template.package.name.to_string();
 
         // Discover versions using the master cache or manual config
@@ -122,7 +120,6 @@ pub async fn generate_index_from_registry(
                 tag_pattern,
                 semver_only,
                 include_prereleases,
-                version_type,
                 ..
             } => {
                 // Look up in master cache
@@ -144,13 +141,10 @@ pub async fn generate_index_from_registry(
 
                     let extracted = extract_version_from_tag(&release.tag_name, tag_pattern);
 
-                    // Use typed version parsing
-                    if let Some(normalized) = parse_version_by_type(&extracted, version_type) {
-                        // Legacy compatibility for SemVer type with semver_only flag
-                        if *version_type == crate::package::VersionType::SemVer
-                            && *semver_only
-                            && semver::Version::parse(&normalized).is_err()
-                        {
+                    // Auto-detect version type and parse
+                    if let Some(normalized) = auto_parse_version(&extracted) {
+                        // Legacy compatibility for semver_only flag
+                        if *semver_only && semver::Version::parse(&normalized).is_err() {
                             continue;
                         }
                         // Store (full_tag, extracted_version, normalized_version)
@@ -172,20 +166,13 @@ pub async fn generate_index_from_registry(
 
         // If versions is empty, verify if it was a fetch error or just zero versions
         if versions.is_empty() {
-            eprintln!("     ⚠ No versions found");
+            eprintln!("   ✗ {} (no versions found)", pkg_name);
             // Determine if we should count this as an error or just a skip
             continue;
         }
 
-        println!("     Found {} versions", versions.len());
-
         // Hydrate each version in parallel
         use futures::stream::{self, StreamExt};
-
-        println!(
-            "     Hydrating {} versions (concurrently)...",
-            versions.len()
-        );
 
         let versions_stream = stream::iter(versions)
             .map(|(full_tag, extracted, normalized)| {
@@ -214,7 +201,10 @@ pub async fn generate_index_from_registry(
 
         let results: Vec<(String, Result<VersionInfo>)> = versions_stream.collect().await;
 
-        let mut skipped_versions = Vec::new();
+        // Group failures by error type for cleaner reporting
+        let mut hash_failures: Vec<String> = Vec::new();
+        let mut asset_failures: Vec<String> = Vec::new();
+        let mut other_failures: Vec<(String, String)> = Vec::new(); // (version, error)
         let total = results.len();
         let mut processed = 0;
 
@@ -233,33 +223,58 @@ pub async fn generate_index_from_registry(
                     );
                     processed += 1;
                 }
-                Err(_e) => {
-                    // Collect skipped versions for summary
-                    skipped_versions.push(ver_str);
+                Err(e) => {
+                    // Categorize errors for aggregated reporting
+                    let err_str = e.to_string();
+                    if err_str.contains("checksum") || err_str.contains("hash") {
+                        hash_failures.push(ver_str);
+                    } else if err_str.contains("No supported binaries") || err_str.contains("asset")
+                    {
+                        asset_failures.push(ver_str);
+                    } else {
+                        other_failures.push((ver_str, err_str));
+                    }
                 }
             }
         }
 
+        // Calculate total skipped
+        let skipped_count = hash_failures.len() + asset_failures.len() + other_failures.len();
+
+        // Print single-line summary for this package
         if processed == 0 && total > 0 {
-            eprintln!("     ⚠ No valid versions found! Check TOML configuration.");
-        }
-
-        if !skipped_versions.is_empty() {
-            // Sort versions to make output deterministic
-            skipped_versions.sort_by(|a, b| {
-                // Try to sort by semver if possible
-                let sem_a = semver::Version::parse(a).ok();
-                let sem_b = semver::Version::parse(b).ok();
-                match (sem_a, sem_b) {
-                    (Some(va), Some(vb)) => vb.cmp(&va), // Descending
-                    _ => b.cmp(a),
-                }
-            });
-
+            eprintln!("   ✗ {} (0/{} versions)", pkg_name, total);
+            // Print the primary failure reason indented
+            if !hash_failures.is_empty() {
+                eprintln!(
+                    "     └─ hash resolution failed: {}",
+                    hash_failures.join(", ")
+                );
+            }
+            if !asset_failures.is_empty() {
+                eprintln!(
+                    "     └─ no macOS asset found: {}",
+                    asset_failures.join(", ")
+                );
+            }
+            if !other_failures.is_empty() {
+                // Just show the first unique error type
+                eprintln!("     └─ {}", other_failures[0].1);
+            }
+        } else if skipped_count > 0 {
             println!(
-                "     (Skipped incompatible versions: {})",
-                skipped_versions.join(", ")
+                "   ⚠ {} ({} versions, {} skipped)",
+                pkg_name, processed, skipped_count
             );
+            // Show skip reasons for partial success too
+            if !hash_failures.is_empty() {
+                println!("     └─ hash: {}", hash_failures.join(", "));
+            }
+            if !asset_failures.is_empty() {
+                println!("     └─ no asset: {}", asset_failures.join(", "));
+            }
+        } else {
+            println!("   ✓ {} ({} versions)", pkg_name, processed);
         }
     }
 
@@ -378,10 +393,7 @@ pub async fn package_to_index_ver(
                     continue;
                 }
                 Err(e) => {
-                    eprintln!(
-                        "       ⚠ Hash resolution failed for {}: {}",
-                        display_version, e
-                    );
+                    // Error captured in aggregated summary - no need to print per-version
                     return Err(e);
                 }
             };
