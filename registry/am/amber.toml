@@ -7,17 +7,17 @@ license = ""
 type = "cli"
 
 [discovery]
-github = "dalance/amber"
+github = "amber-lang/amber"
 tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/dalance/amber/releases/download/v{{version}}/amber-v{{version}}-{{target}}-mac.zip"
+url_template = "https://github.com/amber-lang/amber/releases/download/v{{version}}/amber-{{target}}.tar.xz"
 universal = false
 
 [assets.targets]
-x86_64 = "x86_64"
-arm64 = "x86_64"
+x86_64 = "macos-x86_64"
+arm64 = "macos-aarch64"
 
 [checksums]
 vendor_type = "sha256"

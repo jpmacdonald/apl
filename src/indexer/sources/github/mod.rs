@@ -499,14 +499,25 @@ impl ListingSource for GitHubSource {
     }
 
     async fn fetch_releases(&self, client: &reqwest::Client) -> Result<Vec<ReleaseInfo>> {
-        let releases = fetch_all_releases(client, &self.owner, &self.repo).await?;
-        Ok(releases
+        let token = std::env::var("GITHUB_TOKEN").ok();
+        let token = token.as_deref().unwrap_or("");
+
+        let repo_key = crate::types::RepoKey {
+            owner: self.owner.clone(),
+            repo: self.repo.clone(),
+        };
+
+        // Use GraphQL to fetch releases and digests.
+        let mut map = graphql::fetch_batch_releases(client, token, &[repo_key.clone()]).await?;
+        let releases = map.remove(&repo_key).unwrap_or_default();
+
+        let releases = releases
             .into_iter()
             .map(|r| ReleaseInfo {
                 tag_name: r.tag_name,
-                prerelease: r.prerelease,
+                prune: r.draft || r.prerelease,
                 body: r.body.unwrap_or_default(),
-                prune: false,
+                prerelease: r.prerelease,
                 assets: r
                     .assets
                     .into_iter()
@@ -519,6 +530,8 @@ impl ListingSource for GitHubSource {
                     })
                     .collect(),
             })
-            .collect())
+            .collect();
+
+        Ok(releases)
     }
 }
