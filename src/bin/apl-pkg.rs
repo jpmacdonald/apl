@@ -240,7 +240,6 @@ async fn cli_index(
     };
 
     index.save_compressed(index_path)?;
-    println!("   Done: {}", index_path.display());
     Ok(())
 }
 

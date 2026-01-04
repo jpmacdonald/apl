@@ -78,15 +78,20 @@ pub async fn generate_index_from_registry(
         templates.push((template_path, template));
     }
 
+    println!(
+        "   🔍 Discovered {} unique sources in registry/",
+        sources.len()
+    );
+
     // Pass 2: Fetch metadata from sources (in parallel)
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
 
     if !sources.is_empty() {
-        println!("   Fetching metadata from {} sources...", sources.len());
+        println!("   Fetching Metadata...");
 
         use futures::stream::{self, StreamExt};
 
-        let fetch_results: Vec<_> = stream::iter(sources)
+        let mut fetch_stream = stream::iter(sources)
             .map(|source| {
                 let client = client.clone();
                 async move {
@@ -95,29 +100,27 @@ pub async fn generate_index_from_registry(
                     (key, result)
                 }
             })
-            .buffer_unordered(50) // Concurrent source fetches
-            .collect()
-            .await;
+            .buffer_unordered(50); // Concurrent source fetches
 
-        for (key, result) in fetch_results {
+        while let Some((key, result)) = fetch_stream.next().await {
             match result {
                 Ok(releases) => {
-                    println!("     ✓ Fetched {} releases from {}", releases.len(), key);
                     master_release_cache.insert(key, releases);
                 }
                 Err(e) => {
-                    eprintln!("   ⚠ Fetch failed for {}: {}", key, e);
+                    eprintln!("   ✗ {} ({})", key, e);
                 }
             }
         }
     }
 
     // Pass 3: Process each package using cached metadata (in parallel)
+    println!("   Processing Packages...");
     use futures::stream::{self, StreamExt};
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
 
-    let results_stream = stream::iter(templates)
+    let mut results_stream = stream::iter(templates)
         .map(|(_template_path, template)| {
             let client = client.clone();
             let hash_cache = hash_cache.clone();
@@ -229,11 +232,12 @@ pub async fn generate_index_from_registry(
         })
         .buffer_unordered(20); // Concurrent packages
 
-    let final_results = results_stream.collect::<Vec<_>>().await;
-
-    for (template, v_infos, errors) in final_results {
+    let mut total_releases = 0;
+    while let Some((template, v_infos, errors)) = results_stream.next().await {
         let pkg_name = template.package.name.to_string();
+        let success_count = v_infos.len();
         let total_versions = v_infos.len() + errors.len();
+        total_releases += success_count;
 
         for ver_info in v_infos {
             index.upsert_release(
@@ -248,24 +252,55 @@ pub async fn generate_index_from_registry(
             );
         }
 
+        // Align package name at 20 characters
+        let name_col = format!("{:<20}", pkg_name);
+
         if !errors.is_empty() {
-            if index.packages.iter().any(|e| e.name == pkg_name) {
+            let error_msg = errors[0].to_string();
+            let human_err = humanize_error(&error_msg);
+
+            if success_count > 0 {
                 println!(
-                    "   ⚠ {} (partial success: {}/{} versions)",
-                    pkg_name,
-                    total_versions - errors.len(),
-                    total_versions
+                    "   ⚠ {} {}/{} versions",
+                    name_col, success_count, total_versions
                 );
+                println!("     └ {}", human_err);
             } else {
-                eprintln!("   ✗ {} failed: {}", pkg_name, errors[0]);
+                eprintln!("   ✗ {} 0/{} versions", name_col, total_versions);
+                eprintln!("     └ {}", human_err);
             }
         } else {
-            println!("   ✓ {} ({} versions)", pkg_name, total_versions);
+            println!("   ✓ {} {} versions indexed", name_col, total_versions);
         }
     }
 
     hash_cache.lock().await.save()?;
+
+    let index_file = registry_dir.join("../index.bin");
+    let size_bytes = fs::metadata(&index_file).map(|m| m.len()).unwrap_or(0);
+    println!();
+    println!(
+        "   Done: {}KB index.bin ({} total releases)",
+        size_bytes / 1024,
+        total_releases
+    );
     Ok(index)
+}
+
+fn humanize_error(e: &str) -> String {
+    if e.contains("No supported binaries found") {
+        "No supported binaries for this platform (macOS) in most releases".to_string()
+    } else if e.contains("Could not resolve checksum") {
+        "Checksum missing in GitHub release (set [checksums] skip = true to allow)".to_string()
+    } else if e.contains("no versions found") {
+        "No versions found for this repository".to_string()
+    } else if e.contains("error decoding response body") {
+        "Network error or GitHub API rate limit during metadata fetch".to_string()
+    } else if e.contains("Asset") && e.contains("not found in GitHub release") {
+        "Expected binary asset not found in GitHub release".to_string()
+    } else {
+        e.split('.').next().unwrap_or(e).to_string()
+    }
 }
 
 /// Generate index from legacy flat packages directory
