@@ -7,8 +7,6 @@ use serde::Deserialize;
 pub mod graphql;
 use sha2::Digest;
 
-use crate::types::Sha256Digest;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
     pub id: u64,
@@ -19,7 +17,7 @@ pub struct GithubRelease {
     #[serde(default)]
     pub prerelease: bool,
     #[serde(default)]
-    pub body: String,
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,7 +25,7 @@ pub struct GithubAsset {
     pub name: String,
     pub browser_download_url: String,
     #[serde(default)]
-    pub digest: Option<Sha256Digest>,
+    pub digest: Option<String>,
 }
 
 /// Priority patterns for macOS ARM64 binaries
@@ -443,7 +441,7 @@ async fn fetch_all_tags(
                 assets: vec![], // Tags don't have attached assets in this view
                 draft: false,
                 prerelease: false, // Assume stable if it's a tag? Or unknown.
-                body: String::new(),
+                body: Some(String::new()),
             });
         }
         page += 1;
@@ -507,7 +505,7 @@ impl ListingSource for GitHubSource {
             .map(|r| ReleaseInfo {
                 tag_name: r.tag_name,
                 prerelease: r.prerelease,
-                body: r.body,
+                body: r.body.unwrap_or_default(),
                 prune: false,
                 assets: r
                     .assets
@@ -515,7 +513,9 @@ impl ListingSource for GitHubSource {
                     .map(|a| AssetInfo {
                         name: a.name,
                         download_url: a.browser_download_url,
-                        digest: a.digest,
+                        digest: a
+                            .digest
+                            .and_then(|d| crate::types::Sha256Digest::new(d).ok()),
                     })
                     .collect(),
             })

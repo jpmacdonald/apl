@@ -602,11 +602,6 @@ async fn fetch_and_parse_checksum(
     }
 
     if let Some(hash) = crate::indexer::discovery::scan_text_for_hash(&text, filename) {
-        println!(
-            "       ✓ Found hash for {} in {}",
-            filename,
-            crate::filename_from_url(checksum_url)
-        );
         return Ok(hash);
     }
 

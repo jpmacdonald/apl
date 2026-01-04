@@ -21,7 +21,6 @@ pub async fn resolve_digest(
     // Priority 1: Check if the asset itself has a digest field (already validated at deserialization)
     if let Some(asset) = release.assets.iter().find(|a| a.name == asset_filename) {
         if let Some(digest) = &asset.digest {
-            println!("       ✓ Found digest in GraphQL for {}", asset_filename);
             return Ok(digest.clone());
         }
     }
@@ -42,7 +41,6 @@ pub async fn resolve_digest(
                     let text = resp.text().await?;
                     // Search for the target filename in the text
                     if let Some(hash) = scan_text_for_hash(&text, asset_filename) {
-                        println!("       ✓ Found hash for {} in {}", asset_filename, name);
                         return Ok(Sha256Digest::new(hash)?);
                     }
 

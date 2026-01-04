@@ -55,7 +55,7 @@ struct AssetNode {
     #[serde(rename = "downloadUrl")]
     download_url: String,
     #[serde(default)]
-    digest: Option<crate::types::Sha256Digest>,
+    digest: Option<String>,
 }
 
 /// Escape special characters in GraphQL string literals
@@ -174,7 +174,7 @@ pub async fn fetch_batch_releases(
                     tag_name: node.tag_name.clone(),
                     draft: node.is_draft,
                     prerelease: node.is_prerelease,
-                    body: node.description.clone().unwrap_or_default(),
+                    body: node.description.clone(),
                     assets,
                 });
             }
