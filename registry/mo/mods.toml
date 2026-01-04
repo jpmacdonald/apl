@@ -1,10 +1,8 @@
 [package]
 name = "mods"
-version = "1.8.1"
 description = "AI on the command line"
 homepage = "https://github.com/charmbracelet/mods"
 license = ""
-type = "cli"
 
 [discovery]
 github = "charmbracelet/mods"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/charmbracelet/mods/releases/download/v{{version}}/mods_{{version}}_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/charmbracelet/mods/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["mods"]
 lib = []
 include = []

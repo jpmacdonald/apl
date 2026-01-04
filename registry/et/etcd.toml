@@ -1,10 +1,8 @@
 [package]
 name = "etcd"
-version = "3.6.7"
 description = "Distributed reliable key-value store"
 homepage = "https://github.com/etcd-io/etcd"
 license = ""
-type = "cli"
 
 [discovery]
 github = "etcd-io/etcd"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/etcd-io/etcd/releases/download/v{{version}}/etcd-v{{version}}-darwin-{{target}}.zip"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/etcd-io/etcd/releases/download/v{{version}}/SHA256SUMS"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["etcd"]
 lib = []
 include = []

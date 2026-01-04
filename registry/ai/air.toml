@@ -1,10 +1,8 @@
 [package]
 name = "air"
-version = "1.63.4"
 description = "Live reload for Go apps"
 homepage = "https://github.com/air-verse/air"
 license = ""
-type = "cli"
 
 [discovery]
 github = "air-verse/air"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/air-verse/air/releases/download/v{{version}}/air_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/air-verse/air/releases/download/v{{version}}/air_{{version}}_checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["air"]
 lib = []
 include = []

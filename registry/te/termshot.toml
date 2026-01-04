@@ -1,10 +1,8 @@
 [package]
 name = "termshot"
-version = "0.6.0"
 description = "Capture polished terminal output as images"
 homepage = "https://github.com/homeport/termshot"
 license = ""
-type = "cli"
 
 [discovery]
 github = "homeport/termshot"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/homeport/termshot/releases/download/v{{version}}/termshot_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["termshot"]
 lib = []
 include = []

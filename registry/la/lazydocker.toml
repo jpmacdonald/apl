@@ -1,10 +1,8 @@
 [package]
 name = "lazydocker"
-version = "0.24.3"
 description = "The lazier way to manage everything docker"
 homepage = "https://github.com/jesseduffield/lazydocker"
 license = ""
-type = "cli"
 
 [discovery]
 github = "jesseduffield/lazydocker"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/jesseduffield/lazydocker/releases/download/v{{version}}/lazydocker_{{version}}_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/jesseduffield/lazydocker/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["lazydocker"]
 lib = []
 include = []

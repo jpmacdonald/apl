@@ -1,11 +1,11 @@
 [package]
-name = "rclone"
-description = "Rsync for cloud storage"
-homepage = "https://github.com/rclone/rclone"
+name = "helix"
+description = "A post-modern modal text editor"
+homepage = "https://github.com/helix-editor/helix"
 license = ""
 
 [discovery]
-github = "rclone/rclone"
+github = "helix-editor/helix"
 tag_pattern = "v{{version}}"
 include_prereleases = false
 
@@ -14,13 +14,13 @@ universal = false
 skip_checksums = false
 
 [assets.arm64-macos]
-regex = "rclone.*-osx-arm64\\.zip"
+suffix = "aarch64-macos.tar.xz"
 
 [assets.x86_64-macos]
-regex = "rclone.*-osx-amd64\\.zip"
+suffix = "x86_64-macos.tar.xz"
 
 [install]
-bin = ["rclone"]
+bin = ["hx"]
 lib = []
 include = []
 script = ""

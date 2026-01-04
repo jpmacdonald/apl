@@ -1,10 +1,8 @@
 [package]
 name = "glab"
-version = "1.22.0"
 description = "A GitLab CLI tool"
 homepage = "https://github.com/profclems/glab"
 license = ""
-type = "cli"
 
 [discovery]
 github = "profclems/glab"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/profclems/glab/releases/download/v{{version}}/glab_{{version}}_macOS_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "x86_64"
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/profclems/glab/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "x86_64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["glab"]
 lib = []
 include = []

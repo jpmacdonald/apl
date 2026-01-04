@@ -1,10 +1,8 @@
 [package]
 name = "k9s"
-version = "0.50.16"
 description = "Kubernetes CLI To Manage Your Clusters In Style!"
 homepage = "https://github.com/derailed/k9s"
 license = ""
-type = "cli"
 
 [discovery]
 github = "derailed/k9s"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/derailed/k9s/releases/download/v{{version}}/k9s_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "amd64"
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["k9s"]
 lib = []
 include = []

@@ -1,30 +1,25 @@
 [package]
 name = "difft"
-version = "0.67.0"
 description = "A structural diff that understands syntax"
 homepage = "https://github.com/Wilfred/difftastic"
 license = ""
-type = "cli"
 
 [discovery]
 github = "Wilfred/difftastic"
-tag_pattern = "{{version}}"
+tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/Wilfred/difftastic/releases/download/{{version}}/difft-{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "aarch64-apple-darwin"
-x86_64 = "x86_64-apple-darwin"
+[assets.x86_64-macos]
+suffix = "x86_64-apple-darwin.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "aarch64-apple-darwin.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["difft"]
 lib = []
 include = []

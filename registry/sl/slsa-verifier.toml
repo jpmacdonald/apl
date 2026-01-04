@@ -1,10 +1,8 @@
 [package]
 name = "slsa-verifier"
-version = "2.7.1"
 description = "Verify provenance from SLSA compliant builders"
 homepage = "https://github.com/slsa-framework/slsa-verifier"
 license = ""
-type = "cli"
 
 [discovery]
 github = "slsa-framework/slsa-verifier"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/slsa-framework/slsa-verifier/releases/download/v{{version}}/slsa-verifier-darwin-{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "darwin-amd64"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "darwin-arm64"
 
 [install]
-strategy = "link"
 bin = ["slsa-verifier"]
 lib = []
 include = []

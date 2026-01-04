@@ -366,7 +366,8 @@ impl Installer for BinInstaller {
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
         relink_macho_files(&pkg_store_path);
-        let files_to_record = link_binaries(&package_def.install.bin, &pkg_store_path)?;
+        let bins = package_def.install.effective_bin(&package_def.package.name);
+        let files_to_record = link_binaries(&bins, &pkg_store_path)?;
 
         Ok(InstallInfo {
             package: package_def.package,
@@ -407,7 +408,8 @@ impl Installer for ScriptInstaller {
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
         relink_macho_files(&pkg_store_path);
-        let files_to_record = link_binaries(&package_def.install.bin, &pkg_store_path)?;
+        let bins = package_def.install.effective_bin(&package_def.package.name);
+        let files_to_record = link_binaries(&bins, &pkg_store_path)?;
 
         Ok(InstallInfo {
             package: package_def.package,
@@ -421,9 +423,16 @@ impl Installer for ScriptInstaller {
 // Shared link_binaries used from crate::ops
 
 fn get_installer(pkg: &PreparedPackage) -> Box<dyn Installer + Send + Sync> {
-    let strategy = pkg.resolved.def.install.strategy.clone();
+    let strategy = pkg
+        .resolved
+        .def
+        .install
+        .strategy
+        .clone()
+        .unwrap_or(InstallStrategy::Link);
 
     let is_app = strategy == InstallStrategy::App
+        || pkg.resolved.def.install.app.is_some()
         || pkg
             .extracted_path
             .to_string_lossy()

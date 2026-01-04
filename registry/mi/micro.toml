@@ -1,10 +1,8 @@
 [package]
 name = "micro"
-version = "2.0.15"
 description = "A modern and intuitive terminal-based text editor"
 homepage = "https://github.com/zyedidia/micro"
 license = ""
-type = "cli"
 
 [discovery]
 github = "zyedidia/micro"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/zyedidia/micro/releases/download/v{{version}}/micro-{{version}}-macos-{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "arm64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["micro"]
 lib = []
 include = []

@@ -1,10 +1,8 @@
 [package]
 name = "ninja"
-version = "1.13.2"
 description = "Small build system with a focus on speed"
 homepage = ""
 license = ""
-type = "cli"
 
 [discovery]
 github = "ninja-build/ninja"
@@ -12,15 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/ninja-build/ninja/releases/download/v{{version}}/ninja-mac.zip"
 universal = true
+skip_checksums = false
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "-mac.zip"
+
+[assets.x86_64-macos]
+suffix = "-mac.zip"
 
 [install]
-strategy = "link"
 bin = ["ninja"]
 lib = []
 include = []

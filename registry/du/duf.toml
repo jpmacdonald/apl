@@ -1,10 +1,8 @@
 [package]
 name = "duf"
-version = "0.9.1"
 description = "Disk Usage/Free Utility - a better 'df' alternative"
 homepage = "https://github.com/muesli/duf"
 license = ""
-type = "cli"
 
 [discovery]
 github = "muesli/duf"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/muesli/duf/releases/download/v{{version}}/duf_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/muesli/duf/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["duf"]
 lib = []
 include = []

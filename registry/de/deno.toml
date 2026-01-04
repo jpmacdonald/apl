@@ -1,10 +1,8 @@
 [package]
 name = "deno"
-version = "2.6.3"
-description = "A secure runtime for JavaScript and TypeScript"
+description = "A modern runtime for JavaScript and TypeScript"
 homepage = "https://github.com/denoland/deno"
 license = ""
-type = "cli"
 
 [discovery]
 github = "denoland/deno"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/denoland/deno/releases/download/v{{version}}/deno-{{target}}.zip"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64-apple-darwin"
-arm64 = "aarch64-apple-darwin"
+[assets.arm64-macos]
+suffix = "aarch64-apple-darwin.zip"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "x86_64-apple-darwin.zip"
 
 [install]
-strategy = "link"
 bin = ["deno"]
 lib = []
 include = []

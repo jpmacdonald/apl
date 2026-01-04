@@ -1,10 +1,8 @@
 [package]
 name = "logseq"
-version = "0.10.15"
-description = "A privacy-first, open-source platform for knowledge management and collaboration"
+description = "A privacy-first, open-source platform for knowledge management"
 homepage = "https://github.com/logseq/logseq"
 license = ""
-type = "cli"
 
 [discovery]
 github = "logseq/logseq"
@@ -12,19 +10,16 @@ tag_pattern = "{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/logseq/logseq/releases/download/{{version}}/Logseq-darwin-{{target}}-{{version}}.dmg"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "arm64"
+[assets.arm64-macos]
+regex = "Logseq-darwin-arm64.*\\.dmg"
 
-[checksums]
-vendor_type = "sha256"
-skip = true
+[assets.x86_64-macos]
+regex = "Logseq-darwin-x64.*\\.dmg"
 
 [install]
-strategy = "link"
 bin = ["logseq"]
 lib = []
 include = []

@@ -1,10 +1,8 @@
 [package]
 name = "goreleaser"
-version = "2.13.2"
 description = "Release engineering, simplified"
 homepage = "https://github.com/goreleaser/goreleaser"
 license = ""
-type = "cli"
 
 [discovery]
 github = "goreleaser/goreleaser"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/goreleaser/goreleaser/releases/download/v{{version}}/goreleaser_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/goreleaser/goreleaser/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["goreleaser"]
 lib = []
 include = []

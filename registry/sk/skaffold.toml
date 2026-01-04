@@ -1,10 +1,8 @@
 [package]
 name = "skaffold"
-version = "2.17.0"
 description = "Easy and Repeatable Kubernetes Development"
 homepage = "https://github.com/GoogleContainerTools/skaffold"
 license = ""
-type = "cli"
 
 [discovery]
 github = "GoogleContainerTools/skaffold"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/GoogleContainerTools/skaffold/releases/download/v{{version}}/skaffold-darwin-{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "darwin-arm64"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "darwin-amd64"
 
 [install]
-strategy = "link"
 bin = ["skaffold"]
 lib = []
 include = []

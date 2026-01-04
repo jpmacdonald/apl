@@ -1,10 +1,8 @@
 [package]
 name = "argocd"
-version = "3.2.3"
-description = "Declarative Continuous Deployment for Kubernetes"
+description = "Declarative continuous deployment for Kubernetes"
 homepage = "https://github.com/argoproj/argo-cd"
 license = ""
-type = "cli"
 
 [discovery]
 github = "argoproj/argo-cd"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/argoproj/argo-cd/releases/download/v{{version}}/argocd-darwin-{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "darwin-arm64"
 
-[checksums]
-url_template = "https://github.com/argoproj/argo-cd/releases/download/v{{version}}/cli_checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "darwin-amd64"
 
 [install]
-strategy = "link"
 bin = ["argocd"]
 lib = []
 include = []

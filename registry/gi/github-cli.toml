@@ -1,11 +1,11 @@
 [package]
-name = "gping"
-description = "Ping, but with a graph"
-homepage = "https://github.com/orf/gping"
+name = "github-cli"
+description = "GitHub on the command line"
+homepage = "https://github.com/cli/cli"
 license = ""
 
 [discovery]
-github = "orf/gping"
+github = "cli/cli"
 tag_pattern = "v{{version}}"
 include_prereleases = false
 
@@ -13,14 +13,14 @@ include_prereleases = false
 universal = false
 skip_checksums = false
 
-[assets.x86_64-macos]
-suffix = "x86_64.tar.gz"
-
 [assets.arm64-macos]
 suffix = "arm64.tar.gz"
 
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
+
 [install]
-bin = ["gping"]
+bin = ["gh"]
 lib = []
 include = []
 script = ""

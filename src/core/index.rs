@@ -111,6 +111,9 @@ pub struct IndexEntry {
     #[serde(default)]
     #[serde(rename = "type")]
     pub type_: String,
+    /// All binary names provided by any release (for search/resolution)
+    #[serde(default)]
+    pub bins: Vec<String>,
     /// All available releases (sorted by version descending)
     pub releases: Vec<VersionInfo>,
 }
@@ -257,8 +260,19 @@ impl PackageIndex {
                 }
                 // Sort releases by version descending
                 entry.releases.sort_by(|a, b| b.version.cmp(&a.version));
+
+                // Update aggregate bins list
+                let mut all_bins = std::collections::HashSet::new();
+                for r in &entry.releases {
+                    for b in &r.bin {
+                        all_bins.insert(b.clone());
+                    }
+                }
+                entry.bins = all_bins.into_iter().collect();
+                entry.bins.sort();
             }
             Err(idx) => {
+                let bins = release.bin.clone();
                 self.packages.insert(
                     idx,
                     IndexEntry {
@@ -266,6 +280,7 @@ impl PackageIndex {
                         description: description.to_string(),
                         homepage: String::new(),
                         type_: type_.to_string(),
+                        bins,
                         releases: vec![release],
                     },
                 );
@@ -293,6 +308,9 @@ impl PackageIndex {
             .filter(|e| {
                 e.name.to_lowercase().contains(&query_lower)
                     || e.description.to_lowercase().contains(&query_lower)
+                    || e.bins
+                        .iter()
+                        .any(|b| b.to_lowercase().contains(&query_lower))
             })
             .collect()
     }
@@ -328,6 +346,7 @@ mod tests {
             description: "Vim-fork focused on extensibility".to_string(),
             homepage: "https://neovim.io".to_string(),
             type_: "cli".to_string(),
+            bins: vec!["nvim".to_string()],
             releases: vec![VersionInfo {
                 version: "0.10.0".to_string(),
                 binaries: vec![IndexBinary {

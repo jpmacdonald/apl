@@ -1,10 +1,8 @@
 [package]
 name = "charm"
-version = "0.12.6"
 description = "A set of tools that makes adding a backend to terminal-based applications fun and easy"
 homepage = "https://github.com/charmbracelet/charm"
 license = ""
-type = "cli"
 
 [discovery]
 github = "charmbracelet/charm"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/charmbracelet/charm/releases/download/v{{version}}/charm_{{version}}_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/charmbracelet/charm/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["charm"]
 lib = []
 include = []

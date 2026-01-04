@@ -1,10 +1,8 @@
 [package]
 name = "fzf"
-version = "0.67.0"
 description = "A command-line fuzzy finder"
 homepage = "https://github.com/junegunn/fzf"
 license = ""
-type = "cli"
 
 [discovery]
 github = "junegunn/fzf"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/junegunn/fzf/releases/download/v{{version}}/fzf-{{version}}-darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "amd64"
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/junegunn/fzf/releases/download/v{{version}}/fzf_{{version}}_checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["fzf"]
 lib = []
 include = []

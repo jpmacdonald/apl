@@ -7,8 +7,8 @@ pub use discovery::*;
 pub use hashing::HashCache;
 pub use walk::{registry_path, walk_registry_toml_files};
 
-use crate::core::index::{HashType, IndexBinary, IndexSource, PackageIndex, VersionInfo};
-use crate::package::{DiscoveryConfig, Package, PackageTemplate};
+use crate::core::index::{HashType, IndexBinary, PackageIndex, VersionInfo};
+use crate::package::{DiscoveryConfig, PackageTemplate};
 use anyhow::Result;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -162,9 +162,9 @@ pub async fn generate_index_from_registry(
                             }
 
                             let extracted =
-                                extract_version_from_tag(&release.tag_name, tag_pattern);
+                                discovery::extract_version_from_tag(&release.tag_name, tag_pattern);
 
-                            if let Some(normalized) = auto_parse_version(&extracted) {
+                            if let Some(normalized) = discovery::auto_parse_version(&extracted) {
                                 versions.push((release.tag_name.clone(), extracted, normalized));
                             }
                         }
@@ -196,14 +196,13 @@ pub async fn generate_index_from_registry(
                         let hash_cache_clone = hash_cache.clone();
                         let releases_map_clone = releases_map.clone();
                         let display_ver = normalized.clone();
-                        let url_ver = extracted.clone();
                         let tag_for_lookup = full_tag.clone();
                         async move {
                             let res = package_to_index_ver(
                                 &client,
                                 &template_clone,
                                 &tag_for_lookup,
-                                &url_ver,
+                                &extracted,
                                 &display_ver,
                                 hash_cache_clone,
                                 releases_map_clone,
@@ -233,6 +232,10 @@ pub async fn generate_index_from_registry(
         .buffer_unordered(20); // Concurrent packages
 
     let mut total_releases = 0;
+    let mut fully_indexed = 0;
+    let mut partial = 0;
+    let mut failed = 0;
+
     while let Some((template, v_infos, errors)) = results_stream.next().await {
         let pkg_name = template.package.name.to_string();
         let success_count = v_infos.len();
@@ -240,16 +243,10 @@ pub async fn generate_index_from_registry(
         total_releases += success_count;
 
         for ver_info in v_infos {
-            index.upsert_release(
-                &pkg_name,
-                &template.package.description,
-                if template.package.type_ == crate::package::PackageType::App {
-                    "app"
-                } else {
-                    "cli"
-                },
-                ver_info,
-            );
+            // Infer type: App if .app is present, else Cli
+            let kind = if ver_info.app.is_some() { "app" } else { "cli" };
+
+            index.upsert_release(&pkg_name, &template.package.description, kind, ver_info);
         }
 
         // Align package name at 20 characters
@@ -260,16 +257,19 @@ pub async fn generate_index_from_registry(
             let human_err = humanize_error(&error_msg);
 
             if success_count > 0 {
+                partial += 1;
                 println!(
                     "   ⚠ {} {}/{} versions",
                     name_col, success_count, total_versions
                 );
                 println!("     └ {}", human_err);
             } else {
+                failed += 1;
                 eprintln!("   ✗ {} 0/{} versions", name_col, total_versions);
                 eprintln!("     └ {}", human_err);
             }
         } else {
+            fully_indexed += 1;
             println!("   ✓ {} {} versions indexed", name_col, total_versions);
         }
     }
@@ -278,135 +278,64 @@ pub async fn generate_index_from_registry(
 
     let index_file = registry_dir.join("../index.bin");
     let size_bytes = fs::metadata(&index_file).map(|m| m.len()).unwrap_or(0);
+    let total_packages = fully_indexed + partial + failed;
+
     println!();
     println!(
         "   Done: {}KB index.bin ({} total releases)",
         size_bytes / 1024,
         total_releases
     );
+    println!();
+    println!(
+        "   {} packages: {} fully indexed, {} partial, {} failed",
+        total_packages, fully_indexed, partial, failed
+    );
+
     Ok(index)
 }
 
 fn humanize_error(e: &str) -> String {
     if e.contains("No supported binaries found") {
-        "No supported binaries for this platform (macOS) in most releases".to_string()
+        "Skipped: missing macOS binary assets".to_string()
     } else if e.contains("Could not resolve checksum") {
-        "Checksum missing in GitHub release (set [checksums] skip = true to allow)".to_string()
+        "Skipped: checksums not available (set skip_checksums = true)".to_string()
     } else if e.contains("no versions found") {
-        "No versions found for this repository".to_string()
+        "No releases found in repository".to_string()
     } else if e.contains("error decoding response body") {
-        "Network error or GitHub API rate limit during metadata fetch".to_string()
+        "Skipped: network error or rate limit".to_string()
     } else if e.contains("Asset") && e.contains("not found in GitHub release") {
-        "Expected binary asset not found in GitHub release".to_string()
+        "Skipped: expected asset not found".to_string()
     } else {
-        e.split('.').next().unwrap_or(e).to_string()
+        format!("Skipped: {}", e.split('.').next().unwrap_or(e))
     }
-}
-
-/// Generate index from legacy flat packages directory
-
-pub async fn generate_index_from_dir(
-    client: &Client,
-    packages_dir: &Path,
-    package_filter: Option<&str>,
-) -> Result<PackageIndex> {
-    let hash_cache = Arc::new(Mutex::new(HashCache::load()));
-    let mut index = PackageIndex::new();
-
-    for entry in fs::read_dir(packages_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().is_some_and(|e| e == "toml") {
-            let name = path.file_stem().unwrap().to_string_lossy();
-
-            if let Some(filter) = package_filter {
-                if name != filter {
-                    continue;
-                }
-            }
-
-            println!("   Processing {name}...");
-
-            let toml_str = fs::read_to_string(&path)?;
-            let pkg: Package = toml::from_str(&toml_str)?;
-
-            // Convert to VersionInfo
-            let mut binaries = Vec::new();
-            for (arch, bin) in pkg.targets {
-                let hash = get_or_compute_hash(client, &bin.url, hash_cache.clone()).await?;
-
-                binaries.push(IndexBinary {
-                    arch,
-                    url: bin.url,
-                    hash: crate::types::Sha256Hash::new(hash),
-                    hash_type: HashType::Sha256,
-                });
-            }
-
-            // Legacy Package always has source
-            let source_hash =
-                get_or_compute_hash(client, &pkg.source.url, hash_cache.clone()).await?;
-            let source = Some(IndexSource {
-                url: pkg.source.url,
-                hash: crate::types::Sha256Hash::new(source_hash),
-                hash_type: HashType::Sha256,
-            });
-
-            let ver_info = VersionInfo {
-                version: pkg.package.version.to_string(),
-                binaries,
-                source,
-                deps: pkg.dependencies.runtime,
-                build_deps: pkg.dependencies.build,
-                build_script: pkg.build.map(|b| b.script).unwrap_or_default(),
-                bin: pkg.install.bin,
-                hints: pkg.hints.post_install,
-                app: None,
-            };
-
-            index.upsert_release(
-                &pkg.package.name.to_string(),
-                &pkg.package.description,
-                if pkg.package.type_ == crate::package::PackageType::App {
-                    "app"
-                } else {
-                    "cli"
-                },
-                ver_info,
-            );
-        }
-    }
-
-    hash_cache.lock().await.save()?;
-    Ok(index)
 }
 
 pub async fn package_to_index_ver(
     client: &Client,
     template: &PackageTemplate,
     full_tag: &str, // Full GitHub tag for release map lookup (e.g., "gping-v1.20.1")
-    url_version: &str, // Extracted version for URL templates (e.g., "1.20.1")
+    _url_version: &str, // Extracted version for URL templates (e.g., "1.20.1")
     display_version: &str, // Normalized version for display (e.g., "1.20.1")
     hash_cache: Arc<Mutex<HashCache>>,
     releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
 ) -> Result<VersionInfo> {
     let mut binaries = Vec::new();
 
-    if let Some(ref targets) = template.assets.targets {
-        for (target, arch_str) in targets {
-            let url = template
-                .assets
-                .url_template
-                .replace("{{version}}", url_version)
-                .replace("{{target}}", arch_str);
+    let release_info = releases_map
+        .as_ref()
+        .and_then(|map| map.get(full_tag))
+        .ok_or_else(|| anyhow::anyhow!("Release {} not found in map", full_tag))?;
 
+    // Strategy 1: Explicit selectors for each arch
+    for (arch_name, selector) in &template.assets.select {
+        if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
             // Resolve hash
             let hash_res = resolve_hash(
                 client,
                 template,
+                &asset.download_url,
                 full_tag,
-                &url,
                 hash_cache.clone(),
                 releases_map.clone(),
             )
@@ -414,55 +343,54 @@ pub async fn package_to_index_ver(
 
             let hash = match hash_res {
                 Ok(h) => h,
-                Err(e) if e.to_string().contains("not found in GitHub release") => {
-                    continue;
-                }
                 Err(e) => {
-                    // Error captured in aggregated summary - no need to print per-version
+                    // Fail the whole version if we can't get a hash for a matched asset
                     return Err(e);
                 }
             };
 
-            // Parse target as Arch
-            let arch: crate::types::Arch = target
-                .parse()
-                .map_err(|e| anyhow::anyhow!("Invalid architecture '{}': {}", target, e))?;
+            let arch: crate::types::Arch = arch_name.parse().map_err(|e| {
+                anyhow::anyhow!("Invalid architecture identifier '{}': {}", arch_name, e)
+            })?;
 
             binaries.push(IndexBinary {
                 arch,
-                url,
+                url: asset.download_url.clone(),
                 hash: crate::types::Sha256Hash::new(hash),
                 hash_type: HashType::Sha256,
             });
         }
-    } else if template.assets.universal {
-        let url = template
-            .assets
-            .url_template
-            .replace("{{version}}", url_version);
-        let hash_res = resolve_hash(
-            client,
-            template,
-            full_tag,
-            &url,
-            hash_cache.clone(),
-            releases_map.clone(),
-        )
-        .await;
+    }
 
-        match hash_res {
-            Ok(hash) => {
+    // Strategy 2: Universal binary
+    if template.assets.universal {
+        // For universal, we need a way to find it.
+        // We'll use the "universal-macos" key or fallback to a heuristic if missing.
+        let selector = template.assets.select.get("universal-macos").or_else(|| {
+            // Heuristic: if there's only one selector and it's not arch-specific, maybe?
+            // Actually, let's just require an explicit selector for now or use a default one.
+            None
+        });
+
+        if let Some(selector) = selector {
+            if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
+                let hash = resolve_hash(
+                    client,
+                    template,
+                    &asset.download_url,
+                    full_tag,
+                    hash_cache.clone(),
+                    releases_map.clone(),
+                )
+                .await?;
+
                 binaries.push(IndexBinary {
                     arch: crate::types::Arch::Universal,
-                    url,
+                    url: asset.download_url.clone(),
                     hash: crate::types::Sha256Hash::new(hash),
                     hash_type: HashType::Sha256,
                 });
             }
-            Err(e) if e.to_string().contains("not found in GitHub release") => {
-                // Skip universal if not found
-            }
-            Err(e) => return Err(e),
         }
     }
 
@@ -473,6 +401,14 @@ pub async fn package_to_index_ver(
         );
     }
 
+    // Inference for 'bin'
+    let bin_list = if let Some(ref b) = template.install.bin {
+        b.clone()
+    } else {
+        // Default to package name
+        vec![template.package.name.to_string()]
+    };
+
     Ok(VersionInfo {
         version: display_version.to_string(),
         binaries,
@@ -480,17 +416,17 @@ pub async fn package_to_index_ver(
         deps: Vec::new(),
         build_deps: Vec::new(),
         build_script: String::new(),
-        bin: template.install.bin.clone(),
+        bin: bin_list,
         hints: template.hints.post_install.clone(),
-        app: None,
+        app: template.install.app.clone(),
     })
 }
 
 async fn resolve_hash(
     client: &Client,
     template: &PackageTemplate,
-    version: &str,
     asset_url: &str,
+    version: &str,
     hash_cache: Arc<Mutex<HashCache>>,
     releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
 ) -> Result<String> {
@@ -503,16 +439,12 @@ async fn resolve_hash(
 
     if let DiscoveryConfig::GitHub { .. } = template.discovery {
         let filename = crate::filename_from_url(asset_url);
-        let tag = version;
+        let _tag = version; // Renamed to _tag as it's not directly used after this point
 
         if let Some(map) = releases_map {
             if let Some(release) = map.get(version) {
-                // Check if the asset actually exists in the release
-                if !release.assets.iter().any(|a| a.name == filename) {
-                    anyhow::bail!("Asset '{}' not found in GitHub release {}", filename, tag);
-                }
-
-                if let Ok(hash) = resolve_digest(client, release, filename).await {
+                // 1. Try resolving from release (assets or body)
+                if let Ok(hash) = discovery::resolve_digest(client, release, filename).await {
                     hash_cache.lock().await.insert(
                         asset_url.to_string(),
                         hash.as_str().to_string(),
@@ -524,7 +456,8 @@ async fn resolve_hash(
         }
     }
 
-    if let Some(ref checksum_url_template) = template.checksums.url_template {
+    // 2. Try explicit checksum URL
+    if let Some(ref checksum_url_template) = template.assets.checksum_url {
         let checksum_url = checksum_url_template.replace("{{version}}", version);
         if let Ok(hash) = fetch_and_parse_checksum(client, &checksum_url, asset_url).await {
             hash_cache
@@ -535,8 +468,8 @@ async fn resolve_hash(
         }
     }
 
-    if template.checksums.skip {
-        // Fallback: Download the asset to compute the hash
+    // 3. Fallback: Download and compute if allowed
+    if template.assets.skip_checksums {
         let hash = compute_hash_from_url(client, asset_url).await?;
         hash_cache
             .lock()
@@ -546,7 +479,7 @@ async fn resolve_hash(
     }
 
     anyhow::bail!(
-        "Could not resolve checksum for {asset_url}. If this package does not provide a checksum, set [checksums] skip = true to allow downloading and computing it."
+        "Could not resolve checksum for {asset_url}. If this package does not provide a checksum, set [assets] skip_checksums = true to allow downloading and computing it."
     )
 }
 
@@ -570,19 +503,6 @@ async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
 
     let hash = format!("{:x}", hasher.finalize());
     Ok(hash)
-}
-
-async fn get_or_compute_hash(
-    _client: &Client,
-    url: &str,
-    hash_cache: Arc<Mutex<HashCache>>,
-) -> Result<String> {
-    let cache = hash_cache.lock().await;
-    if let Some((hash, _)) = cache.get(url) {
-        return Ok(hash);
-    }
-
-    anyhow::bail!("Checksum not found in cache for {url}")
 }
 
 async fn fetch_and_parse_checksum(
@@ -611,7 +531,7 @@ async fn fetch_and_parse_checksum(
 #[cfg(test)]
 mod indexer_tests {
     use super::*;
-    use crate::package::{AssetConfig, ChecksumConfig, DiscoveryConfig, InstallSpec};
+    use crate::package::{AssetConfig, DiscoveryConfig, InstallSpec};
     use sources::traits::{AssetInfo, ReleaseInfo};
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -623,13 +543,11 @@ mod indexer_tests {
         let hash_cache = Arc::new(Mutex::new(HashCache::default()));
 
         let template = PackageTemplate {
-            package: crate::package::PackageInfo {
+            package: crate::package::PackageInfoTemplate {
                 name: "test-pkg".into(),
-                version: "1.0.0".into(),
                 description: "test".to_string(),
                 homepage: "".to_string(),
                 license: "".to_string(),
-                type_: crate::package::PackageType::Cli,
             },
             discovery: DiscoveryConfig::GitHub {
                 github: "owner/repo".to_string(),
@@ -637,16 +555,20 @@ mod indexer_tests {
                 include_prereleases: false,
             },
             assets: AssetConfig {
-                url_template: "https://example.com/v{{version}}/release-{{target}}.tar.gz"
-                    .to_string(),
-                targets: Some(
-                    vec![("arm64".to_string(), "arm64".to_string())]
-                        .into_iter()
-                        .collect(),
-                ),
                 universal: false,
+                select: {
+                    let mut map = HashMap::new();
+                    map.insert(
+                        "arm64-macos".to_string(),
+                        crate::package::AssetSelector::Suffix {
+                            suffix: "arm64.tar.gz".to_string(),
+                        },
+                    );
+                    map
+                },
+                skip_checksums: false,
+                checksum_url: None,
             },
-            checksums: ChecksumConfig::default(),
             install: InstallSpec::default(),
             hints: crate::package::Hints::default(),
         };
@@ -662,8 +584,8 @@ mod indexer_tests {
                 body: String::new(),
                 prune: false,
                 assets: vec![AssetInfo {
-                    name: "release-x86_64.tar.gz".to_string(),
-                    download_url: "https://example.com/x86_64".to_string(),
+                    name: "release-arm64.tar.gz".to_string(),
+                    download_url: "https://example.com/arm64".to_string(),
                     digest: None,
                 }],
             },

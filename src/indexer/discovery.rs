@@ -1,8 +1,7 @@
-use super::sources::traits::ReleaseInfo;
-use crate::package::Package;
+use crate::indexer::sources::traits::{AssetInfo, ReleaseInfo};
+use crate::package::AssetSelector;
 use crate::types::Sha256Digest;
 use anyhow::Result;
-use std::collections::HashMap;
 
 /// Internal version type enum for parsing
 #[derive(Debug, Clone, PartialEq)]
@@ -256,29 +255,21 @@ pub fn guess_github_repo(url: &str) -> Option<String> {
     None
 }
 
-pub fn guess_url_template(url: &str, version: &str, _repo: &str) -> String {
-    url.replace(version, "{{version}}")
-}
-
-pub fn guess_targets(pkg: &Package) -> Option<HashMap<String, String>> {
-    let mut targets = HashMap::new();
-    for (arch, binary) in &pkg.targets {
-        let arch_name = arch.as_str();
-        // Deduce target string from URL
-        // Search for the arch in the filename
-        let filename = crate::filename_from_url(&binary.url);
-        if filename.contains("aarch64") {
-            targets.insert(arch_name.to_string(), "aarch64".to_string());
-        } else if filename.contains("x86_64") {
-            targets.insert(arch_name.to_string(), "x86_64".to_string());
+pub fn find_asset_by_selector<'a>(
+    assets: &'a [AssetInfo],
+    selector: &AssetSelector,
+) -> Option<&'a AssetInfo> {
+    assets.iter().find(|asset| match selector {
+        AssetSelector::Suffix { suffix } => asset.name.ends_with(suffix),
+        AssetSelector::Regex { regex } => {
+            if let Ok(re) = regex::Regex::new(regex) {
+                re.is_match(&asset.name)
+            } else {
+                false
+            }
         }
-    }
-
-    if targets.is_empty() {
-        None
-    } else {
-        Some(targets)
-    }
+        AssetSelector::Exact { name } => &asset.name == name,
+    })
 }
 
 #[cfg(test)]

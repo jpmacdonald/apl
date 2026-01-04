@@ -1,10 +1,8 @@
 [package]
 name = "hadolint"
-version = "2.14.0"
-description = "Haskell Dockerfile Linter"
+description = "Dockerfile linter"
 homepage = "https://github.com/hadolint/hadolint"
 license = ""
-type = "cli"
 
 [discovery]
 github = "hadolint/hadolint"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/hadolint/hadolint/releases/download/v{{version}}/hadolint-macos-{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "macos-arm64"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "macos-x86_64"
 
 [install]
-strategy = "link"
 bin = ["hadolint"]
 lib = []
 include = []

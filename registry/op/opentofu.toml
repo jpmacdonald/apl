@@ -1,0 +1,29 @@
+[package]
+name = "opentofu"
+description = "OpenTofu is the open-source infrastructure as code tool that lets you define, preview, and deploy cloud infrastructure"
+homepage = "https://opentofu.org"
+license = "MPL-2.0"
+
+[discovery]
+github = "opentofu/opentofu"
+tag_pattern = "v{{version}}"
+include_prereleases = false
+
+[assets]
+universal = false
+skip_checksums = false
+
+[assets.arm64-macos]
+suffix = "darwin_arm64.tar.gz"
+
+[assets.x86_64-macos]
+suffix = "darwin_amd64.tar.gz"
+
+[install]
+bin = ["tofu"]
+lib = []
+include = []
+script = ""
+
+[hints]
+post_install = ""

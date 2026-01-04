@@ -1,10 +1,8 @@
 [package]
 name = "slides"
-version = "0.9.0"
 description = "Terminal based presentation tool"
 homepage = "https://github.com/maaslalani/slides"
 license = ""
-type = "cli"
 
 [discovery]
 github = "maaslalani/slides"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/maaslalani/slides/releases/download/v{{version}}/slides_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "amd64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["slides"]
 lib = []
 include = []

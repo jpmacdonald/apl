@@ -2,7 +2,6 @@
 
 use anyhow::{Context, Result};
 use apl::package::Package;
-use apl::types::Version;
 use std::path::Path;
 
 /// Create a new package template
@@ -67,87 +66,23 @@ pub fn check(path: &Path) -> Result<()> {
     println!("  Name: {}", pkg.package.name);
     println!("  Version: {}", pkg.package.version);
 
-    if let Some(binary) = pkg.binary_for_current_arch() {
-        println!("  Binary: {} ({})", binary.url, binary.arch);
+    // Check for source since targets are gone from new schema
+    if !pkg.source.url.is_empty() {
+        println!("  Source: {}", pkg.source.url);
     } else {
-        output.warning("No binary for current architecture");
+        output.warning("No source URL defined");
     }
 
     Ok(())
 }
 
-/// Bump a package version and update hashes
-pub async fn bump(path: &Path, version: &str, url: &str) -> Result<()> {
+/// Bump a package version (mostly legacy, but keeping skeleton for now)
+pub async fn bump(path: &Path, version: &str, _url: &str) -> Result<()> {
     let output = apl::ui::Output::new();
     output.info(&format!("Bumping {} to {}...", path.display(), version));
 
-    // Download and compute hash
-    output.info("Downloading new binary to compute hash...");
-
-    let temp_dir = tempfile::tempdir()?;
-    let temp_file = temp_dir.path().join("download");
-
-    let client = reqwest::Client::new();
-    let response = client.get(url).send().await.context("Failed to download")?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("Download failed: HTTP {}", response.status());
-    }
-
-    let bytes = response.bytes().await?;
-    std::fs::write(&temp_file, &bytes)?;
-
-    // Compute hash
-    let hash = compute_file_hash(&temp_file)?;
-    output.success(&format!("Computed hash: {hash}"));
-
-    // Update package file
-    let mut pkg = apl::package::Package::from_file(path)?;
-    pkg.package.version = Version::from(version.to_string());
-
-    // Update the binary URL and hash for current arch
-    let arch = apl::types::Arch::current();
-    if let Some(binary) = pkg.targets.get_mut(&arch) {
-        binary.url = url.to_string();
-        binary.sha256 = hash.clone();
-    } else {
-        pkg.targets.insert(
-            arch,
-            apl::package::Binary {
-                arch,
-                url: url.to_string(),
-                sha256: hash.clone(),
-                format: apl::package::ArtifactFormat::Binary,
-                macos: "11.0".to_string(),
-            },
-        );
-    }
-
-    // Serialize back to TOML
-    let updated = toml::to_string_pretty(&pkg)?;
-
-    std::fs::write(path, &updated)?;
-    output.success(&format!("Successfully updated {}", path.display()));
-
+    // Handle updates via template or direct manipulation of State 2 packages
+    // For now, this is disabled until we decide on the new user-side package format.
+    output.warning("Bump command is being refactored for the Selectors Pattern.");
     Ok(())
-}
-
-/// Compute SHA256 hash of a file
-fn compute_file_hash(path: &Path) -> Result<String> {
-    use sha2::{Digest, Sha256};
-    use std::io::Read;
-
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 65536];
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..bytes_read]);
-    }
-
-    Ok(hex::encode(hasher.finalize()))
 }

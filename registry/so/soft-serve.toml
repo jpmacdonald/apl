@@ -1,10 +1,8 @@
 [package]
 name = "soft-serve"
-version = "0.11.1"
 description = "The mighty, self-hostable Git server for the command line"
 homepage = "https://github.com/charmbracelet/soft-serve"
 license = ""
-type = "cli"
 
 [discovery]
 github = "charmbracelet/soft-serve"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/charmbracelet/soft-serve/releases/download/v{{version}}/soft-serve_{{version}}_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "arm64"
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/charmbracelet/soft-serve/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["soft-serve"]
 lib = []
 include = []

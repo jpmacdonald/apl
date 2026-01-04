@@ -1,10 +1,8 @@
 [package]
 name = "trivy"
-version = "0.68.2"
 description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 homepage = "https://github.com/aquasecurity/trivy"
 license = ""
-type = "cli"
 
 [discovery]
 github = "aquasecurity/trivy"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "macOS-64bit"
-arm64 = "macOS-ARM64"
+[assets.x86_64-macos]
+suffix = "macOS-64bit.tar.gz"
 
-[checksums]
-url_template = "https://github.com/aquasecurity/trivy/releases/download/v{{version}}/trivy_{{version}}_checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.arm64-macos]
+suffix = "macOS-ARM64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["trivy"]
 lib = []
 include = []

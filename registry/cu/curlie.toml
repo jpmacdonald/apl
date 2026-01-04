@@ -1,10 +1,8 @@
 [package]
 name = "curlie"
-version = "1.8.2"
 description = "The power of curl, the ease of use of httpie"
 homepage = "https://github.com/rs/curlie"
 license = ""
-type = "cli"
 
 [discovery]
 github = "rs/curlie"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/rs/curlie/releases/download/v{{version}}/curlie_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/rs/curlie/releases/download/v{{version}}/curlie_{{version}}_checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "amd64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["curlie"]
 lib = []
 include = []

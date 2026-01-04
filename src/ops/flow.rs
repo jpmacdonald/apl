@@ -27,8 +27,8 @@ use tempfile::TempDir;
 use crate::core::index::{IndexEntry, PackageIndex, VersionInfo};
 use crate::ops::InstallError;
 use crate::package::{
-    ArtifactFormat, Binary, Dependencies, Hints, InstallSpec, InstallStrategy, Package,
-    PackageInfo, PackageType, Source,
+    ArtifactFormat, Dependencies, Hints, InstallSpec, InstallStrategy, Package, PackageInfo,
+    PackageType, Source,
 };
 use crate::types::{Arch, PackageName, Version};
 use crate::ui::Reporter;
@@ -155,17 +155,7 @@ impl UnresolvedPackage {
         let package_def =
             Package::from_file(path).map_err(|e| InstallError::Validation(e.to_string()))?;
 
-        if let Some(bottle) = package_def.binary_for_current_arch() {
-            Ok(ResolvedPackage {
-                name: package_def.package.name.clone(),
-                version: package_def.package.version.clone(),
-                artifact: ArtifactKind::Binary {
-                    url: bottle.url.clone(),
-                    hash: bottle.sha256.clone(),
-                },
-                def: package_def,
-            })
-        } else if !package_def.source.url.is_empty() {
+        if !package_def.source.url.is_empty() {
             Ok(ResolvedPackage {
                 name: package_def.package.name.clone(),
                 version: package_def.package.version.clone(),
@@ -271,21 +261,9 @@ impl UnresolvedPackage {
         entry: &IndexEntry,
         release: &VersionInfo,
         artifact: &ArtifactKind,
-        current_arch: Arch,
+        _current_arch: Arch,
     ) -> Package {
-        let mut binary_map = std::collections::HashMap::new();
-        if let ArtifactKind::Binary { url, hash } = artifact {
-            binary_map.insert(
-                current_arch,
-                Binary {
-                    url: url.clone(),
-                    sha256: hash.clone(),
-                    format: ArtifactFormat::Binary,
-                    arch: current_arch,
-                    macos: "11.0".to_string(),
-                },
-            );
-        }
+        // Binary map is no longer used in the new schema, but we still build a synthetic package.
 
         Package {
             package: PackageInfo {
@@ -295,9 +273,9 @@ impl UnresolvedPackage {
                 homepage: String::new(),
                 license: String::new(),
                 type_: if entry.type_ == "app" {
-                    PackageType::App
+                    Some(PackageType::App)
                 } else {
-                    PackageType::Cli
+                    Some(PackageType::Cli)
                 },
             },
             source: Source {
@@ -312,11 +290,8 @@ impl UnresolvedPackage {
                     String::new()
                 },
                 format: ArtifactFormat::TarGz,
-                strip_components: 1,
-                url_template: None,
-                versions: None,
+                strip_components: Some(1),
             },
-            targets: binary_map,
             dependencies: Dependencies {
                 runtime: release.deps.clone(),
                 build: release.build_deps.clone(),
@@ -324,18 +299,18 @@ impl UnresolvedPackage {
             },
             install: InstallSpec {
                 strategy: if entry.type_ == "app" {
-                    InstallStrategy::App
+                    Some(InstallStrategy::App)
                 } else {
-                    InstallStrategy::Link
+                    Some(InstallStrategy::Link)
                 },
-                bin: if release.bin.is_empty() {
+                bin: Some(if release.bin.is_empty() {
                     vec![entry.name.clone()]
                 } else {
                     release.bin.clone()
-                },
+                }),
                 lib: vec![],
                 include: vec![],
-                script: String::new(),
+                script: Some(String::new()),
                 app: release.app.clone(),
             },
             hints: Hints {
@@ -369,14 +344,29 @@ impl ResolvedPackage {
 
         let pkg_format = match &self.artifact {
             ArtifactKind::Source { .. } => self.def.source.format.clone(),
-            ArtifactKind::Binary { .. } => self
-                .def
-                .binary_for_current_arch()
-                .map(|b| b.format.clone())
-                .unwrap_or(ArtifactFormat::Binary),
+            ArtifactKind::Binary { .. } => {
+                // Infer format from URL since it's not explicitly in ArtifactKind yet
+                let url = self.artifact.url().to_lowercase();
+                if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+                    ArtifactFormat::TarGz
+                } else if url.ends_with(".zip") {
+                    ArtifactFormat::Zip
+                } else if url.ends_with(".dmg") {
+                    ArtifactFormat::Dmg
+                } else if url.ends_with(".pkg") {
+                    ArtifactFormat::Pkg
+                } else {
+                    ArtifactFormat::Binary
+                }
+            }
         };
 
-        let strategy = self.def.install.strategy.clone();
+        let strategy = self
+            .def
+            .install
+            .strategy
+            .clone()
+            .unwrap_or(InstallStrategy::Link);
         let is_dmg = (strategy == InstallStrategy::App || strategy == InstallStrategy::Pkg)
             && (pkg_format == ArtifactFormat::Dmg
                 || self.artifact.url().to_lowercase().ends_with(".dmg")
@@ -427,14 +417,14 @@ impl ResolvedPackage {
             .await?;
 
             download_or_extract_path = extract_dir;
-            if self.artifact.is_source() && self.def.source.strip_components > 0 {
+            if self.artifact.is_source() && self.def.source.strip_components.unwrap_or(0) > 0 {
                 crate::io::extract::strip_components(&download_or_extract_path)
                     .map_err(|e| InstallError::Other(e.to_string()))?;
             }
         }
 
         Ok(PreparedPackage {
-            bin_list: self.def.install.bin.clone(),
+            bin_list: self.def.install.effective_bin(&self.name),
             resolved: self,
             extracted_path: download_or_extract_path,
             temp_dir,

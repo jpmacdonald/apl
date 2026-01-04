@@ -66,9 +66,11 @@ pub struct PackageInfo {
     pub homepage: String,
     #[serde(default)]
     pub license: String,
+    /// Internal only: Used after resolution to know which installer type to use.
+    /// Not present in registry TOMLs.
     #[serde(default)]
-    #[serde(rename = "type")]
-    pub type_: PackageType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_: Option<PackageType>,
 }
 
 /// Package source
@@ -78,11 +80,7 @@ pub struct Source {
     pub sha256: String,
     pub format: ArtifactFormat,
     #[serde(default)]
-    pub strip_components: u32,
-    #[serde(default)]
-    pub url_template: Option<String>,
-    #[serde(default)]
-    pub versions: Option<Vec<String>>,
+    pub strip_components: Option<u32>,
 }
 
 /// Binary artifact (precompiled)
@@ -123,11 +121,6 @@ pub struct Dependencies {
 pub struct Package {
     pub package: PackageInfo,
     pub source: Source,
-    /// Pre-built binaries by architecture
-    #[serde(default)]
-    #[serde(alias = "bottle")] // Backwards compatibility
-    #[serde(alias = "binary")] // Backwards compatibility
-    pub targets: HashMap<Arch, Binary>,
     #[serde(default)]
     pub dependencies: Dependencies,
     #[serde(default)]
@@ -152,12 +145,12 @@ pub struct BuildSpec {
 /// Installation specification
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InstallSpec {
-    /// Installation strategy
+    /// Installation strategy (inferred from fields if missing)
     #[serde(default)]
-    pub strategy: InstallStrategy,
-    /// Files to install to bin/
+    pub strategy: Option<InstallStrategy>,
+    /// Files to install to bin/ (defaults to package name if strategy is Link)
     #[serde(default)]
-    pub bin: Vec<String>,
+    pub bin: Option<Vec<String>>,
     /// Files to install to lib/
     #[serde(default)]
     pub lib: Vec<String>,
@@ -166,10 +159,28 @@ pub struct InstallSpec {
     pub include: Vec<String>,
     /// Custom install script (shell commands)
     #[serde(default)]
-    pub script: String,
-    /// Name of the .app bundle to install (for type="app")
+    pub script: Option<String>,
+    /// Name of the .app bundle to install
     #[serde(default)]
     pub app: Option<String>,
+}
+
+impl InstallSpec {
+    pub fn effective_bin(&self, pkg_name: &str) -> Vec<String> {
+        self.bin
+            .clone()
+            .unwrap_or_else(|| vec![pkg_name.to_string()])
+    }
+
+    pub fn effective_strategy(&self) -> InstallStrategy {
+        self.strategy.clone().unwrap_or_else(|| {
+            if self.app.is_some() {
+                InstallStrategy::App
+            } else {
+                InstallStrategy::Link
+            }
+        })
+    }
 }
 
 /// Post-install hints (printed, never executed)
@@ -196,12 +207,6 @@ impl Package {
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
-
-    /// Get binary for current architecture
-    pub fn binary_for_current_arch(&self) -> Option<&Binary> {
-        let arch = crate::types::Arch::current();
-        self.targets.get(&arch)
-    }
 }
 
 impl std::str::FromStr for Package {
@@ -221,14 +226,23 @@ impl std::str::FromStr for Package {
 /// Package template for algorithmic registry (stored in registry/)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageTemplate {
-    pub package: PackageInfo,
+    pub package: PackageInfoTemplate,
     pub discovery: DiscoveryConfig,
     pub assets: AssetConfig,
-    #[serde(default)]
-    pub checksums: ChecksumConfig,
     pub install: InstallSpec,
     #[serde(default)]
     pub hints: Hints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageInfoTemplate {
+    pub name: PackageName,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub homepage: String,
+    #[serde(default)]
+    pub license: String,
 }
 
 impl PackageTemplate {
@@ -257,27 +271,41 @@ fn default_tag_pattern() -> String {
     "{{version}}".to_string()
 }
 
+/// Asset selection rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AssetSelector {
+    /// Match files ending with this string (e.g. "x86_64-apple-darwin.tar.gz")
+    Suffix { suffix: String },
+    /// Match files matching this regex
+    Regex { regex: String },
+    /// Exact filename match
+    Exact { name: String },
+}
+
 /// How to construct asset URLs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetConfig {
-    pub url_template: String,
+    /// Support for tools with a single multi-arch binary (e.g. shell scripts)
     #[serde(default)]
-    pub targets: Option<HashMap<String, String>>,
+    pub universal: bool,
+
+    /// Explicit selectors for each architecture.
+    /// Flattened so they appear directly under [assets] in TOML.
+    #[serde(flatten)]
+    pub select: HashMap<String, AssetSelector>,
+
+    /// Optional: Use if the repo doesn't provide checksums
     #[serde(default)]
-    pub universal: bool, // Single binary for all arches
+    pub skip_checksums: bool,
+
+    /// Optional: URL template for external checksum file
+    #[serde(default)]
+    pub checksum_url: Option<String>,
 }
 
-/// Checksum configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ChecksumConfig {
-    #[serde(default)]
-    pub url_template: Option<String>,
-    /// Expected hash type from vendor (usually sha256)
-    #[serde(default)]
-    pub vendor_type: Option<crate::index::HashType>,
-    #[serde(default)]
-    pub skip: bool,
-}
+/// Installation specification with optional fields for inference
+// (Removed duplicate InstallSpec definition)
 
 #[cfg(test)]
 mod tests {
@@ -296,24 +324,11 @@ url = "https://github.com/neovim/neovim/archive/v0.10.0.tar.gz"
 sha256 = "abc123def456"
 format = "tar.gz"
 
-[binary.arm64]
-url = "https://cdn.example.com/neovim-0.10.0-arm64.tar.zst"
-sha256 = "binary123"
-format = "tar.zst"
-macos = "14.0"
-
-[binary.x86_64]
-url = "https://cdn.example.com/neovim-0.10.0-x86_64.tar.zst"
-sha256 = "binary456"
-format = "tar.zst"
-macos = "12.0"
-
 [dependencies]
 runtime = ["libuv", "msgpack", "tree-sitter"]
 build = ["cmake", "ninja"]
 
 [install]
-strategy = "link"
 bin = ["nvim"]
 "#;
 
@@ -325,14 +340,6 @@ bin = ["nvim"]
         assert_eq!(pkg.package.version, Version::from("0.10.0".to_string()));
         assert_eq!(pkg.source.sha256, "abc123def456");
         assert_eq!(pkg.dependencies.runtime.len(), 3);
-        assert_eq!(pkg.targets.len(), 2);
-    }
-
-    #[test]
-    fn test_binary_for_arch() {
-        let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
-        let binary = pkg.binary_for_current_arch();
-        assert!(binary.is_some());
     }
 
     #[test]
@@ -371,28 +378,5 @@ sha256 = "abc123"
         assert_eq!(pkg.package.name, reparsed.package.name);
         assert_eq!(pkg.package.version, reparsed.package.version);
         assert_eq!(pkg.source.sha256, reparsed.source.sha256);
-    }
-
-    #[test]
-    fn test_binary_for_nonexistent_arch() {
-        // Create a package with only x86_64 binary
-        let pkg_with_one_arch = r#"
-[package]
-name = "test"
-version = "1.0"
-
-[source]
-url = "https://example.com"
-sha256 = "abc"
-format = "tar.gz"
-
-[binary.x86_64]
-url = "https://example.com/x86.tar.gz"
-sha256 = "xyz"
-format = "tar.gz"
-"#;
-        let pkg = Package::parse(pkg_with_one_arch).unwrap();
-        // This test will pass on x86 and fail on arm64 - documenting behavior
-        let _binary = pkg.binary_for_current_arch();
     }
 }

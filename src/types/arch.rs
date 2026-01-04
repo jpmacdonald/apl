@@ -59,9 +59,9 @@ impl std::str::FromStr for Arch {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "arm64" | "aarch64" => Ok(Self::Arm64),
-            "x86_64" | "amd64" => Ok(Self::X86_64),
-            "universal" => Ok(Self::Universal),
+            "arm64" | "aarch64" | "arm64-macos" => Ok(Self::Arm64),
+            "x86_64" | "amd64" | "x86_64-macos" => Ok(Self::X86_64),
+            "universal" | "universal-macos" => Ok(Self::Universal),
             _ => Err(format!("Unknown architecture: {s}")),
         }
     }

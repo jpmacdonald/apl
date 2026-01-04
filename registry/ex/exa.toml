@@ -1,10 +1,8 @@
 [package]
 name = "exa"
-version = "0.10.1"
-description = "A modern replacement for 'ls'"
+description = "A modern replacement for ls"
 homepage = "https://github.com/ogham/exa"
 license = ""
-type = "cli"
 
 [discovery]
 github = "ogham/exa"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/ogham/exa/releases/download/v{{version}}/exa-macos-{{target}}-v{{version}}.zip"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64"
-arm64 = "x86_64"
+[assets.arm64-macos]
+regex = "exa-macos.*\\.zip"
 
-[checksums]
-vendor_type = "sha256"
-skip = true
+[assets.x86_64-macos]
+regex = "exa-macos.*\\.zip"
 
 [install]
-strategy = "link"
 bin = ["exa"]
 lib = []
 include = []

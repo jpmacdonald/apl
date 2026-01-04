@@ -1,10 +1,8 @@
 [package]
 name = "sd"
-version = "1.0.0"
 description = "Intuitive find & replace CLI (sed alternative)"
 homepage = "https://github.com/chmln/sd"
 license = ""
-type = "cli"
 
 [discovery]
 github = "chmln/sd"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/chmln/sd/releases/download/v{{version}}/sd-v{{version}}-{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "x86_64-apple-darwin"
-arm64 = "aarch64-apple-darwin"
+[assets.x86_64-macos]
+suffix = "x86_64-apple-darwin.tar.gz"
 
-[checksums]
-vendor_type = "sha256"
-skip = true
+[assets.arm64-macos]
+suffix = "aarch64-apple-darwin.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["sd"]
 lib = []
 include = []

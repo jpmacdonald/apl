@@ -1,32 +1,25 @@
 [package]
 name = "jq"
-version = "1.8.1"
 description = "Command-line JSON processor"
 homepage = "https://github.com/jqlang/jq"
 license = ""
-type = "cli"
 
 [discovery]
 github = "jqlang/jq"
 tag_pattern = "jq-{{version}}"
-
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/jqlang/jq/releases/download/jq-{{version}}/jq-macos-{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-x86_64 = "amd64"
-arm64 = "arm64"
+[assets.arm64-macos]
+suffix = "macos-arm64"
 
-[checksums]
-url_template = "https://github.com/jqlang/jq/releases/download/jq-{{version}}/sha256sum.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "macos-amd64"
 
 [install]
-strategy = "link"
 bin = ["jq"]
 lib = []
 include = []

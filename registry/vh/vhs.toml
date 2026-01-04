@@ -1,10 +1,8 @@
 [package]
 name = "vhs"
-version = "0.10.0"
 description = "Your CLI home video recorder"
 homepage = "https://github.com/charmbracelet/vhs"
 license = ""
-type = "cli"
 
 [discovery]
 github = "charmbracelet/vhs"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/charmbracelet/vhs/releases/download/v{{version}}/vhs_{{version}}_Darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "x86_64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/charmbracelet/vhs/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["vhs"]
 lib = []
 include = []

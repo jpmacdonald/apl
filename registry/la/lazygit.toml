@@ -1,10 +1,8 @@
 [package]
 name = "lazygit"
-version = "0.57.0"
 description = "Simple terminal UI for git commands"
 homepage = "https://github.com/jesseduffield/lazygit"
 license = ""
-type = "cli"
 
 [discovery]
 github = "jesseduffield/lazygit"
@@ -12,20 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/jesseduffield/lazygit/releases/download/v{{version}}/lazygit_{{version}}_darwin_{{target}}.tar.gz"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "x86_64"
+[assets.arm64-macos]
+suffix = "arm64.tar.gz"
 
-[checksums]
-url_template = "https://github.com/jesseduffield/lazygit/releases/download/v{{version}}/checksums.txt"
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "x86_64.tar.gz"
 
 [install]
-strategy = "link"
 bin = ["lazygit"]
 lib = []
 include = []

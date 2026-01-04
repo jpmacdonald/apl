@@ -1,10 +1,8 @@
 [package]
 name = "osv-scanner"
-version = "2.3.1"
-description = "Vulnerability scanner for open-source dependencies"
+description = "Vulnerability scanner written in Go"
 homepage = "https://github.com/google/osv-scanner"
 license = ""
-type = "cli"
 
 [discovery]
 github = "google/osv-scanner"
@@ -12,19 +10,16 @@ tag_pattern = "v{{version}}"
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/google/osv-scanner/releases/download/v{{version}}/osv-scanner_darwin_{{target}}"
 universal = false
+skip_checksums = false
 
-[assets.targets]
-arm64 = "arm64"
-x86_64 = "amd64"
+[assets.arm64-macos]
+suffix = "darwin_arm64"
 
-[checksums]
-vendor_type = "sha256"
-skip = false
+[assets.x86_64-macos]
+suffix = "darwin_amd64"
 
 [install]
-strategy = "link"
 bin = ["osv-scanner"]
 lib = []
 include = []
