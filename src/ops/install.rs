@@ -24,7 +24,7 @@ use crate::package::{InstallStrategy, Package, PackageInfo};
 use crate::types::PackageName;
 use crate::types::Version;
 use crate::ui::Reporter;
-use crate::{apl_home, bin_path, ops::InstallError, store_path};
+use crate::{apl_home, bin_path, ops::InstallError, ops::link_binaries, store_path};
 
 use crate::ops::flow::{PreparedPackage, UnresolvedPackage};
 
@@ -85,7 +85,7 @@ async fn resolve_and_filter_packages<R: Reporter>(
         })?;
 
         let mut resolved = crate::core::resolver::resolve_dependencies(&index_names, index_ref)
-            .map_err(|e| InstallError::Other(e.to_string()))?;
+            .map_err(|e| InstallError::context("Dependency resolution failed", e))?;
 
         resolved.sort();
         resolved.dedup();
@@ -177,7 +177,7 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
 ) -> Result<(), InstallError> {
     use crate::core::index::PackageIndex;
 
-    let db = DbHandle::spawn().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
+    let db = DbHandle::spawn().map_err(|e| InstallError::context("Failed to open database", e))?;
 
     let index_path = apl_home().join("index.bin");
     let index = if index_path.exists() {
@@ -291,9 +291,8 @@ pub async fn install_packages<R: Reporter + Clone + 'static>(
 
                 reporter.installing(&pkg_name, &pkg_version);
 
-                let info = tokio::task::spawn_blocking(move || perform_local_install(prepared))
-                    .await
-                    .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
+                let installer = get_installer(&prepared);
+                let info = installer.install(prepared).await?;
 
                 let result = commit_installation(&db_task_clone, &info, &reporter).await;
 
@@ -347,10 +346,82 @@ struct InstallInfo {
     size_bytes: u64,
 }
 
-/// Moves artifacts to the final store location and updates symlinks.
-fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
-    let package_def = &pkg.resolved.def;
-    let strategy = package_def.install.strategy.clone();
+#[async_trait::async_trait]
+trait Installer {
+    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError>;
+}
+
+struct BinInstaller;
+struct AppInstaller;
+struct PkgInstaller;
+struct ScriptInstaller;
+
+#[async_trait::async_trait]
+impl Installer for BinInstaller {
+    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+        let sha256_copy = pkg.resolved.artifact.hash().to_string();
+        let (package_def, pkg_store_path, size_bytes) =
+            tokio::task::spawn_blocking(move || install_to_store_only(pkg))
+                .await
+                .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
+
+        relink_macho_files(&pkg_store_path);
+        let files_to_record = link_binaries(&package_def.install.bin, &pkg_store_path)?;
+
+        Ok(InstallInfo {
+            package: package_def.package,
+            sha256: sha256_copy,
+            files_to_record,
+            size_bytes,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl Installer for AppInstaller {
+    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+        match tokio::task::spawn_blocking(move || perform_app_install(pkg)).await {
+            Ok(res) => res,
+            Err(e) => Err(InstallError::Other(format!("Task panic: {e}"))),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Installer for PkgInstaller {
+    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+        match tokio::task::spawn_blocking(move || perform_app_install(pkg)).await {
+            Ok(res) => res,
+            Err(e) => Err(InstallError::Other(format!("Task panic: {e}"))),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Installer for ScriptInstaller {
+    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+        let sha256_copy = pkg.resolved.artifact.hash().to_string();
+        let (package_def, pkg_store_path, size_bytes) =
+            tokio::task::spawn_blocking(move || install_to_store_only(pkg))
+                .await
+                .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
+
+        relink_macho_files(&pkg_store_path);
+        let files_to_record = link_binaries(&package_def.install.bin, &pkg_store_path)?;
+
+        Ok(InstallInfo {
+            package: package_def.package,
+            sha256: sha256_copy,
+            files_to_record,
+            size_bytes,
+        })
+    }
+}
+
+// Shared link_binaries used from crate::ops
+
+fn get_installer(pkg: &PreparedPackage) -> Box<dyn Installer + Send + Sync> {
+    let strategy = pkg.resolved.def.install.strategy.clone();
 
     let is_app = strategy == InstallStrategy::App
         || pkg
@@ -359,80 +430,15 @@ fn perform_local_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallErr
             .to_lowercase()
             .ends_with(".dmg");
 
-    if is_app || strategy == InstallStrategy::Pkg {
-        return perform_app_install(pkg);
-    }
-
-    let sha256_copy = pkg.resolved.artifact.hash().to_string(); // Preserve hash
-    let (package_def, pkg_store_path, size_bytes) = install_to_store_only(pkg)?;
-
-    relink_macho_files(&pkg_store_path);
-
-    let mut files_to_record = Vec::new();
-    let mut bins_to_link = Vec::new();
-
-    if !package_def.install.bin.is_empty() {
-        for bin_spec in &package_def.install.bin {
-            if bin_spec.contains(':') {
-                let parts: Vec<&str> = bin_spec.split(':').collect();
-                bins_to_link.push((parts[0].to_string(), parts[1].to_string()));
-            } else {
-                let target = Path::new(bin_spec)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| bin_spec.clone());
-                bins_to_link.push((bin_spec.clone(), target));
-            }
-        }
+    if is_app {
+        Box::new(AppInstaller)
+    } else if strategy == InstallStrategy::Pkg {
+        Box::new(PkgInstaller)
+    } else if pkg.resolved.artifact.is_source() {
+        Box::new(ScriptInstaller)
     } else {
-        let bin_dir = pkg_store_path.join("bin");
-        let search_dir = if bin_dir.exists() {
-            &bin_dir
-        } else {
-            &pkg_store_path
-        };
-        if let Ok(entries) = std::fs::read_dir(search_dir) {
-            for entry in entries.flatten() {
-                if let Ok(meta) = entry.metadata() {
-                    #[cfg(unix)]
-                    if meta.is_file() {
-                        use std::os::unix::fs::PermissionsExt;
-                        if meta.permissions().mode() & 0o111 != 0 {
-                            let name = entry.file_name().to_string_lossy().to_string();
-                            bins_to_link.push((name.clone(), name));
-                        }
-                    }
-                }
-            }
-        }
+        Box::new(BinInstaller)
     }
-
-    for (src_rel, target_name) in bins_to_link {
-        let src_path = pkg_store_path.join(&src_rel);
-        if !src_path.exists() {
-            continue;
-        }
-
-        let target = bin_path().join(target_name);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        if target.exists() || target.is_symlink() {
-            std::fs::remove_file(&target).ok();
-        }
-
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&src_path, &target).map_err(InstallError::Io)?;
-
-        files_to_record.push((target.to_string_lossy().to_string(), "SYMLINK".to_string()));
-    }
-
-    Ok(InstallInfo {
-        package: package_def.package.clone(),
-        sha256: sha256_copy,
-        files_to_record,
-        size_bytes,
-    })
 }
 
 /// Publicly exposed helper for 'apl shell': moves package to store but does NOT link globally.
@@ -609,7 +615,7 @@ async fn commit_installation(
         info.files_to_record.clone(),
     )
     .await
-    .map_err(|e| InstallError::Other(e.to_string()))?;
+    .map_err(|e| InstallError::context("Failed to record installation in DB", e))?;
 
     db.add_history(
         info.package.name.to_string(),
@@ -619,7 +625,7 @@ async fn commit_installation(
         true,
     )
     .await
-    .map_err(|e| InstallError::Other(e.to_string()))
+    .map_err(|e| InstallError::context("Failed to add history entry", e))
 }
 
 pub fn perform_ux_checks(names: &[PackageName], reporter: &impl Reporter) {

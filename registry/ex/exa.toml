@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "ogham/exa"
 tag_pattern = "v{{version}}"
-semver_only = true
 include_prereleases = false
 
 [assets]

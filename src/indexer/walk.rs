@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 /// Walk a registry directory and return all TOML template files.
 ///
 /// Handles both sharded (registry/ab/abc.toml) and flat (registry/abc.toml) layouts.
-pub fn walk_registry_toml_files(registry_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut toml_files = Vec::new();
-
+pub fn walk_registry_toml_files(registry_dir: &Path) -> Result<Box<dyn Iterator<Item = PathBuf>>> {
     // Check for sharded layout (directories like "1", "aa", "ab", etc.)
     let is_sharded = registry_dir.join("1").exists()
         || fs::read_dir(registry_dir)?.filter_map(|e| e.ok()).any(|e| {
@@ -18,35 +16,22 @@ pub fn walk_registry_toml_files(registry_dir: &Path) -> Result<Vec<PathBuf>> {
         });
 
     if is_sharded {
-        // Sharded layout: registry/{prefix}/{name}.toml
-        for entry in fs::read_dir(registry_dir)? {
-            let entry = entry?;
-            let prefix_path = entry.path();
-
-            if !prefix_path.is_dir() {
-                continue;
-            }
-
-            for sub_entry in fs::read_dir(&prefix_path)? {
-                let sub_entry = sub_entry?;
-                let path = sub_entry.path();
-                if path.extension().is_some_and(|e| e == "toml") {
-                    toml_files.push(path);
-                }
-            }
-        }
+        let registry_dir = registry_dir.to_path_buf();
+        let iter = fs::read_dir(registry_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .flat_map(|prefix_entry| fs::read_dir(prefix_entry.path()).ok().into_iter().flatten())
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|ext| ext == "toml"));
+        Ok(Box::new(iter))
     } else {
-        // Flat layout: registry/{name}.toml
-        for entry in fs::read_dir(registry_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().is_some_and(|e| e == "toml") {
-                toml_files.push(path);
-            }
-        }
+        let iter = fs::read_dir(registry_dir)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|ext| ext == "toml"));
+        Ok(Box::new(iter))
     }
-
-    Ok(toml_files)
 }
 
 /// Compute the sharded registry path for a package name.

@@ -30,7 +30,7 @@ pub enum PackageType {
 }
 
 /// Artifact format
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ArtifactFormat {
     #[serde(rename = "tar.gz")]
@@ -245,43 +245,16 @@ pub enum DiscoveryConfig {
         github: String, // "owner/repo"
         #[serde(default = "default_tag_pattern")]
         tag_pattern: String, // "{{version}}" or "v{{version}}"
-        #[serde(default = "default_true")]
-        semver_only: bool,
         #[serde(default)]
         include_prereleases: bool,
-        #[serde(default)]
-        version_type: VersionType,
     },
     Manual {
         manual: Vec<String>, // List of versions
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum VersionType {
-    #[default]
-    SemVer,
-    Sequential,
-    Snapshot,
-    CalVer,
-}
-
-impl DiscoveryConfig {
-    pub fn tag_pattern(&self) -> &str {
-        match self {
-            Self::GitHub { tag_pattern, .. } => tag_pattern,
-            Self::Manual { .. } => "{{version}}",
-        }
-    }
-}
-
 fn default_tag_pattern() -> String {
     "{{version}}".to_string()
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// How to construct asset URLs

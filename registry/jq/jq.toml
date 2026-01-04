@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "jqlang/jq"
 tag_pattern = "jq-{{version}}"
-semver_only = true
 
 include_prereleases = false
 

@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "golangci/golangci-lint"
 tag_pattern = "v{{version}}"
-semver_only = true
 include_prereleases = false
 
 [assets]

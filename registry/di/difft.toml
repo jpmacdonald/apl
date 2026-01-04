@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "Wilfred/difftastic"
 tag_pattern = "{{version}}"
-semver_only = true
 include_prereleases = false
 
 [assets]

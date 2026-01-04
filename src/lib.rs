@@ -30,7 +30,6 @@ pub mod core;
 pub mod indexer;
 pub mod io;
 pub mod ops;
-pub mod registry;
 pub mod store;
 pub mod types;
 pub mod ui;

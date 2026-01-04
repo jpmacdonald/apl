@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "helix-editor/helix"
 tag_pattern = "{{version}}"
-semver_only = false
 include_prereleases = false
 
 [assets]

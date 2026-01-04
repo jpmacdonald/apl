@@ -1,5 +1,6 @@
 pub mod discovery;
 pub mod hashing;
+pub mod sources;
 pub mod walk;
 
 pub use discovery::*;
@@ -16,7 +17,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::registry::github::GithubRelease;
+use sources::traits::{ListingSource, ReleaseInfo};
 
 /// Generate index from algorithmic registry templates
 pub async fn generate_index_from_registry(
@@ -29,12 +30,11 @@ pub async fn generate_index_from_registry(
 
     let toml_files = walk_registry_toml_files(registry_dir)?;
 
-    // Pass 1: Collect templates and identify GitHub repos to fetch
+    // Pass 1: Collect templates and identify sources to fetch
     let mut templates = Vec::new();
-    let mut repos_to_fetch: Vec<crate::types::RepoKey> = Vec::new();
-    // Map of (owner, repo) -> Vec<PackageName>
-    // Multiple packages might share a repo (rare but possible), or we just need to know which package needs which repo
-    let mut pkg_repo_map: HashMap<String, crate::types::RepoKey> = HashMap::new();
+    let mut sources: Vec<Box<dyn ListingSource>> = Vec::new();
+    // Map of package_name -> source_key
+    let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
     for template_path in toml_files {
         let toml_str = match fs::read_to_string(&template_path) {
@@ -61,220 +61,206 @@ pub async fn generate_index_from_registry(
 
         if let DiscoveryConfig::GitHub { github, .. } = &template.discovery {
             if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
-                let key = crate::types::RepoKey::from_github_repo(&repo_ref);
-                if !repos_to_fetch.contains(&key) {
-                    repos_to_fetch.push(key.clone());
+                let source = sources::github::GitHubSource {
+                    owner: repo_ref.owner().to_string(),
+                    repo: repo_ref.name().to_string(),
+                };
+                let key = source.key();
+
+                // Check if we already have this source
+                if !pkg_source_map.values().any(|k| k == &key) {
+                    sources.push(Box::new(source));
                 }
-                pkg_repo_map.insert(template.package.name.to_string(), key);
+                pkg_source_map.insert(template.package.name.to_string(), key);
             }
         }
 
         templates.push((template_path, template));
     }
 
-    // Pass 2: Batch fetch metadata from GitHub via GraphQL
-    // We only have a token in the client if the user provided one, but GraphQL requires it.
-    // If no token, we might fail or fall back (but for now we assume token exists for indexer).
-    let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
-    let mut master_release_cache: HashMap<crate::types::RepoKey, Vec<GithubRelease>> =
-        HashMap::new();
+    // Pass 2: Fetch metadata from sources (in parallel)
+    let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
 
-    if !repos_to_fetch.is_empty() {
-        println!(
-            "   Fetching metadata for {} repositories (in batches)...",
-            repos_to_fetch.len()
-        );
+    if !sources.is_empty() {
+        println!("   Fetching metadata from {} sources...", sources.len());
 
-        for chunk in repos_to_fetch.chunks(10) {
-            match crate::registry::graphql::fetch_batch_releases(client, &token, chunk).await {
-                Ok(batch_results) => {
-                    for (key, releases) in &batch_results {
-                        println!(
-                            "     ✓ Fetched {} releases for {}/{}",
-                            releases.len(),
-                            key.owner,
-                            key.repo
-                        );
-                    }
-                    master_release_cache.extend(batch_results);
+        use futures::stream::{self, StreamExt};
+
+        let fetch_results: Vec<_> = stream::iter(sources)
+            .map(|source| {
+                let client = client.clone();
+                async move {
+                    let key = source.key();
+                    let result = source.fetch_releases(&client).await;
+                    (key, result)
+                }
+            })
+            .buffer_unordered(50) // Concurrent source fetches
+            .collect()
+            .await;
+
+        for (key, result) in fetch_results {
+            match result {
+                Ok(releases) => {
+                    println!("     ✓ Fetched {} releases from {}", releases.len(), key);
+                    master_release_cache.insert(key, releases);
                 }
                 Err(e) => {
-                    eprintln!("   ⚠ Batch fetch failed: {}", e);
-                    // We continue, so individual packages will fail gracefully downstream if data is missing
+                    eprintln!("   ⚠ Fetch failed for {}: {}", key, e);
                 }
             }
         }
     }
 
-    // Pass 3: Process each package using cached metadata
-    for (_template_path, template) in templates {
-        let pkg_name = template.package.name.to_string();
+    // Pass 3: Process each package using cached metadata (in parallel)
+    use futures::stream::{self, StreamExt};
+    let pkg_source_map = Arc::new(pkg_source_map);
+    let master_release_cache = Arc::new(master_release_cache);
 
-        // Discover versions using the master cache or manual config
-        // Returns Vec<(full_tag, extracted_version, normalized_version)> for GitHub, or just versions for Manual
-        let (versions, releases_map): (
-            Vec<(String, String, String)>,
-            Option<Arc<HashMap<String, GithubRelease>>>,
-        ) = match &template.discovery {
-            DiscoveryConfig::GitHub {
-                tag_pattern,
-                semver_only,
-                include_prereleases,
-                ..
-            } => {
-                // Look up in master cache
-                let releases = if let Some(key) = pkg_repo_map.get(&pkg_name) {
-                    master_release_cache.get(key).cloned().unwrap_or_default()
-                } else {
-                    Vec::new()
+    let results_stream = stream::iter(templates)
+        .map(|(_template_path, template)| {
+            let client = client.clone();
+            let hash_cache = hash_cache.clone();
+            let pkg_source_map_clone = pkg_source_map.clone();
+            let master_release_cache_clone = master_release_cache.clone();
+
+            async move {
+                let pkg_name = template.package.name.to_string();
+
+                // Discover versions using the master cache or manual config
+                let (versions, releases_map): (
+                    Vec<(String, String, String)>,
+                    Option<Arc<HashMap<String, ReleaseInfo>>>,
+                ) = match &template.discovery {
+                    DiscoveryConfig::GitHub {
+                        tag_pattern,
+                        include_prereleases,
+                        ..
+                    } => {
+                        let releases = if let Some(key) = pkg_source_map_clone.get(&pkg_name) {
+                            master_release_cache_clone
+                                .get(key)
+                                .cloned()
+                                .unwrap_or_default()
+                        } else {
+                            Vec::new()
+                        };
+
+                        let sorted_releases = releases;
+
+                        let mut versions = Vec::new();
+                        let mut map = HashMap::new();
+
+                        for release in sorted_releases {
+                            map.insert(release.tag_name.clone(), release.clone());
+
+                            if !include_prereleases && release.prerelease {
+                                continue;
+                            }
+
+                            let extracted =
+                                extract_version_from_tag(&release.tag_name, tag_pattern);
+
+                            if let Some(normalized) = auto_parse_version(&extracted) {
+                                versions.push((release.tag_name.clone(), extracted, normalized));
+                            }
+                        }
+
+                        (versions, Some(Arc::new(map)))
+                    }
+                    DiscoveryConfig::Manual { manual } => {
+                        let tuples = manual
+                            .iter()
+                            .map(|v| (v.clone(), v.clone(), v.clone()))
+                            .collect();
+                        (tuples, None)
+                    }
                 };
 
-                let mut versions: Vec<(String, String, String)> = Vec::new();
-                let mut map = HashMap::new();
-
-                for release in releases {
-                    map.insert(release.tag_name.clone(), release.clone());
-
-                    if !include_prereleases && release.prerelease {
-                        continue;
-                    }
-
-                    let extracted = extract_version_from_tag(&release.tag_name, tag_pattern);
-
-                    // Auto-detect version type and parse
-                    if let Some(normalized) = auto_parse_version(&extracted) {
-                        // Legacy compatibility for semver_only flag
-                        if *semver_only && semver::Version::parse(&normalized).is_err() {
-                            continue;
-                        }
-                        // Store (full_tag, extracted_version, normalized_version)
-                        versions.push((release.tag_name.clone(), extracted, normalized));
-                    }
-                }
-
-                (versions, Some(Arc::new(map)))
-            }
-            DiscoveryConfig::Manual { manual } => {
-                // For manual versions, the tag, extracted, and normalized are all the same
-                let tuples: Vec<(String, String, String)> = manual
-                    .iter()
-                    .map(|v| (v.clone(), v.clone(), v.clone()))
-                    .collect();
-                (tuples, None)
-            }
-        };
-
-        // If versions is empty, verify if it was a fetch error or just zero versions
-        if versions.is_empty() {
-            eprintln!("   ✗ {} (no versions found)", pkg_name);
-            // Determine if we should count this as an error or just a skip
-            continue;
-        }
-
-        // Hydrate each version in parallel
-        use futures::stream::{self, StreamExt};
-
-        let versions_stream = stream::iter(versions)
-            .map(|(full_tag, extracted, normalized)| {
-                let client = client.clone();
-                let template_clone = template.clone();
-                let hash_cache_clone = hash_cache.clone();
-                let releases_map_clone = releases_map.clone();
-                let display_ver = normalized.clone();
-                let url_ver = extracted.clone();
-                let tag_for_lookup = full_tag.clone();
-                async move {
-                    let res = package_to_index_ver(
-                        &client,
-                        &template_clone,
-                        &tag_for_lookup, // full tag for release map lookup
-                        &url_ver,        // extracted version for URL templates
-                        &display_ver,    // normalized version for display
-                        hash_cache_clone,
-                        releases_map_clone,
-                    )
-                    .await;
-                    (display_ver, res)
-                }
-            })
-            .buffer_unordered(20); // Concurrency limit
-
-        let results: Vec<(String, Result<VersionInfo>)> = versions_stream.collect().await;
-
-        // Group failures by error type for cleaner reporting
-        let mut hash_failures: Vec<String> = Vec::new();
-        let mut asset_failures: Vec<String> = Vec::new();
-        let mut other_failures: Vec<(String, String)> = Vec::new(); // (version, error)
-        let total = results.len();
-        let mut processed = 0;
-
-        for (ver_str, res) in results {
-            match res {
-                Ok(ver_info) => {
-                    index.upsert_release(
-                        &template.package.name.to_string(),
-                        &template.package.description,
-                        if template.package.type_ == crate::package::PackageType::App {
-                            "app"
-                        } else {
-                            "cli"
-                        },
-                        ver_info,
+                if versions.is_empty() {
+                    return (
+                        template.clone(),
+                        Vec::new(),
+                        vec![anyhow::anyhow!("no versions found")],
                     );
-                    processed += 1;
                 }
-                Err(e) => {
-                    // Categorize errors for aggregated reporting
-                    let err_str = e.to_string();
-                    if err_str.contains("checksum") || err_str.contains("hash") {
-                        hash_failures.push(ver_str);
-                    } else if err_str.contains("No supported binaries") || err_str.contains("asset")
-                    {
-                        asset_failures.push(ver_str);
-                    } else {
-                        other_failures.push((ver_str, err_str));
+
+                // Process versions in parallel (nested stream)
+                let versions_stream = stream::iter(versions)
+                    .map(|(full_tag, extracted, normalized)| {
+                        let client = client.clone();
+                        let template_clone = template.clone();
+                        let hash_cache_clone = hash_cache.clone();
+                        let releases_map_clone = releases_map.clone();
+                        let display_ver = normalized.clone();
+                        let url_ver = extracted.clone();
+                        let tag_for_lookup = full_tag.clone();
+                        async move {
+                            let res = package_to_index_ver(
+                                &client,
+                                &template_clone,
+                                &tag_for_lookup,
+                                &url_ver,
+                                &display_ver,
+                                hash_cache_clone,
+                                releases_map_clone,
+                            )
+                            .await;
+                            (display_ver, res)
+                        }
+                    })
+                    .buffer_unordered(10); // Concurrent versions per package
+
+                let version_results: Vec<(String, Result<VersionInfo>)> =
+                    versions_stream.collect().await;
+
+                let mut v_infos = Vec::new();
+                let mut errors = Vec::new();
+
+                for (_ver, res) in version_results {
+                    match res {
+                        Ok(info) => v_infos.push(info),
+                        Err(e) => errors.push(e),
                     }
                 }
+
+                (template, v_infos, errors)
             }
+        })
+        .buffer_unordered(20); // Concurrent packages
+
+    let final_results = results_stream.collect::<Vec<_>>().await;
+
+    for (template, v_infos, errors) in final_results {
+        let pkg_name = template.package.name.to_string();
+        let total_versions = v_infos.len() + errors.len();
+
+        for ver_info in v_infos {
+            index.upsert_release(
+                &pkg_name,
+                &template.package.description,
+                if template.package.type_ == crate::package::PackageType::App {
+                    "app"
+                } else {
+                    "cli"
+                },
+                ver_info,
+            );
         }
 
-        // Calculate total skipped
-        let skipped_count = hash_failures.len() + asset_failures.len() + other_failures.len();
-
-        // Print single-line summary for this package
-        if processed == 0 && total > 0 {
-            eprintln!("   ✗ {} (0/{} versions)", pkg_name, total);
-            // Print the primary failure reason indented
-            if !hash_failures.is_empty() {
-                eprintln!(
-                    "     └─ hash resolution failed: {}",
-                    hash_failures.join(", ")
+        if !errors.is_empty() {
+            if index.packages.iter().any(|e| e.name == pkg_name) {
+                println!(
+                    "   ⚠ {} (partial success: {}/{} versions)",
+                    pkg_name,
+                    total_versions - errors.len(),
+                    total_versions
                 );
-            }
-            if !asset_failures.is_empty() {
-                eprintln!(
-                    "     └─ no macOS asset found: {}",
-                    asset_failures.join(", ")
-                );
-            }
-            if !other_failures.is_empty() {
-                // Just show the first unique error type
-                eprintln!("     └─ {}", other_failures[0].1);
-            }
-        } else if skipped_count > 0 {
-            println!(
-                "   ⚠ {} ({} versions, {} skipped)",
-                pkg_name, processed, skipped_count
-            );
-            // Show skip reasons for partial success too
-            if !hash_failures.is_empty() {
-                println!("     └─ hash: {}", hash_failures.join(", "));
-            }
-            if !asset_failures.is_empty() {
-                println!("     └─ no asset: {}", asset_failures.join(", "));
+            } else {
+                eprintln!("   ✗ {} failed: {}", pkg_name, errors[0]);
             }
         } else {
-            println!("   ✓ {} ({} versions)", pkg_name, processed);
+            println!("   ✓ {} ({} versions)", pkg_name, total_versions);
         }
     }
 
@@ -347,7 +333,11 @@ pub async fn generate_index_from_dir(
             index.upsert_release(
                 &pkg.package.name.to_string(),
                 &pkg.package.description,
-                "cli",
+                if pkg.package.type_ == crate::package::PackageType::App {
+                    "app"
+                } else {
+                    "cli"
+                },
                 ver_info,
             );
         }
@@ -364,7 +354,7 @@ pub async fn package_to_index_ver(
     url_version: &str, // Extracted version for URL templates (e.g., "1.20.1")
     display_version: &str, // Normalized version for display (e.g., "1.20.1")
     hash_cache: Arc<Mutex<HashCache>>,
-    releases_map: Option<Arc<HashMap<String, GithubRelease>>>,
+    releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
 ) -> Result<VersionInfo> {
     let mut binaries = Vec::new();
 
@@ -467,7 +457,7 @@ async fn resolve_hash(
     version: &str,
     asset_url: &str,
     hash_cache: Arc<Mutex<HashCache>>,
-    releases_map: Option<Arc<HashMap<String, GithubRelease>>>,
+    releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
 ) -> Result<String> {
     {
         let cache = hash_cache.lock().await;
@@ -487,7 +477,7 @@ async fn resolve_hash(
                     anyhow::bail!("Asset '{}' not found in GitHub release {}", filename, tag);
                 }
 
-                if let Ok(hash) = resolve_digest_from_github(client, release, filename).await {
+                if let Ok(hash) = resolve_digest(client, release, filename).await {
                     hash_cache.lock().await.insert(
                         asset_url.to_string(),
                         hash.as_str().to_string(),
@@ -497,19 +487,6 @@ async fn resolve_hash(
                 }
             }
         }
-
-        // Fallback or if map prevents lookup (though we should have the map)
-        // Actually, if we have the map and didn't find the release, resolving blindly via API will also fail (404)
-        // But the old logic called get_github_asset_digest which internally fetched releases.
-        // We have refactored get_github_asset_digest to resolve_digest_from_github which takes a RELEASE.
-        // So we CANNOT call the old function anymore.
-        // If map is None (should not happen for GitHub), we might be stuck?
-        // But we fetched releases logic above.
-
-        // If we failed to find it in map, maybe we should error early?
-        // For now, if we don't have a release, we can't digest.
-        // Unless we keep the old function? I replaced it.
-        // So we MUST find it in the map.
     }
 
     if let Some(ref checksum_url_template) = template.checksums.url_template {
@@ -605,7 +582,7 @@ async fn fetch_and_parse_checksum(
 mod indexer_tests {
     use super::*;
     use crate::package::{AssetConfig, ChecksumConfig, DiscoveryConfig, InstallSpec};
-    use crate::registry::github::{GithubAsset, GithubRelease};
+    use sources::traits::{AssetInfo, ReleaseInfo};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -627,9 +604,7 @@ mod indexer_tests {
             discovery: DiscoveryConfig::GitHub {
                 github: "owner/repo".to_string(),
                 tag_pattern: "v{{version}}".to_string(),
-                semver_only: true,
                 include_prereleases: false,
-                version_type: Default::default(),
             },
             assets: AssetConfig {
                 url_template: "https://example.com/v{{version}}/release-{{target}}.tar.gz"
@@ -651,17 +626,16 @@ mod indexer_tests {
         let mut map = HashMap::new();
         map.insert(
             "v1.0.0".to_string(),
-            GithubRelease {
-                id: 1,
+            ReleaseInfo {
                 tag_name: "v1.0.0".to_string(),
-                assets: vec![GithubAsset {
-                    name: "release-x86_64.tar.gz".to_string(),
-                    browser_download_url: "https://example.com/x86_64".to_string(),
-                    digest: None,
-                }],
-                draft: false,
                 prerelease: false,
                 body: String::new(),
+                prune: false,
+                assets: vec![AssetInfo {
+                    name: "release-x86_64.tar.gz".to_string(),
+                    download_url: "https://example.com/x86_64".to_string(),
+                    digest: None,
+                }],
             },
         );
 

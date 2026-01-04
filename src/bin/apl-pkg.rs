@@ -1,9 +1,9 @@
 use anyhow::Result;
+use apl::indexer::sources::github::{self, build_client};
 use apl::package::{
     ArtifactFormat, Binary, Dependencies, Hints, InstallSpec, Package, PackageInfo, PackageType,
     Source,
 };
-use apl::registry::{build_github_client, github};
 use apl::types::{Arch, PackageName, Version};
 use clap::{Parser, Subcommand};
 use sha2::Digest;
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let token = std::env::var("GITHUB_TOKEN").ok();
-    let client = build_github_client(token.as_deref())?;
+    let client = build_client(token.as_deref())?;
 
     let registry_dir = cli.registry;
     let index_path = std::env::current_dir()?.join("index.bin");
@@ -297,9 +297,7 @@ async fn cli_migrate(packages_dir: &Path, registry_dir: &Path) -> Result<()> {
                     discovery: DiscoveryConfig::GitHub {
                         github: repo.clone(),
                         tag_pattern,
-                        semver_only: true,
                         include_prereleases: false,
-                        version_type: Default::default(),
                     },
                     assets: AssetConfig {
                         url_template: apl::indexer::guess_url_template(

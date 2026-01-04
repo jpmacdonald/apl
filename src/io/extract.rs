@@ -10,6 +10,8 @@ use thiserror::Error;
 use zip::ZipArchive;
 use zstd::stream::Decoder as ZstdDecoder;
 
+use crate::package::ArtifactFormat;
+
 #[derive(Error, Debug)]
 pub enum ExtractError {
     #[error("IO error: {0}")]
@@ -167,33 +169,24 @@ pub fn extract_zip(
 }
 
 /// Detect archive format from file extension
-pub fn detect_format(path: &Path) -> ArchiveFormat {
+pub fn detect_format(path: &Path) -> ArtifactFormat {
     let path_str = path.to_string_lossy().to_lowercase();
 
     if path_str.ends_with(".tar.zst") || path_str.ends_with(".tzst") {
-        ArchiveFormat::TarZst
+        ArtifactFormat::TarZst
     } else if path_str.ends_with(".tar.gz") || path_str.ends_with(".tgz") {
-        ArchiveFormat::TarGz
+        ArtifactFormat::TarGz
     } else if path_str.ends_with(".tar") {
-        ArchiveFormat::Tar
+        ArtifactFormat::Tar
     } else if path_str.ends_with(".zip") {
-        ArchiveFormat::Zip
+        ArtifactFormat::Zip
     } else if path_str.ends_with(".pkg") {
-        ArchiveFormat::Pkg
+        ArtifactFormat::Pkg
+    } else if path_str.ends_with(".dmg") {
+        ArtifactFormat::Dmg
     } else {
-        ArchiveFormat::RawBinary
+        ArtifactFormat::Binary
     }
-}
-
-/// Supported archive formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArchiveFormat {
-    TarZst,
-    TarGz,
-    Tar,
-    Zip,
-    Pkg,
-    RawBinary,
 }
 
 /// Extract an archive, auto-detecting format
@@ -202,16 +195,16 @@ pub fn extract_auto(
     dest_dir: &Path,
 ) -> Result<Vec<ExtractedFile>, ExtractError> {
     match detect_format(archive_path) {
-        ArchiveFormat::TarZst => extract_tar_zst(archive_path, dest_dir),
-        ArchiveFormat::TarGz => extract_tar_gz(archive_path, dest_dir),
-        ArchiveFormat::Tar => {
+        ArtifactFormat::TarZst => extract_tar_zst(archive_path, dest_dir),
+        ArtifactFormat::TarGz => extract_tar_gz(archive_path, dest_dir),
+        ArtifactFormat::Tar => {
             let file = File::open(archive_path)?;
             extract_tar(BufReader::new(file), dest_dir)
         }
-        ArchiveFormat::Zip => extract_zip(archive_path, dest_dir),
-        ArchiveFormat::Pkg => extract_pkg(archive_path, dest_dir),
-        ArchiveFormat::RawBinary => {
-            // For raw binaries, just copy the file
+        ArtifactFormat::Zip => extract_zip(archive_path, dest_dir),
+        ArtifactFormat::Pkg => extract_pkg(archive_path, dest_dir),
+        ArtifactFormat::Binary | ArtifactFormat::Dmg => {
+            // For raw binaries and DMGs, just copy the file
             fs::create_dir_all(dest_dir)?;
             let filename = archive_path
                 .file_name()
@@ -385,11 +378,14 @@ mod tests {
     fn test_detect_format() {
         assert_eq!(
             detect_format(Path::new("foo.tar.zst")),
-            ArchiveFormat::TarZst
+            ArtifactFormat::TarZst
         );
-        assert_eq!(detect_format(Path::new("foo.tar.gz")), ArchiveFormat::TarGz);
-        assert_eq!(detect_format(Path::new("foo.tgz")), ArchiveFormat::TarGz);
-        assert_eq!(detect_format(Path::new("foo")), ArchiveFormat::RawBinary);
+        assert_eq!(
+            detect_format(Path::new("foo.tar.gz")),
+            ArtifactFormat::TarGz
+        );
+        assert_eq!(detect_format(Path::new("foo.tgz")), ArtifactFormat::TarGz);
+        assert_eq!(detect_format(Path::new("foo")), ArtifactFormat::Binary);
     }
 
     #[test]
@@ -409,22 +405,25 @@ mod tests {
     fn test_detect_format_case_insensitive() {
         assert_eq!(
             detect_format(Path::new("FOO.TAR.ZST")),
-            ArchiveFormat::TarZst
+            ArtifactFormat::TarZst
         );
-        assert_eq!(detect_format(Path::new("bar.TAR.GZ")), ArchiveFormat::TarGz);
-        assert_eq!(detect_format(Path::new("BAZ.ZIP")), ArchiveFormat::Zip);
+        assert_eq!(
+            detect_format(Path::new("bar.TAR.GZ")),
+            ArtifactFormat::TarGz
+        );
+        assert_eq!(detect_format(Path::new("BAZ.ZIP")), ArtifactFormat::Zip);
     }
 
     #[test]
     fn test_detect_format_tar() {
-        assert_eq!(detect_format(Path::new("archive.tar")), ArchiveFormat::Tar);
+        assert_eq!(detect_format(Path::new("archive.tar")), ArtifactFormat::Tar);
     }
 
     #[test]
     fn test_detect_format_tzst() {
         assert_eq!(
             detect_format(Path::new("archive.tzst")),
-            ArchiveFormat::TarZst
+            ArtifactFormat::TarZst
         );
     }
 
@@ -477,7 +476,7 @@ mod tests {
     fn test_detect_format_pkg() {
         assert_eq!(
             detect_format(Path::new("installer.pkg")),
-            ArchiveFormat::Pkg
+            ArtifactFormat::Pkg
         );
     }
 }

@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "ajeetdsouza/zoxide"
 tag_pattern = "v{{version}}"
-semver_only = true
 include_prereleases = false
 
 [assets]

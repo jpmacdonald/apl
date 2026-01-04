@@ -1,4 +1,4 @@
-use crate::registry::github::{GithubAsset, GithubRelease};
+use super::{GithubAsset, GithubRelease};
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

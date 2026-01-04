@@ -9,7 +9,6 @@ type = "cli"
 [discovery]
 github = "cli/cli"
 tag_pattern = "v{{version}}"
-semver_only = true
 include_prereleases = false
 
 [assets]

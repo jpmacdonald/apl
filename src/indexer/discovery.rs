@@ -1,12 +1,21 @@
-use crate::package::{DiscoveryConfig, Package, VersionType};
-use crate::registry::github;
+use super::sources::traits::ReleaseInfo;
+use crate::package::Package;
 use crate::types::Sha256Digest;
 use anyhow::Result;
 use std::collections::HashMap;
 
-pub async fn resolve_digest_from_github(
+/// Internal version type enum for parsing
+#[derive(Debug, Clone, PartialEq)]
+enum VersionType {
+    SemVer,
+    Sequential,
+    Snapshot,
+    CalVer,
+}
+
+pub async fn resolve_digest(
     client: &reqwest::Client,
-    release: &github::GithubRelease,
+    release: &ReleaseInfo,
     asset_filename: &str,
 ) -> Result<Sha256Digest> {
     // Priority 1: Check if the asset itself has a digest field (already validated at deserialization)
@@ -25,7 +34,7 @@ pub async fn resolve_digest_from_github(
             || name.contains("shasums")
             || name.ends_with(".intoto.jsonl")
         {
-            let download_url = &asset.browser_download_url;
+            let download_url = &asset.download_url;
             if !download_url.is_empty() {
                 // Try to fetch and parse this checksum file
                 let resp = client.get(download_url).send().await?;
@@ -127,51 +136,6 @@ fn find_hash_in_parts(parts: &[&str], asset_filename: &str) -> Option<String> {
     None
 }
 
-pub async fn discover_versions(
-    client: &reqwest::Client,
-    discovery: &DiscoveryConfig,
-) -> Result<Vec<String>> {
-    match discovery {
-        DiscoveryConfig::GitHub {
-            github,
-            tag_pattern,
-            semver_only,
-            include_prereleases,
-            version_type,
-        } => {
-            let repo_ref = crate::types::GitHubRepo::new(github).map_err(|e| anyhow::anyhow!(e))?;
-            let owner = repo_ref.owner();
-            let repo = repo_ref.name();
-
-            let releases = github::fetch_all_releases(client, owner, repo).await?;
-
-            let mut versions = Vec::new();
-            for release in releases {
-                if !include_prereleases && release.prerelease {
-                    continue;
-                }
-
-                let raw_tag = extract_version_from_tag(&release.tag_name, tag_pattern);
-
-                // Apply type-based parsing and normalization
-                if let Some(normalized) = parse_version_by_type(&raw_tag, version_type) {
-                    // Legacy compatibility: check semver_only flag if type is SemVer
-                    if *version_type == VersionType::SemVer
-                        && *semver_only
-                        && semver::Version::parse(&normalized).is_err()
-                    {
-                        continue;
-                    }
-                    versions.push(normalized);
-                }
-            }
-
-            Ok(versions)
-        }
-        DiscoveryConfig::Manual { manual } => Ok(manual.clone()),
-    }
-}
-
 pub fn extract_version_from_tag(tag: &str, pattern: &str) -> String {
     if pattern == "{{version}}" {
         tag.strip_prefix('v').unwrap_or(tag).to_string()
@@ -180,7 +144,7 @@ pub fn extract_version_from_tag(tag: &str, pattern: &str) -> String {
     }
 }
 
-pub fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
+fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
     match v_type {
         VersionType::SemVer => {
             // Basic valid check
@@ -322,7 +286,6 @@ pub fn guess_targets(pkg: &Package) -> Option<HashMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::package::VersionType;
 
     #[test]
     fn test_scan_text_for_hash() {

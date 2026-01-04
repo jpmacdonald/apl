@@ -1,5 +1,10 @@
+use super::traits::{AssetInfo, ListingSource, ReleaseInfo};
 use anyhow::Result;
+use async_trait::async_trait;
+use reqwest::header;
 use serde::Deserialize;
+
+pub mod graphql;
 use sha2::Digest;
 
 use crate::types::Sha256Digest;
@@ -462,4 +467,58 @@ pub async fn fetch_latest_release(
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("No releases found for {owner}/{repo}"))
+}
+
+/// Build an authenticated GitHub client
+pub fn build_client(token: Option<&str>) -> Result<reqwest::Client> {
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::USER_AGENT,
+        header::HeaderValue::from_static("apl-package-manager"),
+    );
+
+    if let Some(t) = token {
+        headers.insert(
+            header::AUTHORIZATION,
+            header::HeaderValue::from_str(&format!("Bearer {t}"))?,
+        );
+    }
+
+    Ok(reqwest::Client::builder()
+        .default_headers(headers)
+        .build()?)
+}
+
+pub struct GitHubSource {
+    pub owner: String,
+    pub repo: String,
+}
+
+#[async_trait]
+impl ListingSource for GitHubSource {
+    fn key(&self) -> String {
+        format!("github:{}/{}", self.owner, self.repo)
+    }
+
+    async fn fetch_releases(&self, client: &reqwest::Client) -> Result<Vec<ReleaseInfo>> {
+        let releases = fetch_all_releases(client, &self.owner, &self.repo).await?;
+        Ok(releases
+            .into_iter()
+            .map(|r| ReleaseInfo {
+                tag_name: r.tag_name,
+                prerelease: r.prerelease,
+                body: r.body,
+                prune: false,
+                assets: r
+                    .assets
+                    .into_iter()
+                    .map(|a| AssetInfo {
+                        name: a.name,
+                        download_url: a.browser_download_url,
+                        digest: a.digest,
+                    })
+                    .collect(),
+            })
+            .collect())
+    }
 }

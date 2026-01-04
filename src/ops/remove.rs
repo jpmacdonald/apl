@@ -14,7 +14,7 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
     force: bool,
     dry_run: bool,
 ) -> Result<(), InstallError> {
-    let db = DbHandle::spawn().map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
+    let db = DbHandle::spawn().map_err(|e| InstallError::context("Failed to open database", e))?;
 
     let mut task_list: Vec<(PackageName, Option<Version>)> = Vec::new();
 
@@ -49,7 +49,7 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
         let files = db
             .get_package_files(pkg.to_string())
             .await
-            .map_err(|e| InstallError::Io(std::io::Error::other(e)))?;
+            .map_err(|e| InstallError::context("Failed to get tracked files from DB", e))?;
 
         if files.is_empty() && !force {
             reporter.failed(&pkg, &version, "no files tracked");

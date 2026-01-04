@@ -404,10 +404,10 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     let stream_reader = StreamReader::new(tokio_stream::wrappers::ReceiverStream::new(rx));
 
     let format = crate::io::extract::detect_format(Path::new(url));
-    let is_gzip = format == crate::io::extract::ArchiveFormat::TarGz;
-    let is_zip = format == crate::io::extract::ArchiveFormat::Zip;
-    let is_pkg = format == crate::io::extract::ArchiveFormat::Pkg;
-    let is_raw = format == crate::io::extract::ArchiveFormat::RawBinary;
+    let is_gzip = format == crate::package::ArtifactFormat::TarGz;
+    let is_zip = format == crate::package::ArtifactFormat::Zip;
+    let is_pkg = format == crate::package::ArtifactFormat::Pkg;
+    let is_raw = format == crate::package::ArtifactFormat::Binary;
 
     // Fast path for non-tar formats (zip/raw/pkg)
     if is_zip || is_raw || is_pkg {
@@ -484,7 +484,7 @@ struct SimpleDownloadOptions<'a, R: Reporter> {
     expected_hash: &'a str,
     cache_dest: &'a Path,
     extract_dest: &'a Path,
-    format: crate::io::extract::ArchiveFormat,
+    format: crate::package::ArtifactFormat,
 }
 
 async fn run_simple_download<R: Reporter>(
@@ -515,10 +515,10 @@ async fn run_simple_download<R: Reporter>(
         });
     }
 
-    use crate::io::extract::ArchiveFormat;
+    use crate::package::ArtifactFormat;
 
     match opts.format {
-        ArchiveFormat::Zip => {
+        ArtifactFormat::Zip => {
             let cache_path = opts.cache_dest.to_path_buf();
             let extract_path = opts.extract_dest.to_path_buf();
             tokio::task::spawn_blocking(move || {
@@ -530,7 +530,7 @@ async fn run_simple_download<R: Reporter>(
             .await
             .map_err(std::io::Error::other)??;
         }
-        ArchiveFormat::RawBinary => {
+        ArtifactFormat::Binary => {
             let dest_path = opts.extract_dest.join(opts.pkg_name.as_str());
             tokio::fs::copy(opts.cache_dest, &dest_path).await?;
 
@@ -542,7 +542,7 @@ async fn run_simple_download<R: Reporter>(
                 tokio::fs::set_permissions(&dest_path, perms).await?;
             }
         }
-        ArchiveFormat::Pkg => {
+        ArtifactFormat::Pkg => {
             let cache_path = opts.cache_dest.to_path_buf();
             let extract_path = opts.extract_dest.to_path_buf();
             tokio::task::spawn_blocking(move || {
