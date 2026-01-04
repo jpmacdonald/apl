@@ -80,6 +80,7 @@ mod tests {
             description: "".into(),
             homepage: "https://example.com".into(),
             type_: "cli".into(),
+            bins: vec![],
             releases: vec![VersionInfo {
                 version: "1.0.0".into(),
                 binaries: vec![],

@@ -2,6 +2,9 @@ use crate::indexer::sources::traits::{AssetInfo, ReleaseInfo};
 use crate::package::AssetSelector;
 use crate::types::Sha256Digest;
 use anyhow::Result;
+use std::sync::OnceLock;
+
+static SHA256_REGEX: OnceLock<regex::Regex> = OnceLock::new();
 
 /// Internal version type enum for parsing
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +27,9 @@ pub async fn resolve_digest(
         }
     }
 
+    let re = SHA256_REGEX
+        .get_or_init(|| regex::Regex::new(r#"[0-9a-fA-F]{64}"#).expect("Invalid regex"));
+
     // Look for checksum assets in the release
     for asset in &release.assets {
         let name = asset.name.to_lowercase();
@@ -40,7 +46,7 @@ pub async fn resolve_digest(
                     let text = resp.text().await?;
                     // Search for the target filename in the text
                     if let Some(hash) = scan_text_for_hash(&text, asset_filename) {
-                        return Ok(Sha256Digest::new(hash)?);
+                        return Sha256Digest::new(hash);
                     }
 
                     // Specific handling for JSON/JSONL (e.g. SLSA provenance)
@@ -48,7 +54,6 @@ pub async fn resolve_digest(
                         // Look for the target filename and a 64-char hex string nearby
                         if text.contains(asset_filename) {
                             // Try to find a sha256 pattern
-                            let re = regex::Regex::new(r#"[0-9a-fA-F]{64}"#)?;
                             if let Some(m) = re.find(&text) {
                                 // This is a bit greedy but works for single-subject JSONs
                                 return Sha256Digest::new(m.as_str().to_string());
@@ -160,7 +165,7 @@ fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
                 .collect();
 
             if let Ok(major) = num_str.parse::<u64>() {
-                Some(format!("{}.0.0", major))
+                Some(format!("{major}.0.0"))
             } else {
                 None
             }
@@ -171,7 +176,7 @@ fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
             // "20240101-123456-hash" -> "20240101.123456.0"
 
             // Strategy: Split by common separators, take all leading parts that contain numbers.
-            let parts: Vec<&str> = tag.split(|c| c == '.' || c == '-' || c == '_').collect();
+            let parts: Vec<&str> = tag.split(['.', '-', '_']).collect();
             let nums: Vec<u64> = parts
                 .iter()
                 .map(|s| {

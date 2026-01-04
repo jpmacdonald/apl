@@ -32,7 +32,9 @@ pub async fn generate_index_from_registry(
 
     // Pass 1: Collect templates and identify sources to fetch
     let mut templates = Vec::new();
-    let mut sources: Vec<Box<dyn ListingSource>> = Vec::new();
+    let other_sources: Vec<Box<dyn ListingSource>> = Vec::new();
+    let mut github_repos: Vec<crate::types::RepoKey> = Vec::new();
+
     // Map of package_name -> source_key
     let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
@@ -54,44 +56,90 @@ pub async fn generate_index_from_registry(
         };
 
         if let Some(filter) = package_filter {
-            if template.package.name.to_string() != filter {
+            if template.package.name != filter {
                 continue;
             }
         }
 
-        if let DiscoveryConfig::GitHub { github, .. } = &template.discovery {
-            if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
-                let source = sources::github::GitHubSource {
-                    owner: repo_ref.owner().to_string(),
-                    repo: repo_ref.name().to_string(),
-                };
-                let key = source.key();
+        match &template.discovery {
+            DiscoveryConfig::GitHub { github, .. } => {
+                if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
+                    let key = crate::types::RepoKey {
+                        owner: repo_ref.owner().to_string(),
+                        repo: repo_ref.name().to_string(),
+                    };
+                    let source_key = format!("github:{}/{}", key.owner, key.repo);
 
-                // Check if we already have this source
-                if !pkg_source_map.values().any(|k| k == &key) {
-                    sources.push(Box::new(source));
+                    if !pkg_source_map.values().any(|k| k == &source_key) {
+                        github_repos.push(key);
+                    }
+                    pkg_source_map.insert(template.package.name.to_string(), source_key);
                 }
-                pkg_source_map.insert(template.package.name.to_string(), key);
             }
+            // Add other source types here in the future
+            _ => {}
         }
 
         templates.push((template_path, template));
     }
 
     println!(
-        "   🔍 Discovered {} unique sources in registry/",
-        sources.len()
+        "   🔍 Discovered {} unique GitHub sources in registry/",
+        github_repos.len()
     );
 
-    // Pass 2: Fetch metadata from sources (in parallel)
+    // Pass 2: Fetch metadata from sources (in parallel / batched)
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
 
-    if !sources.is_empty() {
-        println!("   Fetching Metadata...");
+    if !github_repos.is_empty() {
+        println!("   Fetching Metadata (Batched GraphQL)...");
+        let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
 
+        // Chunk into groups of 8 (GraphQL complexity limit protection)
+        // 50 repos * 50 releases * assets was too heavy causing 502s.
+        for chunk in github_repos.chunks(8) {
+            match sources::github::graphql::fetch_batch_releases(client, &token, chunk).await {
+                Ok(batch_results) => {
+                    for (key, releases) in batch_results {
+                        // Convert GithubRelease to generic ReleaseInfo
+                        let generic_releases: Vec<ReleaseInfo> = releases
+                            .into_iter()
+                            .map(|r| ReleaseInfo {
+                                tag_name: r.tag_name,
+                                prune: r.draft || r.prerelease,
+                                body: r.body.unwrap_or_default(),
+                                prerelease: r.prerelease,
+                                assets: r
+                                    .assets
+                                    .into_iter()
+                                    .map(|a| sources::traits::AssetInfo {
+                                        name: a.name,
+                                        download_url: a.browser_download_url,
+                                        digest: a
+                                            .digest
+                                            .and_then(|d| crate::types::Sha256Digest::new(d).ok()),
+                                    })
+                                    .collect(),
+                            })
+                            .collect();
+
+                        let source_key = format!("github:{}/{}", key.owner, key.repo);
+                        master_release_cache.insert(source_key, generic_releases);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("   ✗ Batch fetch failed: {e}");
+                    // Fallback to individual fetches? Or just fail?
+                    // For now, fail hard on the batch to warn user.
+                }
+            }
+        }
+    }
+
+    // Process non-GitHub sources if any (future proofing)
+    if !other_sources.is_empty() {
         use futures::stream::{self, StreamExt};
-
-        let mut fetch_stream = stream::iter(sources)
+        let mut fetch_stream = stream::iter(other_sources)
             .map(|source| {
                 let client = client.clone();
                 async move {
@@ -100,7 +148,7 @@ pub async fn generate_index_from_registry(
                     (key, result)
                 }
             })
-            .buffer_unordered(50); // Concurrent source fetches
+            .buffer_unordered(15);
 
         while let Some((key, result)) = fetch_stream.next().await {
             match result {
@@ -108,7 +156,7 @@ pub async fn generate_index_from_registry(
                     master_release_cache.insert(key, releases);
                 }
                 Err(e) => {
-                    eprintln!("   ✗ {} ({})", key, e);
+                    eprintln!("   ✗ {key} ({e})");
                 }
             }
         }
@@ -131,6 +179,7 @@ pub async fn generate_index_from_registry(
                 let pkg_name = template.package.name.to_string();
 
                 // Discover versions using the master cache or manual config
+                #[allow(clippy::type_complexity)]
                 let (versions, releases_map): (
                     Vec<(String, String, String)>,
                     Option<Arc<HashMap<String, ReleaseInfo>>>,
@@ -250,27 +299,23 @@ pub async fn generate_index_from_registry(
         }
 
         // Align package name at 20 characters
-        let name_col = format!("{:<20}", pkg_name);
-
+        let name_col = format!("{pkg_name:<20}");
         if !errors.is_empty() {
             let error_msg = errors[0].to_string();
             let human_err = humanize_error(&error_msg);
 
             if success_count > 0 {
                 partial += 1;
-                println!(
-                    "   ⚠ {} {}/{} versions",
-                    name_col, success_count, total_versions
-                );
-                println!("     └ {}", human_err);
+                println!("   ⚠ {name_col} {success_count}/{total_versions} versions");
+                println!("     └ {human_err}");
             } else {
                 failed += 1;
-                eprintln!("   ✗ {} 0/{} versions", name_col, total_versions);
-                eprintln!("     └ {}", human_err);
+                eprintln!("   ✗ {name_col} 0/{total_versions} versions");
+                eprintln!("     └ {human_err}");
             }
         } else {
             fully_indexed += 1;
-            println!("   ✓ {} {} versions indexed", name_col, total_versions);
+            println!("   ✓ {name_col} {total_versions} versions indexed");
         }
     }
 
@@ -282,14 +327,12 @@ pub async fn generate_index_from_registry(
 
     println!();
     println!(
-        "   Done: {}KB index.bin ({} total releases)",
-        size_bytes / 1024,
-        total_releases
+        "   Done: {}KB index.bin ({total_releases} total releases)",
+        size_bytes / 1024
     );
     println!();
     println!(
-        "   {} packages: {} fully indexed, {} partial, {} failed",
-        total_packages, fully_indexed, partial, failed
+        "   {total_packages} packages: {fully_indexed} fully indexed, {partial} partial, {failed} failed"
     );
 
     Ok(index)
@@ -325,7 +368,7 @@ pub async fn package_to_index_ver(
     let release_info = releases_map
         .as_ref()
         .and_then(|map| map.get(full_tag))
-        .ok_or_else(|| anyhow::anyhow!("Release {} not found in map", full_tag))?;
+        .ok_or_else(|| anyhow::anyhow!("Release {full_tag} not found in map"))?;
 
     // Strategy 1: Explicit selectors for each arch
     for (arch_name, selector) in &template.assets.select {
@@ -350,7 +393,7 @@ pub async fn package_to_index_ver(
             };
 
             let arch: crate::types::Arch = arch_name.parse().map_err(|e| {
-                anyhow::anyhow!("Invalid architecture identifier '{}': {}", arch_name, e)
+                anyhow::anyhow!("Invalid architecture identifier '{arch_name}': {e}")
             })?;
 
             binaries.push(IndexBinary {
@@ -366,11 +409,7 @@ pub async fn package_to_index_ver(
     if template.assets.universal {
         // For universal, we need a way to find it.
         // We'll use the "universal-macos" key or fallback to a heuristic if missing.
-        let selector = template.assets.select.get("universal-macos").or_else(|| {
-            // Heuristic: if there's only one selector and it's not arch-specific, maybe?
-            // Actually, let's just require an explicit selector for now or use a default one.
-            None
-        });
+        let selector = template.assets.select.get("universal-macos").or(None);
 
         if let Some(selector) = selector {
             if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
@@ -395,10 +434,7 @@ pub async fn package_to_index_ver(
     }
 
     if binaries.is_empty() {
-        anyhow::bail!(
-            "No supported binaries found for version {}",
-            display_version
-        );
+        anyhow::bail!("No supported binaries found for version {display_version}");
     }
 
     // Inference for 'bin'
@@ -584,8 +620,8 @@ mod indexer_tests {
                 body: String::new(),
                 prune: false,
                 assets: vec![AssetInfo {
-                    name: "release-arm64.tar.gz".to_string(),
-                    download_url: "https://example.com/arm64".to_string(),
+                    name: "release-x86_64.tar.gz".to_string(),
+                    download_url: "https://example.com/x86_64".to_string(),
                     digest: None,
                 }],
             },

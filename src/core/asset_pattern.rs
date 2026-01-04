@@ -94,17 +94,17 @@ impl AssetPattern {
 
         // Arch check (Equivalent: Arm64/Aarch64, X86_64/Amd64)
         let arch_match = match (self.arch, other.arch) {
-            (Some(a1), Some(a2)) => match (a1, a2) {
+            (Some(a1), Some(a2)) => matches!(
+                (a1, a2),
                 (ArchVariant::Arm64, ArchVariant::Arm64)
-                | (ArchVariant::Arm64, ArchVariant::Aarch64)
-                | (ArchVariant::Aarch64, ArchVariant::Arm64)
-                | (ArchVariant::Aarch64, ArchVariant::Aarch64) => true,
-                (ArchVariant::X86_64, ArchVariant::X86_64)
-                | (ArchVariant::X86_64, ArchVariant::Amd64)
-                | (ArchVariant::Amd64, ArchVariant::X86_64)
-                | (ArchVariant::Amd64, ArchVariant::Amd64) => true,
-                _ => false,
-            },
+                    | (ArchVariant::Arm64, ArchVariant::Aarch64)
+                    | (ArchVariant::Aarch64, ArchVariant::Arm64)
+                    | (ArchVariant::Aarch64, ArchVariant::Aarch64)
+                    | (ArchVariant::X86_64, ArchVariant::X86_64)
+                    | (ArchVariant::X86_64, ArchVariant::Amd64)
+                    | (ArchVariant::Amd64, ArchVariant::X86_64)
+                    | (ArchVariant::Amd64, ArchVariant::Amd64)
+            ),
             (None, None) => true,
             _ => false,
         };
@@ -118,11 +118,10 @@ impl AssetPattern {
                     // Accept zip vs tar.gz fallback if specifically requested or common
                     // For now, let's keep it strict or allow common swaps?
                     // User mentioned ".zip vs .tar.gz" in older releases.
-                    match (e1, e2) {
-                        (ExtVariant::Zip, ExtVariant::TarGz)
-                        | (ExtVariant::TarGz, ExtVariant::Zip) => true,
-                        _ => false,
-                    }
+                    matches!(
+                        (e1, e2),
+                        (ExtVariant::Zip, ExtVariant::TarGz) | (ExtVariant::TarGz, ExtVariant::Zip)
+                    )
                 }
             }
             (None, None) => true,

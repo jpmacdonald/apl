@@ -325,18 +325,24 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
     }
 
     // Final integrity check
-    let mut hasher = Sha256::new();
-    let mut file = std::fs::File::open(dest)?;
-    let mut buffer = [0u8; 8192];
-    use std::io::Read;
-    loop {
-        let count = file.read(&mut buffer)?;
-        if count == 0 {
-            break;
+    // Final integrity check in a blocking thread
+    let dest_clone = dest.to_path_buf();
+    let actual_hash = tokio::task::spawn_blocking(move || {
+        let mut hasher = Sha256::new();
+        let mut file = std::fs::File::open(&dest_clone)?;
+        let mut buffer = [0u8; 8192];
+        use std::io::Read;
+        loop {
+            let count = file.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
         }
-        hasher.update(&buffer[..count]);
-    }
-    let actual_hash = hex::encode(hasher.finalize());
+        Ok::<String, std::io::Error>(hex::encode(hasher.finalize()))
+    })
+    .await
+    .map_err(std::io::Error::other)??;
 
     if actual_hash != expected_hash {
         if let (Some(rep), Some(name), Some(ver)) = (reporter, pkg_name, version) {

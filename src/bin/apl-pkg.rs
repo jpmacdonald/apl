@@ -182,8 +182,8 @@ async fn main() -> Result<()> {
                             }
                             Err(e2) => {
                                 eprintln!("   {}: Invalid TOML structure:", path.display());
-                                eprintln!("      As Template: {}", e1);
-                                eprintln!("      As Legacy:   {}", e2);
+                                eprintln!("      As Template: {e1}");
+                                eprintln!("      As Legacy:   {e2}");
                                 errors += 1;
                             }
                         }
@@ -273,7 +273,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
                 suffix: asset
                     .name
                     .split('-')
-                    .last()
+                    .next_back()
                     .unwrap_or(&asset.name)
                     .to_string(),
             },
@@ -287,7 +287,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
                 suffix: asset
                     .name
                     .split('-')
-                    .last()
+                    .next_back()
                     .unwrap_or(&asset.name)
                     .to_string(),
             },

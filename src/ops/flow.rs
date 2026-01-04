@@ -343,7 +343,7 @@ impl ResolvedPackage {
             .map_err(InstallError::Io)?;
 
         let pkg_format = match &self.artifact {
-            ArtifactKind::Source { .. } => self.def.source.format.clone(),
+            ArtifactKind::Source { .. } => self.def.source.format,
             ArtifactKind::Binary { .. } => {
                 // Infer format from URL since it's not explicitly in ArtifactKind yet
                 let url = self.artifact.url().to_lowercase();

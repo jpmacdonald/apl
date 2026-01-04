@@ -74,17 +74,13 @@ impl Sha256Digest {
         // Validate: exactly 64 hex chars
         if hex.len() != 64 {
             anyhow::bail!(
-                "Invalid SHA256 digest: expected 64 hex characters, got {} in '{}'",
+                "Invalid SHA256 digest: expected 64 hex characters, got {} in '{s}'",
                 hex.len(),
-                s
             );
         }
 
         if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            anyhow::bail!(
-                "Invalid SHA256 digest: contains non-hex characters in '{}'",
-                s
-            );
+            anyhow::bail!("Invalid SHA256 digest: contains non-hex characters in '{s}'");
         }
 
         Ok(Self(hex.to_lowercase()))

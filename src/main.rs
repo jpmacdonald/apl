@@ -117,8 +117,8 @@ enum Commands {
         shell: clap_complete::Shell,
     },
     /// Update apl itself to the latest version
-    #[command(name = "update-self")]
-    UpdateSelf,
+    #[command(name = "self-update")]
+    SelfUpdate,
     /// Run a package without installing it globally
     Run {
         /// Package name
@@ -212,7 +212,7 @@ async fn main() -> Result<()> {
             cmd::completions::completions(shell);
             Ok(())
         }
-        Commands::UpdateSelf => cmd::update_self::self_update(dry_run).await,
+        Commands::SelfUpdate => cmd::self_update::self_update(dry_run).await,
         Commands::Run { package, args } => {
             println!("Preparing to run '{package}'...");
             cmd::run::run(&package, &args, dry_run).await

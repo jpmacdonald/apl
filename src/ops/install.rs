@@ -365,7 +365,6 @@ impl Installer for BinInstaller {
                 .await
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
-        relink_macho_files(&pkg_store_path);
         let bins = package_def.install.effective_bin(&package_def.package.name);
         let files_to_record = link_binaries(&bins, &pkg_store_path)?;
 
@@ -407,7 +406,6 @@ impl Installer for ScriptInstaller {
                 .await
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
-        relink_macho_files(&pkg_store_path);
         let bins = package_def.install.effective_bin(&package_def.package.name);
         let files_to_record = link_binaries(&bins, &pkg_store_path)?;
 

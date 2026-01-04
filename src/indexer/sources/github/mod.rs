@@ -348,13 +348,7 @@ pub async fn fetch_all_releases(
             // Error!
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Failed to fetch releases for {}/{}: HTTP {} - {}",
-                owner,
-                repo,
-                status,
-                body
-            );
+            anyhow::bail!("Failed to fetch releases for {owner}/{repo}: HTTP {status} - {body}");
         }
 
         let releases: Vec<GithubRelease> = resp.json().await?;
@@ -414,13 +408,7 @@ async fn fetch_all_tags(
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Failed to fetch tags for {}/{}: HTTP {} - {}",
-                owner,
-                repo,
-                status,
-                body
-            );
+            anyhow::bail!("Failed to fetch tags for {owner}/{repo}: HTTP {status} - {body}");
         }
 
         #[derive(Deserialize)]

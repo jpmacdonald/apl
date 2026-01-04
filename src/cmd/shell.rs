@@ -101,11 +101,11 @@ fn run_shell(
         new_path_entries.push(path_to_add);
     }
 
-    let current_path = env::var("PATH").unwrap_or_default();
-    let apl_path_str = env::join_paths(new_path_entries)?
-        .into_string()
-        .map_err(|_| anyhow!("Failed to construct PATH"))?;
-    let new_path = format!("{apl_path_str}:{current_path}");
+    let current_path = env::var_os("PATH").unwrap_or_default();
+    let mut all_paths = new_path_entries;
+    all_paths.extend(env::split_paths(&current_path));
+
+    let new_path = env::join_paths(all_paths).context("Failed to check join paths")?;
 
     // 6. Spawn Shell
     let shell_bin = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());

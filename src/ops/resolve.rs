@@ -206,6 +206,7 @@ mod tests {
             description: "test".to_string(),
             homepage: "".to_string(),
             type_: "cli".to_string(),
+            bins: vec![],
             releases: versions
                 .into_iter()
                 .map(|v| VersionInfo {

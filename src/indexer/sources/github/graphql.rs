@@ -69,7 +69,7 @@ fn escape_graphql_string(s: &str) -> String {
 /// Generate a consistent alias for a repository in GraphQL queries
 #[inline]
 fn repo_alias(index: usize) -> String {
-    format!("repo_{}", index)
+    format!("repo_{index}")
 }
 
 /// Fetch releases for multiple repositories in a single GraphQL request
@@ -112,75 +112,122 @@ pub async fn fetch_batch_releases(
         ));
     }
 
-    let query_str = format!("query {{ {} }}", fragment);
+    let query_str = format!("query {{ {fragment} }}");
     let payload = GraphQlQuery { query: query_str };
 
-    let resp = client
-        .post("https://api.github.com/graphql")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "apl-pkg")
-        .json(&payload)
-        .send()
-        .await?;
+    let mut attempt = 0;
+    while attempt < 3 {
+        attempt += 1;
+        let resp_result = client
+            .post("https://api.github.com/graphql")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("User-Agent", "apl-pkg")
+            .json(&payload)
+            .send()
+            .await;
 
-    if !resp.status().is_success() {
-        let text = resp.text().await?;
-        anyhow::bail!("GraphQL request failed: {}", text);
-    }
+        match resp_result {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let text = resp.text().await?;
+                    // Check for "couldn't respond in time" in the body even if status is 200 (GraphQL quirk)
+                    if text.contains("couldn't respond to your request in time") {
+                        if attempt < 3 {
+                            eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
+                            tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
+                                .await;
+                            continue;
+                        } else {
+                            anyhow::bail!("GraphQL request failed after retries: timeout");
+                        }
+                    }
 
-    // Parse into a dynamic map of "repo_N" -> RepositoryData
-    let text = resp.text().await?;
-    let raw_body: GraphQlResponse<HashMap<String, Option<RepositoryData>>> =
-        serde_json::from_str(&text).map_err(|e| {
-            let snippet: String = text.chars().take(500).collect();
-            anyhow::anyhow!(
-                "Failed to parse GraphQL JSON: {}. Response snippet: {}",
-                e,
-                snippet
-            )
-        })?;
+                    // Parse the success response
+                    let raw_body: GraphQlResponse<HashMap<String, Option<RepositoryData>>> =
+                        serde_json::from_str(&text).map_err(|e| {
+                            let snippet: String = text.chars().take(500).collect();
+                            anyhow::anyhow!(
+                                "Failed to parse GraphQL JSON: {e}. Response snippet: {snippet}"
+                            )
+                        })?;
 
-    if let Some(errors) = raw_body.errors {
-        if !errors.is_empty() {
-            // We just log the first error but don't bail completely if some data returned
-            eprintln!("GraphQL Warning: {}", errors[0].message);
-        }
-    }
+                    if let Some(errors) = raw_body.errors {
+                        if !errors.is_empty() {
+                            // If specifically a timeout error equivalent
+                            if errors[0].message.contains("couldn't respond") {
+                                if attempt < 3 {
+                                    eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(
+                                        1000 * attempt,
+                                    ))
+                                    .await;
+                                    continue;
+                                }
+                            }
+                            eprintln!("GraphQL Warning: {}", errors[0].message);
+                        }
+                    }
 
-    let data = raw_body
-        .data
-        .ok_or_else(|| anyhow::anyhow!("No data in GraphQL response"))?;
-    let mut result = HashMap::new();
+                    let data = raw_body
+                        .data
+                        .ok_or_else(|| anyhow::anyhow!("No data in GraphQL response"))?;
 
-    for (i, key) in repos.iter().enumerate() {
-        let alias = repo_alias(i);
-        if let Some(Some(repo_data)) = data.get(&alias) {
-            let mut releases = Vec::new();
+                    let mut result = HashMap::new();
+                    for (i, key) in repos.iter().enumerate() {
+                        let alias = repo_alias(i);
+                        if let Some(Some(repo_data)) = data.get(&alias) {
+                            let mut releases = Vec::new();
+                            for node in &repo_data.releases.nodes {
+                                let assets = node
+                                    .release_assets
+                                    .nodes
+                                    .iter()
+                                    .map(|a| GithubAsset {
+                                        name: a.name.clone(),
+                                        browser_download_url: a.download_url.clone(),
+                                        digest: a.digest.clone(),
+                                    })
+                                    .collect();
 
-            for node in &repo_data.releases.nodes {
-                let assets = node
-                    .release_assets
-                    .nodes
-                    .iter()
-                    .map(|a| GithubAsset {
-                        name: a.name.clone(),
-                        browser_download_url: a.download_url.clone(),
-                        digest: a.digest.clone(),
-                    })
-                    .collect();
+                                releases.push(GithubRelease {
+                                    id: 0,
+                                    tag_name: node.tag_name.clone(),
+                                    draft: node.is_draft,
+                                    prerelease: node.is_prerelease,
+                                    body: node.description.clone(),
+                                    assets,
+                                });
+                            }
+                            result.insert(key.clone(), releases);
+                        }
+                    }
+                    return Ok(result);
+                } else if resp.status().is_server_error() {
+                    if attempt < 3 {
+                        eprintln!(
+                            "   ⚠ GitHub server error {}, retrying ({attempt}/3)...",
+                            resp.status()
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
+                            .await;
+                        continue;
+                    }
+                }
 
-                releases.push(GithubRelease {
-                    id: 0, // Not provided by simplified query, not used by logic
-                    tag_name: node.tag_name.clone(),
-                    draft: node.is_draft,
-                    prerelease: node.is_prerelease,
-                    body: node.description.clone(),
-                    assets,
-                });
+                // If we get here, it's a non-retriable error or we exhausted retries
+                let text = resp.text().await?;
+                anyhow::bail!("GraphQL request failed: {text}");
             }
-            result.insert(key.clone(), releases);
+            Err(e) => {
+                if attempt < 3 {
+                    eprintln!("   ⚠ Network error: {e}, retrying ({attempt}/3)...");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt)).await;
+                    continue;
+                }
+                anyhow::bail!("GraphQL request failed: {e}");
+            }
         }
     }
 
-    Ok(result)
+    anyhow::bail!("Request failed after 3 attempts")
 }
