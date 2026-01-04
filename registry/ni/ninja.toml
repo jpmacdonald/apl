@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/ninja-build/ninja/releases/download/v{{version}}/ninja-mac.zip"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

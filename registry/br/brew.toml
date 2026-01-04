@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/Homebrew/brew/releases/download/{{version}}/Homebrew-{{version}}.pkg"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

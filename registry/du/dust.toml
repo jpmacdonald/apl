@@ -13,11 +13,12 @@ semver_only = true
 include_prereleases = false
 
 [assets]
-url_template = "https://github.com/bootandy/dust/releases/download/v{{version}}/dust-v{{version}}-{{target}}-unknown-linux-gnu.tar.gz"
+url_template = "https://github.com/bootandy/dust/releases/download/v{{version}}/dust-v{{version}}-{{target}}.tar.gz"
 universal = false
 
 [assets.targets]
 x86_64 = "x86_64-apple-darwin"
+arm64 = "aarch64-apple-darwin"
 
 [checksums]
 vendor_type = "sha256"

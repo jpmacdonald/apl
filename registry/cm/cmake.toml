@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/Kitware/CMake/releases/download/v{{version}}/cmake-{{version}}-macos-universal.dmg"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

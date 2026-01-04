@@ -1,5 +1,4 @@
 use crate::registry::github::{GithubAsset, GithubRelease};
-use crate::types::Sha256Digest;
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -56,7 +55,7 @@ struct AssetNode {
     #[serde(rename = "downloadUrl")]
     download_url: String,
     #[serde(default)]
-    digest: Option<Sha256Digest>,
+    digest: Option<crate::types::Sha256Digest>,
 }
 
 /// Escape special characters in GraphQL string literals
@@ -93,7 +92,6 @@ pub async fn fetch_batch_releases(
                 releases(first: 20, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                     nodes {{
                         tagName
-                        isDraft
                         isDraft
                         isPrerelease
                         description

@@ -231,6 +231,12 @@ pub struct PackageTemplate {
     pub hints: Hints,
 }
 
+impl PackageTemplate {
+    pub fn parse(content: &str) -> Result<Self, PackageError> {
+        Ok(toml::from_str(content)?)
+    }
+}
+
 /// How to discover versions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -243,10 +249,22 @@ pub enum DiscoveryConfig {
         semver_only: bool,
         #[serde(default)]
         include_prereleases: bool,
+        #[serde(default)]
+        version_type: VersionType,
     },
     Manual {
         manual: Vec<String>, // List of versions
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum VersionType {
+    #[default]
+    SemVer,
+    Sequential,
+    Snapshot,
+    CalVer,
 }
 
 impl DiscoveryConfig {

@@ -14,11 +14,11 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/volta-cli/volta/releases/download/v{{version}}/volta-{{version}}-macos.tar.gz"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"
-skip = false
+skip = true
 
 [install]
 strategy = "link"

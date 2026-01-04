@@ -8,7 +8,7 @@ type = "cli"
 
 [discovery]
 github = "orf/gping"
-tag_pattern = "v{{version}}"
+tag_pattern = "gping-v{{version}}"
 semver_only = true
 include_prereleases = false
 

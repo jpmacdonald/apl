@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/alacritty/alacritty/releases/download/v{{version}}/Alacritty-v{{version}}.dmg"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

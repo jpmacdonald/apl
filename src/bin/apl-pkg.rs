@@ -169,19 +169,29 @@ async fn main() -> Result<()> {
 
             for path in toml_files {
                 let content = fs::read_to_string(&path)?;
-                match Package::parse(&content) {
-                    Ok(pkg) => {
-                        if pkg.package.version == "0.0.0" || pkg.package.version.is_empty() {
-                            eprintln!(
-                                "   {}: Invalid version '{}'",
-                                pkg.package.name, pkg.package.version
-                            );
-                            errors += 1;
+                // Try parsing as PackageTemplate first (algorithmic registry)
+                match apl::package::PackageTemplate::parse(&content) {
+                    Ok(_) => {}
+                    Err(e1) => {
+                        // Fallback to legacy Package parse
+                        match Package::parse(&content) {
+                            Ok(pkg) => {
+                                if pkg.package.version == "0.0.0" || pkg.package.version.is_empty()
+                                {
+                                    eprintln!(
+                                        "   {}: Invalid version '{}'",
+                                        pkg.package.name, pkg.package.version
+                                    );
+                                    errors += 1;
+                                }
+                            }
+                            Err(e2) => {
+                                eprintln!("   {}: Invalid TOML structure:", path.display());
+                                eprintln!("      As Template: {}", e1);
+                                eprintln!("      As Legacy:   {}", e2);
+                                errors += 1;
+                            }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("   {}: Invalid TOML structure: {}", path.display(), e);
-                        errors += 1;
                     }
                 }
             }
@@ -289,6 +299,7 @@ async fn cli_migrate(packages_dir: &Path, registry_dir: &Path) -> Result<()> {
                         tag_pattern,
                         semver_only: true,
                         include_prereleases: false,
+                        version_type: Default::default(),
                     },
                     assets: AssetConfig {
                         url_template: apl::indexer::guess_url_template(

@@ -9,8 +9,9 @@ type = "cli"
 [discovery]
 github = "helix-editor/helix"
 tag_pattern = "{{version}}"
-semver_only = true
+semver_only = false
 include_prereleases = false
+version_type = "calver"
 
 [assets]
 url_template = "https://github.com/helix-editor/helix/releases/download/{{version}}/helix-{{version}}-{{target}}-macos.tar.xz"
@@ -18,11 +19,11 @@ universal = false
 
 [assets.targets]
 arm64 = "aarch64"
-x86_64 = "aarch64"
+x86_64 = "x86_64"
 
 [checksums]
 vendor_type = "sha256"
-skip = false
+skip = true
 
 [install]
 strategy = "link"

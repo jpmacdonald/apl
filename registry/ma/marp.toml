@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/marp-team/marp-cli/releases/download/v{{version}}/marp-cli-v{{version}}-mac.tar.gz"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

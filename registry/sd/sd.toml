@@ -22,7 +22,7 @@ arm64 = "aarch64-apple-darwin"
 
 [checksums]
 vendor_type = "sha256"
-skip = false
+skip = true
 
 [install]
 strategy = "link"

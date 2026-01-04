@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/gohugoio/hugo/releases/download/v{{version}}/hugo_{{version}}_darwin-universal.pkg"
-universal = false
+universal = true
 
 [checksums]
 url_template = "https://github.com/gohugoio/hugo/releases/download/v{{version}}/hugo_{{version}}_checksums.txt"

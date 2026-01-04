@@ -9,12 +9,13 @@ type = "cli"
 [discovery]
 github = "wezterm/wezterm"
 tag_pattern = "{{version}}"
-semver_only = true
+semver_only = false
 include_prereleases = false
+version_type = "snapshot"
 
 [assets]
 url_template = "https://github.com/wezterm/wezterm/releases/download/{{version}}/WezTerm-macos-{{version}}.zip"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

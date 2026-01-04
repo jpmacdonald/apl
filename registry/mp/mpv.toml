@@ -14,7 +14,7 @@ include_prereleases = false
 
 [assets]
 url_template = "https://github.com/mpv-player/mpv/releases/download/v{{version}}/mpv-v{{version}}-macos-14-arm.zip"
-universal = false
+universal = true
 
 [checksums]
 vendor_type = "sha256"

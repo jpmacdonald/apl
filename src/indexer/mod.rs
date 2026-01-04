@@ -88,6 +88,14 @@ pub async fn generate_index_from_registry(
         for chunk in repos_to_fetch.chunks(10) {
             match crate::registry::graphql::fetch_batch_releases(client, &token, chunk).await {
                 Ok(batch_results) => {
+                    for (key, releases) in &batch_results {
+                        println!(
+                            "     ✓ Fetched {} releases for {}/{}",
+                            releases.len(),
+                            key.owner,
+                            key.repo
+                        );
+                    }
                     master_release_cache.extend(batch_results);
                 }
                 Err(e) => {
@@ -105,11 +113,16 @@ pub async fn generate_index_from_registry(
         let pkg_name = template.package.name.to_string();
 
         // Discover versions using the master cache or manual config
-        let (versions, releases_map) = match &template.discovery {
+        // Returns Vec<(full_tag, extracted_version, normalized_version)> for GitHub, or just versions for Manual
+        let (versions, releases_map): (
+            Vec<(String, String, String)>,
+            Option<Arc<HashMap<String, GithubRelease>>>,
+        ) = match &template.discovery {
             DiscoveryConfig::GitHub {
                 tag_pattern,
                 semver_only,
                 include_prereleases,
+                version_type,
                 ..
             } => {
                 // Look up in master cache
@@ -119,12 +132,7 @@ pub async fn generate_index_from_registry(
                     Vec::new()
                 };
 
-                // If empty and we are supposed to have data, warn?
-                if releases.is_empty() {
-                    // Could be a failed batch fetch or just a repo with no releases
-                }
-
-                let mut versions = Vec::new();
+                let mut versions: Vec<(String, String, String)> = Vec::new();
                 let mut map = HashMap::new();
 
                 for release in releases {
@@ -134,18 +142,32 @@ pub async fn generate_index_from_registry(
                         continue;
                     }
 
-                    let version = extract_version_from_tag(&release.tag_name, tag_pattern);
+                    let extracted = extract_version_from_tag(&release.tag_name, tag_pattern);
 
-                    if *semver_only && semver::Version::parse(&version).is_err() {
-                        continue;
+                    // Use typed version parsing
+                    if let Some(normalized) = parse_version_by_type(&extracted, version_type) {
+                        // Legacy compatibility for SemVer type with semver_only flag
+                        if *version_type == crate::package::VersionType::SemVer
+                            && *semver_only
+                            && semver::Version::parse(&normalized).is_err()
+                        {
+                            continue;
+                        }
+                        // Store (full_tag, extracted_version, normalized_version)
+                        versions.push((release.tag_name.clone(), extracted, normalized));
                     }
-
-                    versions.push(version);
                 }
 
                 (versions, Some(Arc::new(map)))
             }
-            DiscoveryConfig::Manual { manual } => (manual.clone(), None),
+            DiscoveryConfig::Manual { manual } => {
+                // For manual versions, the tag, extracted, and normalized are all the same
+                let tuples: Vec<(String, String, String)> = manual
+                    .iter()
+                    .map(|v| (v.clone(), v.clone(), v.clone()))
+                    .collect();
+                (tuples, None)
+            }
         };
 
         // If versions is empty, verify if it was a fetch error or just zero versions
@@ -166,22 +188,26 @@ pub async fn generate_index_from_registry(
         );
 
         let versions_stream = stream::iter(versions)
-            .map(|version| {
+            .map(|(full_tag, extracted, normalized)| {
                 let client = client.clone();
                 let template_clone = template.clone();
                 let hash_cache_clone = hash_cache.clone();
                 let releases_map_clone = releases_map.clone();
-                let ver_str = version.clone();
+                let display_ver = normalized.clone();
+                let url_ver = extracted.clone();
+                let tag_for_lookup = full_tag.clone();
                 async move {
                     let res = package_to_index_ver(
                         &client,
                         &template_clone,
-                        &version,
+                        &tag_for_lookup, // full tag for release map lookup
+                        &url_ver,        // extracted version for URL templates
+                        &display_ver,    // normalized version for display
                         hash_cache_clone,
                         releases_map_clone,
                     )
                     .await;
-                    (ver_str, res)
+                    (display_ver, res)
                 }
             })
             .buffer_unordered(20); // Concurrency limit
@@ -319,7 +345,9 @@ pub async fn generate_index_from_dir(
 pub async fn package_to_index_ver(
     client: &Client,
     template: &PackageTemplate,
-    version: &str,
+    full_tag: &str, // Full GitHub tag for release map lookup (e.g., "gping-v1.20.1")
+    url_version: &str, // Extracted version for URL templates (e.g., "1.20.1")
+    display_version: &str, // Normalized version for display (e.g., "1.20.1")
     hash_cache: Arc<Mutex<HashCache>>,
     releases_map: Option<Arc<HashMap<String, GithubRelease>>>,
 ) -> Result<VersionInfo> {
@@ -330,14 +358,14 @@ pub async fn package_to_index_ver(
             let url = template
                 .assets
                 .url_template
-                .replace("{{version}}", version)
+                .replace("{{version}}", url_version)
                 .replace("{{target}}", arch_str);
 
             // Resolve hash
             let hash_res = resolve_hash(
                 client,
                 template,
-                version,
+                full_tag,
                 &url,
                 hash_cache.clone(),
                 releases_map.clone(),
@@ -349,7 +377,13 @@ pub async fn package_to_index_ver(
                 Err(e) if e.to_string().contains("not found in GitHub release") => {
                     continue;
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    eprintln!(
+                        "       ⚠ Hash resolution failed for {}: {}",
+                        display_version, e
+                    );
+                    return Err(e);
+                }
             };
 
             // Parse target as Arch
@@ -365,11 +399,14 @@ pub async fn package_to_index_ver(
             });
         }
     } else if template.assets.universal {
-        let url = template.assets.url_template.replace("{{version}}", version);
+        let url = template
+            .assets
+            .url_template
+            .replace("{{version}}", url_version);
         let hash_res = resolve_hash(
             client,
             template,
-            version,
+            full_tag,
             &url,
             hash_cache.clone(),
             releases_map.clone(),
@@ -393,11 +430,14 @@ pub async fn package_to_index_ver(
     }
 
     if binaries.is_empty() {
-        anyhow::bail!("No supported binaries found for version {}", version);
+        anyhow::bail!(
+            "No supported binaries found for version {}",
+            display_version
+        );
     }
 
     Ok(VersionInfo {
-        version: version.to_string(),
+        version: display_version.to_string(),
         binaries,
         source: None,
         deps: Vec::new(),
@@ -426,13 +466,10 @@ async fn resolve_hash(
 
     if let DiscoveryConfig::GitHub { .. } = template.discovery {
         let filename = crate::filename_from_url(asset_url);
-        let tag = template
-            .discovery
-            .tag_pattern()
-            .replace("{{version}}", version);
+        let tag = version;
 
         if let Some(map) = releases_map {
-            if let Some(release) = map.get(&tag) {
+            if let Some(release) = map.get(version) {
                 // Check if the asset actually exists in the release
                 if !release.assets.iter().any(|a| a.name == filename) {
                     anyhow::bail!("Asset '{}' not found in GitHub release {}", filename, tag);
@@ -540,15 +577,13 @@ async fn fetch_and_parse_checksum(
         anyhow::bail!("Invalid asset URL: {asset_url}");
     }
 
-    for line in text.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let hash = parts[0];
-            let file = parts[1].trim_start_matches('*');
-            if file == filename || file.ends_with(filename) {
-                return Ok(hash.to_string());
-            }
-        }
+    if let Some(hash) = crate::indexer::discovery::scan_text_for_hash(&text, filename) {
+        println!(
+            "       ✓ Found hash for {} in {}",
+            filename,
+            crate::filename_from_url(checksum_url)
+        );
+        return Ok(hash);
     }
 
     anyhow::bail!("Hash not found in checksum file for {filename}")
@@ -582,6 +617,7 @@ mod indexer_tests {
                 tag_pattern: "v{{version}}".to_string(),
                 semver_only: true,
                 include_prereleases: false,
+                version_type: Default::default(),
             },
             assets: AssetConfig {
                 url_template: "https://example.com/v{{version}}/release-{{target}}.tar.gz"
@@ -620,8 +656,16 @@ mod indexer_tests {
         let releases_map = Some(Arc::new(map));
 
         // Attempt to hydrate v1.0.0
-        let result =
-            package_to_index_ver(&client, &template, "1.0.0", hash_cache, releases_map).await;
+        let result = package_to_index_ver(
+            &client,
+            &template,
+            "v1.0.0", // full_tag for map lookup
+            "1.0.0",  // url_version for templates
+            "1.0.0",  // display_version
+            hash_cache,
+            releases_map,
+        )
+        .await;
 
         // SHOULD BAIL with "No supported binaries found" because the arm64 asset was skipped locally
         assert!(result.is_err());
