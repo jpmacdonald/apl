@@ -37,6 +37,9 @@ enum Commands {
         /// Optional specific package to index
         #[arg(short, long)]
         package: Option<String>,
+        /// Force full rebuild (ignore existing index)
+        #[arg(long)]
+        full: bool,
     },
     /// Migrate legacy registry to Selectors Pattern
     MigrateSelectors,
@@ -123,7 +126,14 @@ async fn main() -> Result<()> {
                 .count();
 
             if updated_count > 0 {
-                cli_index(&client, &registry_dir, &index_path, package.as_deref()).await?;
+                cli_index(
+                    &client,
+                    &registry_dir,
+                    &index_path,
+                    package.as_deref(),
+                    false,
+                )
+                .await?;
             }
 
             // Print Summary
@@ -196,8 +206,15 @@ async fn main() -> Result<()> {
                 anyhow::bail!("Registry check failed with {errors} errors.");
             }
         }
-        Commands::Index { package } => {
-            cli_index(&client, &registry_dir, &index_path, package.as_deref()).await?;
+        Commands::Index { package, full } => {
+            cli_index(
+                &client,
+                &registry_dir,
+                &index_path,
+                package.as_deref(),
+                full,
+            )
+            .await?;
         }
         Commands::MigrateSelectors => {
             cli_migrate_selectors(&registry_dir).await?;
@@ -228,11 +245,17 @@ async fn cli_index(
     registry_dir: &Path,
     index_path: &Path,
     package_filter: Option<&str>,
+    force_full: bool,
 ) -> Result<()> {
     println!("Regenerating index...");
 
-    let index =
-        apl::indexer::generate_index_from_registry(client, registry_dir, package_filter).await?;
+    let index = apl::indexer::generate_index_from_registry(
+        client,
+        registry_dir,
+        package_filter,
+        force_full,
+    )
+    .await?;
 
     index.save_compressed(index_path)?;
     Ok(())

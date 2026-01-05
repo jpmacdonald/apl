@@ -20,13 +20,39 @@ use tokio::sync::Mutex;
 use sources::traits::{ListingSource, ReleaseInfo};
 
 /// Generate index from algorithmic registry templates
+///
+/// If `force_full` is false, attempts to load the existing index and only
+/// deep-fetches packages whose latest version has changed (Optimistic Delta Hydration).
 pub async fn generate_index_from_registry(
     client: &Client,
     registry_dir: &Path,
     package_filter: Option<&str>,
+    force_full: bool,
 ) -> Result<PackageIndex> {
     let hash_cache = Arc::new(Mutex::new(HashCache::load()));
-    let mut index = PackageIndex::new();
+
+    // Phase 0: Load existing index (if not forcing full rebuild)
+    let index_path = registry_dir.join("../index.bin");
+    let mut index = if !force_full && index_path.exists() {
+        match PackageIndex::load(&index_path) {
+            Ok(existing) => {
+                println!(
+                    "   📦 Loaded existing index ({} packages)",
+                    existing.packages.len()
+                );
+                existing
+            }
+            Err(e) => {
+                eprintln!("   ⚠ Failed to load existing index: {e}. Rebuilding from scratch.");
+                PackageIndex::new()
+            }
+        }
+    } else {
+        if force_full {
+            println!("   🔄 Force full rebuild requested.");
+        }
+        PackageIndex::new()
+    };
 
     let toml_files = walk_registry_toml_files(registry_dir)?;
 
@@ -35,6 +61,10 @@ pub async fn generate_index_from_registry(
     let other_sources: Vec<Box<dyn ListingSource>> = Vec::new();
     let mut github_repos: Vec<crate::types::RepoKey> = Vec::new();
 
+    // Map package_name -> RepoKey (for dirty checking)
+    let mut pkg_repo_map: HashMap<String, crate::types::RepoKey> = HashMap::new();
+    // Map package_name -> tag_pattern (for version extraction)
+    let mut pkg_tag_pattern_map: HashMap<String, String> = HashMap::new();
     // Map of package_name -> source_key
     let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
@@ -62,7 +92,11 @@ pub async fn generate_index_from_registry(
         }
 
         match &template.discovery {
-            DiscoveryConfig::GitHub { github, .. } => {
+            DiscoveryConfig::GitHub {
+                github,
+                tag_pattern,
+                ..
+            } => {
                 if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
                     let key = crate::types::RepoKey {
                         owner: repo_ref.owner().to_string(),
@@ -71,8 +105,11 @@ pub async fn generate_index_from_registry(
                     let source_key = format!("github:{}/{}", key.owner, key.repo);
 
                     if !pkg_source_map.values().any(|k| k == &source_key) {
-                        github_repos.push(key);
+                        github_repos.push(key.clone());
                     }
+                    pkg_repo_map.insert(template.package.name.to_string(), key);
+                    pkg_tag_pattern_map
+                        .insert(template.package.name.to_string(), tag_pattern.clone());
                     pkg_source_map.insert(template.package.name.to_string(), source_key);
                 }
             }
@@ -88,16 +125,90 @@ pub async fn generate_index_from_registry(
         github_repos.len()
     );
 
-    // Pass 2: Fetch metadata from sources (in parallel / batched)
-    let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
+    // Pass 2: Delta Check (Optimistic) - fetch only latest tags
+    let mut dirty_repos: Vec<crate::types::RepoKey> = Vec::new();
+    let mut skipped_count = 0;
 
-    if !github_repos.is_empty() {
-        println!("   Fetching Metadata (Batched GraphQL)...");
+    if !force_full && !github_repos.is_empty() && !index.packages.is_empty() {
+        println!("   ⚡ Checking for updates (lightweight)...");
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
 
-        // Chunk into groups of 8 (GraphQL complexity limit protection)
-        // 50 repos * 50 releases * assets was too heavy causing 502s.
-        for chunk in github_repos.chunks(8) {
+        // Can batch ~20 repos safely for lightweight query
+        for chunk in github_repos.chunks(20) {
+            match sources::github::graphql::fetch_latest_versions_batch(client, &token, chunk).await
+            {
+                Ok(latest_versions) => {
+                    for (key, remote_tag_opt) in latest_versions {
+                        // Find package name for this repo
+                        let pkg_name = pkg_repo_map
+                            .iter()
+                            .find(|(_, v)| **v == key)
+                            .map(|(k, _)| k.as_str());
+
+                        if let Some(name) = pkg_name {
+                            let local_latest = index
+                                .find(name)
+                                .and_then(|e| e.latest())
+                                .map(|v| v.version.as_str());
+
+                            // Extract version from remote tag using package's tag_pattern (if available)
+                            // IMPORTANT: Apply the same normalization as during indexing
+                            let remote_version = remote_tag_opt.as_ref().and_then(|tag| {
+                                let extracted = if let Some(pattern) = pkg_tag_pattern_map.get(name)
+                                {
+                                    discovery::extract_version_from_tag(tag, pattern)
+                                } else {
+                                    // Fallback: strip common prefixes
+                                    tag.trim_start_matches('v').to_string()
+                                };
+                                // Normalize the same way indexing does
+                                discovery::auto_parse_version(&extracted)
+                            });
+
+                            if local_latest.map(|s| s.to_string()) == remote_version {
+                                skipped_count += 1;
+                            } else {
+                                dirty_repos.push(key);
+                            }
+                        } else {
+                            // New package (not in pkg_repo_map)
+                            dirty_repos.push(key);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "   ⚠ Delta check failed: {e}. Falling back to full fetch for this batch."
+                    );
+                    dirty_repos.extend(chunk.iter().cloned());
+                }
+            }
+        }
+
+        if skipped_count > 0 {
+            println!(
+                "   ✓ {} packages unchanged, {} need update",
+                skipped_count,
+                dirty_repos.len()
+            );
+        }
+    } else {
+        // Force full or no existing index: all repos are "dirty"
+        dirty_repos = github_repos.clone();
+    }
+
+    // Pass 3: Fetch metadata from dirty sources (in parallel / batched)
+    let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
+
+    if !dirty_repos.is_empty() {
+        println!(
+            "   Fetching Metadata for {} packages (Batched GraphQL)...",
+            dirty_repos.len()
+        );
+        let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
+
+        // Chunk into groups of 4 (GraphQL complexity limit protection)
+        for chunk in dirty_repos.chunks(4) {
             match sources::github::graphql::fetch_batch_releases(client, &token, chunk).await {
                 Ok(batch_results) => {
                     for (key, releases) in batch_results {
@@ -162,13 +273,33 @@ pub async fn generate_index_from_registry(
         }
     }
 
-    // Pass 3: Process each package using cached metadata (in parallel)
+    // Build a set of dirty source keys for efficient lookup
+    let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
+        .iter()
+        .map(|key| format!("github:{}/{}", key.owner, key.repo))
+        .collect();
+
+    // Filter templates to only include dirty packages (unchanged packages are already in index)
+    let templates_to_process: Vec<_> = if !force_full && !dirty_source_keys.is_empty() {
+        templates
+            .into_iter()
+            .filter(|(_, template)| {
+                pkg_source_map
+                    .get(&template.package.name.to_string())
+                    .is_some_and(|key| dirty_source_keys.contains(key))
+            })
+            .collect()
+    } else {
+        templates
+    };
+
+    // Pass 4: Process each dirty package using cached metadata (in parallel)
     println!("   Processing Packages...");
     use futures::stream::{self, StreamExt};
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
 
-    let mut results_stream = stream::iter(templates)
+    let mut results_stream = stream::iter(templates_to_process)
         .map(|(_template_path, template)| {
             let client = client.clone();
             let hash_cache = hash_cache.clone();

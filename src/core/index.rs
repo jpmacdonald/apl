@@ -258,8 +258,19 @@ impl PackageIndex {
                 } else {
                     entry.releases.push(release);
                 }
-                // Sort releases by version descending
-                entry.releases.sort_by(|a, b| b.version.cmp(&a.version));
+                // Sort releases by version descending (semver-aware)
+                entry.releases.sort_by(|a, b| {
+                    // Try semver parsing for both; fall back to string comparison
+                    match (
+                        semver::Version::parse(&a.version),
+                        semver::Version::parse(&b.version),
+                    ) {
+                        (Ok(va), Ok(vb)) => vb.cmp(&va),             // Descending
+                        (Ok(_), Err(_)) => std::cmp::Ordering::Less, // Valid semver first
+                        (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                        (Err(_), Err(_)) => b.version.cmp(&a.version), // Fallback to string
+                    }
+                });
 
                 // Update aggregate bins list
                 let mut all_bins = std::collections::HashSet::new();
@@ -458,5 +469,44 @@ mod tests {
 
         assert_eq!(loaded.updated_at, 1234567890);
         assert_eq!(loaded.packages[0].name, "ripgrep");
+    }
+
+    /// Regression test: semver sorting must handle 0.12.0 > 0.9.1 correctly.
+    /// String comparison would incorrectly put 0.9.1 first because "0.9" > "0.12" alphabetically.
+    #[test]
+    fn test_semver_version_sorting() {
+        let mut index = PackageIndex::new();
+
+        // Insert versions in "wrong" order to test sorting
+        for version in ["0.9.1", "0.12.0", "0.8.0", "1.0.0", "0.10.0"] {
+            index.upsert_release(
+                "test-pkg",
+                "Test package",
+                "cli",
+                VersionInfo {
+                    version: version.to_string(),
+                    binaries: vec![],
+                    deps: vec![],
+                    build_deps: vec![],
+                    build_script: String::new(),
+                    bin: vec![],
+                    hints: String::new(),
+                    app: None,
+                    source: None,
+                },
+            );
+        }
+
+        let entry = index.find("test-pkg").unwrap();
+        let versions: Vec<&str> = entry.releases.iter().map(|r| r.version.as_str()).collect();
+
+        // Should be sorted descending by semver: 1.0.0, 0.12.0, 0.10.0, 0.9.1, 0.8.0
+        assert_eq!(
+            versions,
+            vec!["1.0.0", "0.12.0", "0.10.0", "0.9.1", "0.8.0"]
+        );
+
+        // latest() should return the highest version
+        assert_eq!(entry.latest().unwrap().version, "1.0.0");
     }
 }

@@ -101,22 +101,50 @@ impl From<String> for PackageName {
 
 /// A semantic version string.
 ///
-/// Versions are stored as strings to support arbitrary version formats
-/// (e.g., `1.2.3`, `2024.01.01`, `nightly`). Comparison and ordering
-/// are performed using semantic version parsing where applicable.
+/// Versions are stored as strings but compared using semantic versioning rules.
+/// All versions are expected to be normalized to semver format by `auto_parse_version`
+/// before storage. If a version fails to parse as semver, a debug assertion fires
+/// to catch normalization bugs early.
 ///
 /// # Example
 ///
 /// ```
 /// use apl::types::Version;
 ///
-/// let version = Version::new("1.7.1");
-/// assert_eq!(version.as_str(), "1.7.1");
+/// let v1 = Version::new("0.9.1");
+/// let v2 = Version::new("0.12.0");
+/// assert!(v2 > v1); // Semver comparison, not string!
 /// ```
-#[derive(
-    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Version(String);
+
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (
+            semver::Version::parse(&self.0),
+            semver::Version::parse(&other.0),
+        ) {
+            (Ok(a), Ok(b)) => a.cmp(&b),
+            // If either fails to parse, it's a bug in normalization - catch in debug
+            (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+            (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+            (Err(_), Err(_)) => {
+                debug_assert!(
+                    false,
+                    "Non-semver versions in comparison: '{}' vs '{}' - normalization bug",
+                    self.0, other.0
+                );
+                self.0.cmp(&other.0)
+            }
+        }
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl Version {
     /// Create a new version from a string.
@@ -189,5 +217,33 @@ impl PartialEq<&str> for Version {
 impl PartialEq<String> for Version {
     fn eq(&self, other: &String) -> bool {
         self.0 == *other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_semver_ordering() {
+        // This is the bug we fixed: 0.12.0 > 0.9.1 in semver, but not alphabetically
+        let v1 = Version::new("0.9.1");
+        let v2 = Version::new("0.12.0");
+        assert!(v2 > v1, "0.12.0 should be greater than 0.9.1");
+
+        // More ordering tests
+        let versions = vec![
+            Version::new("0.8.0"),
+            Version::new("1.0.0"),
+            Version::new("0.10.0"),
+            Version::new("0.9.1"),
+            Version::new("0.12.0"),
+        ];
+        let mut sorted = versions.clone();
+        sorted.sort();
+
+        let expected: Vec<&str> = vec!["0.8.0", "0.9.1", "0.10.0", "0.12.0", "1.0.0"];
+        let actual: Vec<&str> = sorted.iter().map(|v| v.as_str()).collect();
+        assert_eq!(actual, expected);
     }
 }
