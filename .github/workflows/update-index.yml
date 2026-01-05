@@ -28,6 +28,14 @@ jobs:
           key: ${{ runner.os }}-hash-cache-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-hash-cache-
+      
+      - name: Download Previous Index
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Download previous index for incremental updates
+          gh release download latest --pattern index.bin --clobber || echo "No previous index found, will do full rebuild"
             
       - name: Generate Index
         env:
