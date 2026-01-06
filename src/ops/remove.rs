@@ -18,7 +18,7 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
 
     let mut task_list: Vec<(PackageName, Option<Version>)> = Vec::new();
 
-    // 1. Resolve package status
+    // Resolve package status
     for pkg_name_str in packages {
         let pkg_name = PackageName::new(pkg_name_str);
         if let Ok(Some(info)) = db.get_package(pkg_name.to_string()).await {

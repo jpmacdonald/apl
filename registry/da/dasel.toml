@@ -1,0 +1,15 @@
+[package]
+name = "dasel"
+description = "Select, put and delete data from JSON, TOML, YAML, XML and CSV files with a single tool."
+homepage = "https://dasel.dev"
+
+[discovery]
+github = "TomWright/dasel"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin_arm64" }
+x86_64-macos = { suffix = "darwin_amd64" }
+
+[install]
+bin = ["dasel"]

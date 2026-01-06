@@ -1,0 +1,15 @@
+[package]
+name = "procs"
+description = "A modern replacement for ps written in Rust."
+homepage = "https://github.com/dalance/procs"
+
+[discovery]
+github = "dalance/procs"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { regex = "procs-.*-aarch64-mac\\.zip" }
+x86_64-macos = { regex = "procs-.*-x86_64-mac\\.zip" }
+
+[install]
+bin = ["procs"]

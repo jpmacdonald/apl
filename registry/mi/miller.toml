@@ -1,0 +1,15 @@
+[package]
+name = "miller"
+description = "Miller is like awk, sed, cut, join, and sort for name-indexed data such as CSV, TSV, and tabular JSON."
+homepage = "https://github.com/johnkerl/miller"
+
+[discovery]
+github = "johnkerl/miller"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64.tar.gz" }
+x86_64-macos = { suffix = "darwin-amd64.tar.gz" }
+
+[install]
+bin = ["mlr"]

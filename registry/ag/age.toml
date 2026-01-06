@@ -1,0 +1,15 @@
+[package]
+name = "age"
+description = "A simple, modern and secure file encryption tool, format, and Go library."
+homepage = "https://github.com/FiloSottile/age"
+
+[discovery]
+github = "FiloSottile/age"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64.tar.gz" }
+x86_64-macos = { suffix = "darwin-amd64.tar.gz" }
+
+[install]
+bin = ["age", "age-keygen"]

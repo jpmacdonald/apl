@@ -1,0 +1,15 @@
+[package]
+name = "pnpm"
+description = "Fast, disk space efficient package manager."
+homepage = "https://pnpm.io"
+
+[discovery]
+github = "pnpm/pnpm"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "macos-arm64" }
+x86_64-macos = { suffix = "macos-x64" }
+
+[install]
+bin = ["pnpm"]

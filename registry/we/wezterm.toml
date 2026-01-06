@@ -1,29 +1,15 @@
 [package]
 name = "wezterm"
-description = "A GPU-accelerated cross-platform terminal emulator"
-homepage = "https://github.com/wez/wezterm"
-license = ""
+description = "A GPU-accelerated cross-platform terminal emulator."
+homepage = "https://wezfurlong.org/wezterm"
 
 [discovery]
 github = "wez/wezterm"
 tag_pattern = "{{version}}"
-include_prereleases = false
 
 [assets]
-universal = true
-skip_checksums = false
-
-[assets.arm64-macos]
-regex = "WezTerm-macos.*\\.zip"
-
-[assets.x86_64-macos]
-regex = "WezTerm-macos.*\\.zip"
+arm64-macos = { regex = "WezTerm-macos-.*\\.zip" }
+x86_64-macos = { regex = "WezTerm-macos-.*\\.zip" }
 
 [install]
 bin = ["wezterm"]
-lib = []
-include = []
-script = ""
-
-[hints]
-post_install = ""

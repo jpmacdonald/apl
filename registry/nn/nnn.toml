@@ -1,0 +1,15 @@
+[package]
+name = "nnn"
+description = "The missing terminal file manager for X."
+homepage = "https://github.com/jarun/nnn"
+
+[discovery]
+github = "jarun/nnn"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "static-{{version}}.aarch64.tar.gz" }
+x86_64-macos = { suffix = "static-{{version}}.x86_64.tar.gz" }
+
+[install]
+bin = ["nnn"]

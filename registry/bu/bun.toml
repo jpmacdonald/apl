@@ -1,0 +1,15 @@
+[package]
+name = "bun"
+description = "Incredibly fast JavaScript runtime, bundler, test runner, and package manager."
+homepage = "https://bun.sh"
+
+[discovery]
+github = "oven-sh/bun"
+tag_pattern = "bun-v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-aarch64.zip" }
+x86_64-macos = { suffix = "darwin-x64.zip" }
+
+[install]
+bin = ["bun"]

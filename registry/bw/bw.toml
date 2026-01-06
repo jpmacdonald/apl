@@ -1,0 +1,15 @@
+[package]
+name = "bw"
+description = "The Bitwarden CLI."
+homepage = "https://bitwarden.com"
+
+[discovery]
+github = "bitwarden/clients"
+tag_pattern = "cli-v{{version}}"
+
+[assets]
+universal = true
+macos = { suffix = "macos-{{version}}.zip" }
+
+[install]
+bin = ["bw"]

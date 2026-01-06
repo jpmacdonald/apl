@@ -1,0 +1,15 @@
+[package]
+name = "bandwhich"
+description = "Terminal bandwidth utilization tool."
+homepage = "https://github.com/imsnif/bandwhich"
+
+[discovery]
+github = "imsnif/bandwhich"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "aarch64-apple-darwin.tar.gz" }
+x86_64-macos = { suffix = "x86_64-apple-darwin.tar.gz" }
+
+[install]
+bin = ["bandwhich"]

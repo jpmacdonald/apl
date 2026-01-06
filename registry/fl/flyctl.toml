@@ -1,0 +1,15 @@
+[package]
+name = "flyctl"
+description = "The Fly.io command-line interface."
+homepage = "https://fly.io"
+
+[discovery]
+github = "superfly/flyctl"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "macOS_arm64.tar.gz" }
+x86_64-macos = { suffix = "macOS_x86_64.tar.gz" }
+
+[install]
+bin = ["flyctl"]

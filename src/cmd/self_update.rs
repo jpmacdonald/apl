@@ -31,9 +31,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     // Fetch latest release from GitHub
     // Fetch releases from GitHub
     let client = Client::new();
-    let url = format!(
-        "https://api.github.com/repos/{APL_REPO_OWNER}/{APL_REPO_NAME}/releases"
-    );
+    let url = format!("https://api.github.com/repos/{APL_REPO_OWNER}/{APL_REPO_NAME}/releases");
 
     let response = client
         .get(&url)
@@ -147,7 +145,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     output.success(&format!("APL has been updated to v{latest_version}"));
     output.info("Restart your shell to use the new version.");
 
-    output.wait();
+    output.wait_async().await;
 
     Ok(())
 }

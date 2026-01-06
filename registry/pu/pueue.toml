@@ -1,0 +1,15 @@
+[package]
+name = "pueue"
+description = "Pueue is a command-line task management tool for sequential and parallel execution of long-running tasks."
+homepage = "https://github.com/Nukesor/pueue"
+
+[discovery]
+github = "Nukesor/pueue"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "aarch64-apple-darwin" }
+x86_64-macos = { suffix = "x86_64-apple-darwin" }
+
+[install]
+bin = ["pueue"]

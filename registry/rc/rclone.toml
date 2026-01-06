@@ -1,29 +1,15 @@
 [package]
 name = "rclone"
-description = "Rsync for cloud storage"
-homepage = "https://github.com/rclone/rclone"
-license = ""
+description = "Rsync for cloud storage."
+homepage = "https://rclone.org"
 
 [discovery]
 github = "rclone/rclone"
 tag_pattern = "v{{version}}"
-include_prereleases = false
 
 [assets]
-universal = false
-skip_checksums = false
-
-[assets.arm64-macos]
-regex = "rclone.*-osx-arm64\\.zip"
-
-[assets.x86_64-macos]
-regex = "rclone.*-osx-amd64\\.zip"
+arm64-macos = { regex = "rclone-v.*-osx-arm64\\.zip" }
+x86_64-macos = { regex = "rclone-v.*-osx-amd64\\.zip" }
 
 [install]
 bin = ["rclone"]
-lib = []
-include = []
-script = ""
-
-[hints]
-post_install = ""

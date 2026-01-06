@@ -1,0 +1,15 @@
+[package]
+name = "lazysql"
+description = "A terminal UI for SQL and NoSQL databases."
+homepage = "https://github.com/jorgerojas26/lazysql"
+
+[discovery]
+github = "jorgerojas26/lazysql"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "Darwin_arm64.tar.gz" }
+x86_64-macos = { suffix = "Darwin_x86_64.tar.gz" }
+
+[install]
+bin = ["lazysql"]

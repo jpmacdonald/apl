@@ -156,6 +156,14 @@ impl Output {
         // Block effectively without spinning CPU
         let _ = rx.blocking_recv();
     }
+
+    /// Async version of wait.
+    pub async fn wait_async(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self.sender.send(UiEvent::Sync(tx));
+
+        let _ = rx.await;
+    }
 }
 
 impl super::reporter::Reporter for Output {

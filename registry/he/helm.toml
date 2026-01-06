@@ -1,0 +1,15 @@
+[package]
+name = "helm"
+description = "The Kubernetes Package Manager."
+homepage = "https://helm.sh"
+
+[discovery]
+github = "helm/helm"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64.tar.gz" }
+x86_64-macos = { suffix = "darwin-amd64.tar.gz" }
+
+[install]
+bin = ["helm"]

@@ -1,0 +1,15 @@
+[package]
+name = "oxlint"
+description = "A suite of high-performance tools for JavaScript and TypeScript."
+homepage = "https://oxc-project.github.io"
+
+[discovery]
+github = "oxc-project/oxc"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64" }
+x86_64-macos = { suffix = "darwin-x64" }
+
+[install]
+bin = ["oxlint"]

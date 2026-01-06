@@ -1,0 +1,15 @@
+[package]
+name = "turbo"
+description = "The high-performance build system for JavaScript & TypeScript codebases."
+homepage = "https://turbo.build"
+
+[discovery]
+github = "vercel/turbo"
+tag_pattern = "{{version}}"
+
+[assets]
+arm64-macos = { regex = "turbo-darwin-arm64.*" }
+x86_64-macos = { regex = "turbo-darwin-64.*" }
+
+[install]
+bin = ["turbo"]

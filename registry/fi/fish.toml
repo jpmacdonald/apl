@@ -1,0 +1,15 @@
+[package]
+name = "fish"
+description = "The user-friendly command line shell."
+homepage = "https://fishshell.com"
+
+[discovery]
+github = "fish-shell/fish-shell"
+tag_pattern = "{{version}}"
+
+[assets]
+universal = true
+universal-macos = { suffix = ".tar.xz" }
+
+[install]
+bin = ["fish", "fish_indent", "fish_key_reader"]

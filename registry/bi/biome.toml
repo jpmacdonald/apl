@@ -1,0 +1,15 @@
+[package]
+name = "biome"
+description = "A toolchain for web projects."
+homepage = "https://biomejs.dev"
+
+[discovery]
+github = "biomejs/biome"
+tag_pattern = "cli/v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64" }
+x86_64-macos = { suffix = "darwin-x64" }
+
+[install]
+bin = ["biome"]

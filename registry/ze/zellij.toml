@@ -1,0 +1,15 @@
+[package]
+name = "zellij"
+description = "A terminal workspace with batteries included."
+homepage = "https://zellij.dev"
+
+[discovery]
+github = "zellij-org/zellij"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "aarch64-apple-darwin.tar.gz" }
+x86_64-macos = { suffix = "x86_64-apple-darwin.tar.gz" }
+
+[install]
+bin = ["zellij"]

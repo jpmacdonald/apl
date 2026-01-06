@@ -1,0 +1,15 @@
+[package]
+name = "jless"
+description = "jless is a command-line JSON viewer."
+homepage = "https://jless.io"
+
+[discovery]
+github = "PaulJuliusMartinez/jless"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "aarch64-apple-darwin.zip" }
+x86_64-macos = { suffix = "x86_64-apple-darwin.zip" }
+
+[install]
+bin = ["jless"]

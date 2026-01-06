@@ -1,0 +1,15 @@
+[package]
+name = "crane"
+description = "A tool for interacting with remote images and registries."
+homepage = "https://github.com/google/go-containerregistry"
+
+[discovery]
+github = "google/go-containerregistry"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "Darwin_arm64.tar.gz" }
+x86_64-macos = { suffix = "Darwin_x86_64.tar.gz" }
+
+[install]
+bin = ["crane"]

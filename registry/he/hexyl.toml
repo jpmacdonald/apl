@@ -1,0 +1,15 @@
+[package]
+name = "hexyl"
+description = "A command-line hex viewer."
+homepage = "https://github.com/sharkdp/hexyl"
+
+[discovery]
+github = "sharkdp/hexyl"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "aarch64-apple-darwin.tar.gz" }
+x86_64-macos = { suffix = "x86_64-apple-darwin.tar.gz" }
+
+[install]
+bin = ["hexyl"]

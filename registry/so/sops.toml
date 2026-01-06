@@ -1,0 +1,15 @@
+[package]
+name = "sops"
+description = "Simple and Flexible Tool for Managing Secrets."
+homepage = "https://github.com/getsops/sops"
+
+[discovery]
+github = "getsops/sops"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin.arm64" }
+x86_64-macos = { suffix = "darwin.amd64" }
+
+[install]
+bin = ["sops"]

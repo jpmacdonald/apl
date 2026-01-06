@@ -1,0 +1,15 @@
+[package]
+name = "stripe"
+description = "The Stripe CLI."
+homepage = "https://github.com/stripe/stripe-cli"
+
+[discovery]
+github = "stripe/stripe-cli"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "mac-os_arm64.tar.gz" }
+x86_64-macos = { suffix = "mac-os_x86_64.tar.gz" }
+
+[install]
+bin = ["stripe"]

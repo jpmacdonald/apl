@@ -1,0 +1,15 @@
+[package]
+name = "minisign"
+description = "A dead simple tool for signing files and verifying signatures."
+homepage = "https://jedisct1.github.io/minisign"
+
+[discovery]
+github = "jedisct1/minisign"
+tag_pattern = "{{version}}"
+
+[assets]
+universal = true
+macos = { suffix = "macos.zip" }
+
+[install]
+bin = ["minisign"]

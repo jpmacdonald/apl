@@ -1,0 +1,15 @@
+[package]
+name = "gron"
+description = "Make JSON greppable!"
+homepage = "https://github.com/tomnomnom/gron"
+
+[discovery]
+github = "tomnomnom/gron"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { suffix = "darwin-arm64-{{version}}.tgz" }
+x86_64-macos = { suffix = "darwin-amd64-{{version}}.tgz" }
+
+[install]
+bin = ["gron"]

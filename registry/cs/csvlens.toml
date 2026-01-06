@@ -1,0 +1,15 @@
+[package]
+name = "csvlens"
+description = "Command line csv viewer."
+homepage = "https://github.com/YS-L/csvlens"
+
+[discovery]
+github = "YS-L/csvlens"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { regex = "csvlens-.*-aarch64-apple-darwin\\.tar\\.gz" }
+x86_64-macos = { regex = "csvlens-.*-x86_64-apple-darwin\\.tar\\.gz" }
+
+[install]
+bin = ["csvlens"]
