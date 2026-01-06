@@ -24,7 +24,7 @@ jobs:
       - name: Cache HashCache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/apl/hash_cache.json
+          path: ~/.apl/cache/hashes.json
           key: ${{ runner.os }}-hash-cache-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-hash-cache-
