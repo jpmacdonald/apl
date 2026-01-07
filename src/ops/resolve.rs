@@ -216,6 +216,7 @@ mod tests {
                         url: "http://test".to_string(),
                         hash: crate::types::Sha256Hash::new("hash"),
                         hash_type: crate::core::index::HashType::Sha256,
+                        patches: vec![],
                     }],
                     deps: vec![],
                     build_deps: vec![],
@@ -226,6 +227,7 @@ mod tests {
                     source: None,
                 })
                 .collect(),
+            tags: vec![],
         }
     }
 

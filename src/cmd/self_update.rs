@@ -117,35 +117,49 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
 
     output.info(&format!("Downloading {}...", asset.name));
 
-    // Download the binary
+    // Download the binary to a temporary file
+    let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
+    let download_path = tmp_dir.path().join(&asset.name);
+
     let bytes = client
         .get(&asset.browser_download_url)
         .send()
         .await?
         .bytes()
         .await?;
+    std::fs::write(&download_path, &bytes).context("Failed to write downloaded asset")?;
+
+    // Extract the archive
+    let extract_dir = tmp_dir.path().join("extract");
+    let extracted_files = apl::io::extract::extract_auto(&download_path, &extract_dir)
+        .context("Failed to extract update archive")?;
+
+    // Find the 'apl' binary in extracted files
+    let apl_path = extracted_files
+        .iter()
+        .find(|f| f.relative_path.file_name().and_then(|s| s.to_str()) == Some("apl"))
+        .context("Could not find 'apl' binary in the update archive")?
+        .absolute_path
+        .clone();
 
     // Determine install location
     let apl_bin = apl::apl_home().join("bin").join("apl");
-
-    // Write to temp file first
-    let temp_path = apl_bin.with_extension("new");
-    std::fs::write(&temp_path, &bytes)?;
 
     // Make executable
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o755))?;
+        std::fs::set_permissions(&apl_path, std::fs::Permissions::from_mode(0o755))?;
     }
 
     // Atomic replace
-    std::fs::rename(&temp_path, &apl_bin)?;
+    // On some systems, we might need to move to a temp file on the same mount point first
+    let temp_replace = apl_bin.with_extension("new");
+    std::fs::copy(&apl_path, &temp_replace).context("Failed to prepare update binary")?;
+    std::fs::rename(&temp_replace, &apl_bin).context("Failed to replace APL binary")?;
 
     output.success(&format!("APL has been updated to v{latest_version}"));
     output.info("Restart your shell to use the new version.");
-
-    output.wait_async().await;
 
     Ok(())
 }

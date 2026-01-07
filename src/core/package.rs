@@ -66,6 +66,9 @@ pub struct PackageInfo {
     pub homepage: String,
     #[serde(default)]
     pub license: String,
+    /// Categories/Tags
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// Internal only: Used after resolution to know which installer type to use.
     /// Not present in registry TOMLs.
     #[serde(default)]
@@ -229,9 +232,23 @@ pub struct PackageTemplate {
     pub package: PackageInfoTemplate,
     pub discovery: DiscoveryConfig,
     pub assets: AssetConfig,
+    #[serde(default)]
+    pub source: Option<SourceTemplate>,
+    #[serde(default)]
+    pub build: Option<BuildSpec>,
     pub install: InstallSpec,
     #[serde(default)]
     pub hints: Hints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceTemplate {
+    /// URL template for source code (e.g. "{{github}}/archive/refs/tags/{{tag}}.tar.gz")
+    pub url: String,
+    /// Expected format of the source archive
+    pub format: ArtifactFormat,
+    /// Verification hash for the source archive (optional, defaults to computing on first fetch)
+    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +260,8 @@ pub struct PackageInfoTemplate {
     pub homepage: String,
     #[serde(default)]
     pub license: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl PackageTemplate {

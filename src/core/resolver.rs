@@ -92,6 +92,7 @@ mod tests {
                 build_deps: vec![],
                 build_script: String::new(),
             }],
+            tags: vec![],
         }
     }
 

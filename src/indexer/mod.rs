@@ -19,6 +19,8 @@ use tokio::sync::Mutex;
 
 use sources::traits::{ListingSource, ReleaseInfo};
 
+use crate::io::artifacts::{ArtifactStore, get_artifact_store};
+
 /// Generate index from algorithmic registry templates
 ///
 /// If `force_full` is false, attempts to load the existing index and only
@@ -30,6 +32,12 @@ pub async fn generate_index_from_registry(
     force_full: bool,
 ) -> Result<PackageIndex> {
     let hash_cache = Arc::new(Mutex::new(HashCache::load()));
+
+    // Initialize artifact store (optional, only if configured)
+    let artifact_store: Option<Arc<ArtifactStore>> = get_artifact_store().await;
+    if artifact_store.is_some() {
+        println!("   ☁️  Artifact Store enabled (will mirror to R2)");
+    }
 
     // Phase 0: Load existing index (if not forcing full rebuild)
     let index_path = registry_dir.join("../index.bin");
@@ -53,6 +61,13 @@ pub async fn generate_index_from_registry(
         }
         PackageIndex::new()
     };
+
+    // Set mirror_base_url if artifact store is configured
+    if let Some(ref store) = artifact_store {
+        // Get public base URL from config (strip /cas/ suffix if present)
+        let base = store.public_url("").trim_end_matches("/cas/").to_string();
+        index.mirror_base_url = Some(base);
+    }
 
     let toml_files = walk_registry_toml_files(registry_dir)?;
 
@@ -418,15 +433,29 @@ pub async fn generate_index_from_registry(
 
     while let Some((template, v_infos, errors)) = results_stream.next().await {
         let pkg_name = template.package.name.to_string();
+        let mut v_infos = v_infos;
         let success_count = v_infos.len();
         let total_versions = v_infos.len() + errors.len();
         total_releases += success_count;
+
+        // Generate binary deltas if artifact store is enabled
+        if let Err(e) =
+            process_deltas(client, &pkg_name, &mut v_infos, artifact_store.as_deref()).await
+        {
+            tracing::warn!("   ⚠ Delta generation failed for {pkg_name}: {e}");
+        }
 
         for ver_info in v_infos {
             // Infer type: App if .app is present, else Cli
             let kind = if ver_info.app.is_some() { "app" } else { "cli" };
 
-            index.upsert_release(&pkg_name, &template.package.description, kind, ver_info);
+            index.upsert_release(
+                &pkg_name,
+                &template.package.description,
+                kind,
+                template.package.tags.clone(),
+                ver_info,
+            );
         }
 
         // Align package name at 20 characters
@@ -488,18 +517,43 @@ fn humanize_error(e: &str) -> String {
 pub async fn package_to_index_ver(
     client: &Client,
     template: &PackageTemplate,
-    full_tag: &str, // Full GitHub tag for release map lookup (e.g., "gping-v1.20.1")
-    _url_version: &str, // Extracted version for URL templates (e.g., "1.20.1")
-    display_version: &str, // Normalized version for display (e.g., "1.20.1")
+    full_tag: &str,
+    _url_version: &str,
+    display_version: &str,
     hash_cache: Arc<Mutex<HashCache>>,
     releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
 ) -> Result<VersionInfo> {
-    let mut binaries = Vec::new();
+    // Strategy 0: Build from source (Registry Hydration)
+    if let Some(build_spec) = &template.build {
+        let store = get_artifact_store().await.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Package {display_version} has [build] spec but Artifact Store is disabled/unconfigured. Cannot hydrate."
+            )
+        })?;
+
+        match hydrate_from_source(
+            client,
+            template,
+            full_tag,
+            display_version,
+            build_spec,
+            &store,
+        )
+        .await
+        {
+            Ok(info) => return Ok(info),
+            Err(e) => {
+                anyhow::bail!("Build-from-Source failed for {display_version}: {e}");
+            }
+        }
+    }
 
     let release_info = releases_map
         .as_ref()
         .and_then(|map| map.get(full_tag))
         .ok_or_else(|| anyhow::anyhow!("Release {full_tag} not found in map"))?;
+
+    let mut binaries = Vec::new();
 
     // Strategy 1: Explicit selectors for each arch
     for (arch_name, selector) in &template.assets.select {
@@ -532,6 +586,7 @@ pub async fn package_to_index_ver(
                 url: asset.download_url.clone(),
                 hash: crate::types::Sha256Hash::new(hash),
                 hash_type: HashType::Sha256,
+                patches: vec![],
             });
         }
     }
@@ -559,6 +614,7 @@ pub async fn package_to_index_ver(
                     url: asset.download_url.clone(),
                     hash: crate::types::Sha256Hash::new(hash),
                     hash_type: HashType::Sha256,
+                    patches: vec![],
                 });
             }
         }
@@ -589,6 +645,127 @@ pub async fn package_to_index_ver(
     })
 }
 
+/// Generate binary deltas between adjacent versions of a package.
+///
+/// For each architecture, identifies the previous version and creates a zstd-dictionary patch.
+async fn process_deltas(
+    client: &Client,
+    pkg_name: &str,
+    v_infos: &mut [VersionInfo],
+    store: Option<&ArtifactStore>,
+) -> Result<()> {
+    let store = match store {
+        Some(s) => s,
+        None => return Ok(()),
+    };
+
+    // Sort versions descending (newest first)
+    v_infos.sort_by(|a, b| {
+        match (
+            semver::Version::parse(&a.version),
+            semver::Version::parse(&b.version),
+        ) {
+            (Ok(va), Ok(vb)) => vb.cmp(&va),
+            _ => b.version.cmp(&a.version),
+        }
+    });
+
+    // We only generate deltas for the top few versions to keep index size sane.
+    // Transitioning from V_n -> V_{n+1}.
+    for i in 0..v_infos.len().min(5).saturating_sub(1) {
+        let (new_ver_slice, old_ver_slice) = v_infos.split_at_mut(i + 1);
+        let new_ver = &mut new_ver_slice[i];
+        let old_ver = &old_ver_slice[0];
+
+        for new_bin in &mut new_ver.binaries {
+            // Find same architecture in old version
+            if let Some(old_bin) = old_ver.binaries.iter().find(|b| b.arch == new_bin.arch) {
+                // Skip if same hash (no change) or patch already exists
+                if old_bin.hash == new_bin.hash
+                    || new_bin.patches.iter().any(|p| p.from_hash == old_bin.hash)
+                {
+                    continue;
+                }
+
+                tracing::info!(
+                    "   ⚡ Generating delta for {} {} -> {} ({})",
+                    pkg_name,
+                    old_ver.version,
+                    new_ver.version,
+                    new_bin.arch
+                );
+
+                // 1. Get old binary data
+                let old_data = match store.get(&old_bin.hash.to_string()).await {
+                    Ok(d) => d,
+                    Err(_) => match client.get(&old_bin.url).send().await {
+                        Ok(resp) => resp.bytes().await?.to_vec(),
+                        Err(_) => continue,
+                    },
+                };
+
+                // 2. Get new binary data
+                let new_data = match store.get(&new_bin.hash.to_string()).await {
+                    Ok(d) => d,
+                    Err(_) => match client.get(&new_bin.url).send().await {
+                        Ok(resp) => resp.bytes().await?.to_vec(),
+                        Err(_) => continue,
+                    },
+                };
+
+                // 3. Generate delta
+                let patch = match crate::io::delta::generate_delta(&old_data, &new_data, 3) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!("      Failed to generate delta: {e}");
+                        continue;
+                    }
+                };
+
+                // Only keep patch if it saves significant space (>20% or >100KB)
+                if patch.len() >= new_data.len()
+                    || (patch.len() as f64 / new_data.len() as f64) > 0.8
+                {
+                    tracing::debug!("      Patch not small enough, skipping");
+                    continue;
+                }
+
+                // 4. Upload delta to R2
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(&patch);
+                let patch_hash_hex = format!("{:x}", hasher.finalize());
+                let patch_hash = crate::types::Sha256Hash::new(patch_hash_hex);
+
+                let patch_key = format!("deltas/{}_{}.zst", old_bin.hash, new_bin.hash);
+
+                let body = aws_sdk_s3::primitives::ByteStream::from(patch.clone());
+                if let Err(e) = store
+                    .upload_stream(&patch_key, body, Some(patch.len() as i64))
+                    .await
+                {
+                    tracing::warn!("      Failed to upload delta: {e}");
+                    continue;
+                }
+
+                // 5. Add to patches list
+                new_bin.patches.push(crate::core::index::PatchInfo {
+                    from_hash: old_bin.hash.clone(),
+                    patch_hash,
+                    patch_size: patch.len() as u64,
+                });
+
+                tracing::info!(
+                    "      ✓ Delta created: {} KB (compression: {:.1}%)",
+                    patch.len() / 1024,
+                    (1.0 - (patch.len() as f64 / new_data.len() as f64)) * 100.0
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
 async fn resolve_hash(
     client: &Client,
     template: &PackageTemplate,
@@ -650,7 +827,33 @@ async fn resolve_hash(
     )
 }
 
-/// Download an asset and compute its SHA256 hash
+/// Download an asset, compute its SHA256 hash, and save it to disk
+async fn download_and_hash(client: &Client, url: &str, dest: &Path) -> Result<String> {
+    use futures::StreamExt;
+    use sha2::Digest;
+    use tokio::io::AsyncWriteExt;
+
+    let resp = client.get(url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Failed to download asset {}: {}", url, resp.status());
+    }
+
+    let mut file = tokio::fs::File::create(dest).await?;
+    let mut hasher = sha2::Sha256::new();
+    let mut stream = resp.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        file.write_all(&chunk).await?;
+        hasher.update(&chunk);
+    }
+
+    file.flush().await?;
+    let hash = format!("{:x}", hasher.finalize());
+    Ok(hash)
+}
+
+/// Download an asset and compute its SHA256 hash without saving to disk
 async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
     use futures::StreamExt;
     use sha2::Digest;
@@ -670,6 +873,127 @@ async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
 
     let hash = format!("{:x}", hasher.finalize());
     Ok(hash)
+}
+
+async fn hydrate_from_source(
+    client: &Client,
+    template: &PackageTemplate,
+    full_tag: &str,
+    display_version: &str,
+    build_spec: &crate::core::package::BuildSpec,
+    store: &ArtifactStore,
+) -> Result<VersionInfo> {
+    use crate::core::builder::Builder;
+    use crate::core::sysroot::Sysroot;
+    use sha2::Digest;
+
+    // 1. Resolve Source URL
+    let source_url = match &template.source {
+        Some(s) => s
+            .url
+            .replace("{{tag}}", full_tag)
+            .replace("{{version}}", display_version),
+        None => {
+            // Heuristic for GitHub
+            if let DiscoveryConfig::GitHub { github, .. } = &template.discovery {
+                format!("https://github.com/{github}/archive/refs/tags/{full_tag}.tar.gz")
+            } else {
+                anyhow::bail!("No source URL provided for build-from-source template");
+            }
+        }
+    };
+
+    println!("      🔨 Hydrating from source: {source_url}");
+
+    // 2. Prepare Directories
+    let tmp_dir = tempfile::tempdir()?;
+    let source_archive = tmp_dir.path().join("source.tar.gz");
+    let extract_dir = tmp_dir.path().join("src");
+    let build_dir = tmp_dir.path().join("build");
+
+    std::fs::create_dir_all(&extract_dir)?;
+    std::fs::create_dir_all(&build_dir)?;
+
+    // 3. Download Source and compute hash
+    download_and_hash(client, &source_url, &source_archive).await?;
+
+    // 4. Extract
+    crate::io::extract::extract_auto(&source_archive, &extract_dir)?;
+    crate::io::extract::strip_components(&extract_dir)?;
+
+    // 5. Build in Sysroot
+    let sysroot = Sysroot::new()?;
+    let builder = Builder::new(&sysroot);
+    let log_path = crate::build_log_path(&template.package.name.to_string(), display_version);
+
+    builder.build(
+        &extract_dir,
+        &build_spec.script,
+        &build_dir,
+        false, // verbose
+        &log_path,
+    )?;
+
+    // 6. Bundle Output (tar.zst)
+    let bundle_path = tmp_dir.path().join("bundle.tar.zst");
+    bundle_directory(&build_dir, &bundle_path)?;
+
+    // 7. Compute Hash and Upload to Artifact Store (R2)
+    let bundle_data = std::fs::read(&bundle_path)?;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bundle_data);
+    let hash_hex = format!("{:x}", hasher.finalize());
+
+    let mirror_url = store.upload(&hash_hex, bundle_data).await?;
+    println!("      ☁️  Uploaded to mirror: {mirror_url}");
+
+    // 8. Determine Arch
+    #[cfg(target_arch = "aarch64")]
+    let arch = crate::types::Arch::Arm64;
+    #[cfg(target_arch = "x86_64")]
+    let arch = crate::types::Arch::X86_64;
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let arch = crate::types::Arch::Universal;
+
+    // 9. Return VersionInfo pointing to our hydrated binary
+    Ok(VersionInfo {
+        version: display_version.to_string(),
+        binaries: vec![IndexBinary {
+            arch,
+            url: mirror_url,
+            hash: crate::types::Sha256Hash::new(hash_hex),
+            hash_type: HashType::Sha256,
+            patches: vec![],
+        }],
+        source: None, // Consumer only sees the binary
+        deps: Vec::new(),
+        build_deps: build_spec.dependencies.clone(),
+        build_script: build_spec.script.clone(),
+        bin: template
+            .install
+            .bin
+            .clone()
+            .unwrap_or_else(|| vec![template.package.name.to_string()]),
+        hints: template.hints.post_install.clone(),
+        app: template.install.app.clone(),
+    })
+}
+
+/// Helper to bundle a directory into a .tar.zst archive for the artifact store.
+fn bundle_directory(src_dir: &Path, dest_archive: &Path) -> Result<()> {
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let file = File::create(dest_archive)?;
+    let writer = BufWriter::new(file);
+    let zstd_encoder = zstd::stream::Encoder::new(writer, 3)?;
+    let mut tar_builder = tar::Builder::new(zstd_encoder);
+
+    tar_builder.append_dir_all(".", src_dir)?;
+    tar_builder.finish()?;
+    tar_builder.into_inner()?.finish()?;
+
+    Ok(())
 }
 
 async fn fetch_and_parse_checksum(
@@ -715,6 +1039,7 @@ mod indexer_tests {
                 description: "test".to_string(),
                 homepage: "".to_string(),
                 license: "".to_string(),
+                tags: vec![], // Added this line based on the instruction
             },
             discovery: DiscoveryConfig::GitHub {
                 github: "owner/repo".to_string(),
@@ -736,6 +1061,8 @@ mod indexer_tests {
                 skip_checksums: false,
                 checksum_url: None,
             },
+            source: None,
+            build: None,
             install: InstallSpec::default(),
             hints: crate::package::Hints::default(),
         };

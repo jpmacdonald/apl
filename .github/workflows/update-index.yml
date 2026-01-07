@@ -40,6 +40,12 @@ jobs:
       - name: Generate Index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APL_ARTIFACT_STORE_ENABLED: ${{ secrets.R2_ACCESS_KEY && '1' || '' }}
+          APL_ARTIFACT_STORE_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          APL_ARTIFACT_STORE_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          APL_ARTIFACT_STORE_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          APL_ARTIFACT_STORE_BUCKET: apl-store
+          APL_ARTIFACT_STORE_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
         run: cargo run --bin apl-pkg -- index
         
       - name: Release Index

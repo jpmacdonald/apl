@@ -47,13 +47,20 @@ pub fn search(query: &str) -> Result<()> {
             entry.latest().map(|v| v.version.as_str()).unwrap_or("?"),
             width = theme.layout.version_width
         );
-        let description = &entry.description;
+        let mut description = entry.description.clone();
+        if !entry.tags.is_empty() {
+            description.push_str(
+                &format!(" ({})", entry.tags.join(", "))
+                    .dark_grey()
+                    .to_string(),
+            );
+        }
 
         println!(
             "   {} {} {}",
             name.with(theme.colors.package_name),
             version.with(theme.colors.version),
-            description.clone().with(theme.colors.secondary)
+            description.with(theme.colors.secondary)
         );
     }
 

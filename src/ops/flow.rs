@@ -44,13 +44,19 @@ pub enum ArtifactKind {
     Binary {
         /// Download URL for the binary archive.
         url: String,
+        /// Mirror URL (preferred, from artifact store).
+        mirror_url: Option<String>,
         /// SHA256 hash for verification.
         hash: String,
+        /// Available patches for delta updates.
+        patches: Vec<crate::core::index::PatchInfo>,
     },
     /// Source code that requires building.
     Source {
         /// Download URL for the source archive.
         url: String,
+        /// Mirror URL (preferred, from artifact store).
+        mirror_url: Option<String>,
         /// SHA256 hash for verification.
         hash: String,
     },
@@ -58,7 +64,24 @@ pub enum ArtifactKind {
 
 impl ArtifactKind {
     /// Get the download URL for this artifact.
+    ///
+    /// Prefers the mirror URL if available.
     pub fn url(&self) -> &str {
+        match self {
+            Self::Binary {
+                mirror_url: Some(m),
+                ..
+            }
+            | Self::Source {
+                mirror_url: Some(m),
+                ..
+            } => m,
+            Self::Binary { url, .. } | Self::Source { url, .. } => url,
+        }
+    }
+
+    /// Get the upstream (original) URL for this artifact.
+    pub fn upstream_url(&self) -> &str {
         match self {
             Self::Binary { url, .. } | Self::Source { url, .. } => url,
         }
@@ -161,6 +184,7 @@ impl UnresolvedPackage {
                 version: package_def.package.version.clone(),
                 artifact: ArtifactKind::Source {
                     url: package_def.source.url.clone(),
+                    mirror_url: None,
                     hash: package_def.source.sha256.clone(),
                 },
                 def: package_def,
@@ -188,7 +212,8 @@ impl UnresolvedPackage {
             .ok_or_else(|| InstallError::Validation(format!("Package {name} not found")))?;
 
         let release = Self::select_release(name, requested, entry)?;
-        let (artifact, current_arch) = Self::select_artifact(name, release)?;
+        let (artifact, current_arch) =
+            Self::select_artifact(name, release, index_ref.mirror_base_url.as_deref())?;
         let package_def = Self::build_synthetic_package(entry, release, &artifact, current_arch);
 
         Ok(ResolvedPackage {
@@ -226,6 +251,7 @@ impl UnresolvedPackage {
     fn select_artifact(
         name: &PackageName,
         release: &VersionInfo,
+        mirror_base_url: Option<&str>,
     ) -> Result<(ArtifactKind, Arch), InstallError> {
         let current_arch = Arch::current();
         let bin_artifact = release
@@ -234,17 +260,22 @@ impl UnresolvedPackage {
             .find(|b| b.arch == current_arch || b.arch == Arch::Universal);
 
         if let Some(b) = bin_artifact {
+            let mirror_url = mirror_base_url.map(|base| format!("{base}/cas/{}", b.hash));
             Ok((
                 ArtifactKind::Binary {
                     url: b.url.clone(),
+                    mirror_url,
                     hash: b.hash.to_string(),
+                    patches: b.patches.clone(),
                 },
                 current_arch,
             ))
         } else if let Some(src) = &release.source {
+            let mirror_url = mirror_base_url.map(|base| format!("{base}/cas/{}", src.hash));
             Ok((
                 ArtifactKind::Source {
                     url: src.url.clone(),
+                    mirror_url,
                     hash: src.hash.to_string(),
                 },
                 current_arch,
@@ -272,6 +303,7 @@ impl UnresolvedPackage {
                 description: entry.description.clone(),
                 homepage: String::new(),
                 license: String::new(),
+                tags: vec![],
                 type_: if entry.type_ == "app" {
                     Some(PackageType::App)
                 } else {
@@ -403,18 +435,90 @@ impl ResolvedPackage {
             let extract_dir = temp_dir.path().join("extracted");
             std::fs::create_dir_all(&extract_dir).map_err(InstallError::Io)?;
 
-            crate::io::download::DownloadRequest::new(
-                client,
-                &self.name,
-                &self.version,
-                self.artifact.url(),
-                &cache_file,
-                self.artifact.hash(),
-                reporter,
-            )
-            .with_extract_dest(&extract_dir)
-            .execute()
-            .await?;
+            // Delta Update Check
+            let mut downloaded = false;
+            if let ArtifactKind::Binary { patches, .. } = &self.artifact {
+                for patch in patches {
+                    let old_cache_file = crate::cache_path().join(patch.from_hash.as_str());
+                    if old_cache_file.exists() {
+                        reporter.info(&format!(
+                            "{} {}: Using binary delta (from {})",
+                            self.name, self.version, patch.from_hash
+                        ));
+
+                        // Wait, we need the actual mirror base URL from the index.
+                        // For now we assume the mirror URL helper can give us a base.
+                        let mirror_base = self
+                            .artifact
+                            .url()
+                            .trim_end_matches(&format!("/cas/{}", self.artifact.hash()));
+                        let patch_url = format!(
+                            "{}/deltas/{}_{}.zst",
+                            mirror_base,
+                            patch.from_hash,
+                            self.artifact.hash()
+                        );
+
+                        let patch_file = temp_dir.path().join("patch.zst");
+                        let res = crate::io::download::DownloadRequest::new(
+                            client,
+                            &self.name,
+                            &self.version,
+                            &patch_url,
+                            &patch_file,
+                            patch.patch_hash.as_str(),
+                            reporter,
+                        )
+                        .execute()
+                        .await;
+
+                        if res.is_ok() {
+                            // Apply delta
+                            let old_data =
+                                std::fs::read(&old_cache_file).map_err(InstallError::Io)?;
+                            let patch_data =
+                                std::fs::read(&patch_file).map_err(InstallError::Io)?;
+
+                            match crate::io::delta::apply_delta(&old_data, &patch_data) {
+                                Ok(new_data) => {
+                                    // Verify hash
+                                    use sha2::{Digest, Sha256};
+                                    let mut hasher = Sha256::new();
+                                    hasher.update(&new_data);
+                                    let new_hash = format!("{:x}", hasher.finalize());
+
+                                    if new_hash == self.artifact.hash() {
+                                        std::fs::write(&cache_file, new_data)
+                                            .map_err(InstallError::Io)?;
+                                        downloaded = true;
+                                        break;
+                                    }
+                                }
+                                Err(_) => continue,
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !downloaded {
+                crate::io::download::DownloadRequest::new(
+                    client,
+                    &self.name,
+                    &self.version,
+                    self.artifact.url(),
+                    &cache_file,
+                    self.artifact.hash(),
+                    reporter,
+                )
+                .with_extract_dest(&extract_dir)
+                .execute()
+                .await?;
+            } else {
+                // Manually extract since we bypassed the standard DownloadRequest extraction
+                crate::io::extract::extract_auto(&cache_file, &extract_dir)
+                    .map_err(|e| InstallError::Other(e.to_string()))?;
+            }
 
             download_or_extract_path = extract_dir;
             if self.artifact.is_source() && self.def.source.strip_components.unwrap_or(0) > 0 {

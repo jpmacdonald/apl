@@ -83,31 +83,50 @@ fn run_shell(
     root_dir: &Path,
     command: Option<Vec<String>>,
 ) -> Result<()> {
-    // Construct PATH using package metadata or heuristics
+    // 1. Create Ephemeral Sysroot
+    let sysroot =
+        apl::core::sysroot::Sysroot::new().context("Failed to create ephemeral sysroot")?;
+    output.info(&format!(
+        "Created ephemeral sysroot at {}",
+        sysroot.path().display()
+    ));
+
+    // 2. Mount Packages into Sysroot
     let mut new_path_entries = Vec::new();
     for pkg in &lockfile.package {
         let store_dir = apl::store_path().join(&pkg.name).join(&pkg.version);
 
-        // Try metadata file first, then heuristic
-        let path_to_add = get_bin_dir_from_meta(&store_dir).unwrap_or_else(|| {
-            let bin_heuristic = store_dir.join("bin");
+        // Mount the package into the sysroot
+        // We mirror the store structure: <sysroot>/store/<name>/<version>
+        let target_rel = Path::new("store").join(&pkg.name).join(&pkg.version);
+        sysroot
+            .mount(&store_dir, &target_rel)
+            .with_context(|| format!("Failed to mount package {} into sysroot", pkg.name))?;
+
+        // Calculate the bin path *inside* the sysroot
+        let sysroot_store_dir = sysroot.path().join(&target_rel);
+
+        // Try metadata file first, then heuristic (same logic as before, but relative to sysroot path)
+        let path_to_add = get_bin_dir_from_meta(&sysroot_store_dir).unwrap_or_else(|| {
+            let bin_heuristic = sysroot_store_dir.join("bin");
             if bin_heuristic.exists() {
                 bin_heuristic
             } else {
-                store_dir.clone()
+                sysroot_store_dir
             }
         });
 
         new_path_entries.push(path_to_add);
     }
 
+    // 3. Construct PATH
     let current_path = env::var_os("PATH").unwrap_or_default();
     let mut all_paths = new_path_entries;
     all_paths.extend(env::split_paths(&current_path));
 
-    let new_path = env::join_paths(all_paths).context("Failed to check join paths")?;
+    let new_path = env::join_paths(all_paths).context("Failed to join paths")?;
 
-    // 6. Spawn Shell
+    // 4. Spawn Shell
     let shell_bin = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
     // Get project name for prompt prefix
@@ -117,13 +136,17 @@ fn run_shell(
         .unwrap_or_else(|| "apl".to_string());
     let ps1_prefix = format!("(apl:{project_name}) ");
 
-    output.success("Entering apl shell environment...");
+    output.success("Entering apl ephemeral shell...");
+    output.info("Any changes to installed tools will be lost on exit.");
 
     // Helper to set common env vars
     let set_env = |cmd: &mut Command| {
         cmd.env("PATH", &new_path)
             .env("APL_PROJECT_ROOT", root_dir)
-            .env("APL_PS1_PREFIX", &ps1_prefix);
+            .env("APL_PS1_PREFIX", &ps1_prefix)
+            // Ideally we'd also set HOME to the sysroot or similar for full isolation,
+            // but for now we just scope the tool binaries.
+            .env("APL_SYSROOT", sysroot.path());
     };
 
     let status = match command {
@@ -147,7 +170,8 @@ fn run_shell(
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    output.info("Exited apl shell.");
+    output.info("Exited apl shell. Cleaning up...");
+    // Sysroot dropped here, auto-cleanup via tempfile::TempDir
 
     Ok(())
 }

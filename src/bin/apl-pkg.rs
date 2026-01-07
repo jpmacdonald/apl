@@ -323,6 +323,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             description: String::new(), // Fetching from GitHub API would be better
             homepage: format!("https://github.com/{repo}"),
             license: String::new(),
+            tags: vec![],
         },
         discovery: DiscoveryConfig::GitHub {
             github: repo.to_string(),
@@ -335,6 +336,8 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             skip_checksums: false,
             checksum_url: None,
         },
+        source: None,
+        build: None,
         install: InstallSpec::default(),
         hints: Hints::default(),
     };

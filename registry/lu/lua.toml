@@ -1,0 +1,26 @@
+[package]
+name = "lua"
+description = "Powerful, efficient, lightweight, embeddable scripting language"
+homepage = "https://www.lua.org"
+license = "MIT"
+
+[discovery]
+manual = ["5.4.6"]
+
+[source]
+url = "https://www.lua.org/ftp/lua-{{version}}.tar.gz"
+format = "tar.gz"
+
+[assets]
+# Assets not used for build-from-source, but required by template schema
+universal = false
+
+[build]
+dependencies = ["make", "clang"]
+script = """
+make macosx
+make install INSTALL_TOP=$PREFIX
+"""
+
+[install]
+bin = ["lua", "luac"]

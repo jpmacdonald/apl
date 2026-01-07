@@ -100,6 +100,29 @@ skip = false           # If true, don't verify checksums
 
 ---
 
+### `[source]` (Optional)
+
+Defines how to fetch the source code for building.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `url` | string | URL template for source code (e.g. `{{github}}/archive/{{tag}}.tar.gz`) |
+| `format` | string | Archive format (`tar.gz`, `zip`, etc.) |
+| `sha256` | string | (Optional) SHA256 of the source archive |
+
+### `[build]` (Optional)
+
+Defines build instructions. Presence of this section triggers **Registry Hydration**.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `dependencies` | array | Build-time dependencies (e.g. `cmake`, `rust`) |
+| `script` | string | Multi-line shell script to run in the `Sysroot`. |
+
+**Zero Fallback Note**: If a `[build]` section is present, the registry will attempt to build and hydrate the package into the artifact store. If hydration fails, the version is skipped. Clients never build from source; they only consume the hydrated binaries.
+
+---
+
 ## `[install]` Section
 
 Instructions for linking the package into your system.

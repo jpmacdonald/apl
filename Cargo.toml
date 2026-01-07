@@ -60,6 +60,9 @@ regex = "1"
 toml_edit = "0.22"
 wait-timeout = "0.2"
 async-trait = "0.1.89"
+fuzzy-matcher = "0.3.7"
+aws-sdk-s3 = "1.119.0"
+aws-config = "1.8.12"
 
 [profile.release]
 lto = true

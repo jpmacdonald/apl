@@ -6,6 +6,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -45,6 +47,17 @@ pub enum IndexError {
     VersionMismatch(u32, u32),
 }
 
+/// Patch information for binary deltas
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatchInfo {
+    /// SHA256 hash of the source/old binary
+    pub from_hash: crate::types::Sha256Hash,
+    /// SHA256 hash of the patch file itself
+    pub patch_hash: crate::types::Sha256Hash,
+    /// Size of the patch file in bytes
+    pub patch_size: u64,
+}
+
 /// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
@@ -56,6 +69,10 @@ pub struct IndexBinary {
     pub hash: crate::types::Sha256Hash,
     /// Hash algorithm type
     pub hash_type: HashType,
+    /// Available binary patches (deltas from older versions)
+    /// Note: Placed at end for postcard backward compatibility
+    #[serde(default)]
+    pub patches: Vec<PatchInfo>,
 }
 
 /// Source artifact info
@@ -116,6 +133,9 @@ pub struct IndexEntry {
     pub bins: Vec<String>,
     /// All available releases (sorted by version descending)
     pub releases: Vec<VersionInfo>,
+    /// Categories/Tags for the package
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl IndexEntry {
@@ -140,20 +160,25 @@ impl IndexEntry {
 /// Package index (binary format)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageIndex {
-    /// Index format version (Bumped to 4 for source support)
+    /// Index format version (Bumped to 5 for artifact store support)
     pub version: u32,
     /// Unix timestamp of last update
     pub updated_at: i64,
     /// Package entries
     pub packages: Vec<IndexEntry>,
+    /// Base URL for artifact mirror (CAS layout: {base_url}/cas/{hash})
+    /// Note: Placed at end for postcard backward compatibility
+    #[serde(default)]
+    pub mirror_base_url: Option<String>,
 }
 
 impl PackageIndex {
     /// Create a new empty index
     pub fn new() -> Self {
         Self {
-            version: 4,
+            version: 5,
             updated_at: 0,
+            mirror_base_url: None,
             packages: Vec::new(),
         }
     }
@@ -207,19 +232,21 @@ impl PackageIndex {
 
     /// Deserialize from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, IndexError> {
-        // Postcard serializes fields in order. First field of PackageIndex is version: u32.
-        // We can try to deserialize just the header first to check version.
+        // Postcard serializes fields in order. We deserialize just the header to check version.
+        // This must match the first few fields of PackageIndex exactly!
         #[derive(Deserialize)]
         struct IndexHeader {
             version: u32,
+            #[allow(dead_code)]
+            updated_at: i64,
         }
 
         let header: IndexHeader = postcard::from_bytes(data)
-            .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?; // Placeholder if header fails
+            .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?;
 
-        if header.version < 3 {
+        if header.version < 4 {
             // We could implement migration here, but for now just bail with a clear message.
-            return Err(IndexError::VersionMismatch(header.version, 3));
+            return Err(IndexError::VersionMismatch(header.version, 4));
         }
 
         Ok(postcard::from_bytes(data)?)
@@ -239,6 +266,7 @@ impl PackageIndex {
         name: &str,
         description: &str,
         type_: &str,
+        tags: Vec<String>,
         release: VersionInfo,
     ) {
         match self
@@ -249,6 +277,7 @@ impl PackageIndex {
                 let entry = &mut self.packages[idx];
                 entry.description = description.to_string();
                 entry.type_ = type_.to_string();
+                entry.tags = tags;
                 if let Some(existing) = entry
                     .releases
                     .iter_mut()
@@ -293,6 +322,7 @@ impl PackageIndex {
                         type_: type_.to_string(),
                         bins,
                         releases: vec![release],
+                        tags,
                     },
                 );
             }
@@ -308,22 +338,55 @@ impl PackageIndex {
             .map(|idx| &self.packages[idx])
     }
 
-    /// Search packages by query (matches name or description) - O(n) scan
+    /// Search packages by query (matches name or description)
     ///
-    /// Note: This is intentionally O(n) because it's a substring search.
-    /// For prefix-only search, we could use partition_point for O(log n).
+    /// Supports fuzzy matching via SkimMatcherV2 and tag filtering via 'tag:<name>'.
+    /// Results are ranked by match score.
     pub fn search(&self, query: &str) -> Vec<&IndexEntry> {
+        if query.is_empty() {
+            return self.packages.iter().take(50).collect();
+        }
+
+        let matcher = SkimMatcherV2::default();
         let query_lower = query.to_lowercase();
-        self.packages
+
+        // 1. Check for tag: filter
+        if let Some(tag_query) = query_lower.strip_prefix("tag:") {
+            return self
+                .packages
+                .iter()
+                .filter(|e| e.tags.iter().any(|t| t.to_lowercase() == tag_query))
+                .collect();
+        }
+
+        // 2. Perform fuzzy search
+        let mut results: Vec<(i64, &IndexEntry)> = self
+            .packages
             .iter()
-            .filter(|e| {
-                e.name.to_lowercase().contains(&query_lower)
-                    || e.description.to_lowercase().contains(&query_lower)
-                    || e.bins
-                        .iter()
-                        .any(|b| b.to_lowercase().contains(&query_lower))
+            .filter_map(|e| {
+                // We score name, description, and bins
+                let mut best_score = matcher.fuzzy_match(&e.name, query);
+
+                if let Some(desc_score) = matcher.fuzzy_match(&e.description, query) {
+                    // Description matches are slightly less weighted than name matches
+                    let adjusted = desc_score / 2;
+                    best_score = Some(best_score.unwrap_or(0).max(adjusted));
+                }
+
+                for b in &e.bins {
+                    if let Some(bin_score) = matcher.fuzzy_match(b, query) {
+                        best_score = Some(best_score.unwrap_or(0).max(bin_score));
+                    }
+                }
+
+                best_score.map(|s| (s, e))
             })
-            .collect()
+            .collect();
+
+        // 3. Rank by score descending
+        results.sort_by(|a, b| b.0.cmp(&a.0));
+
+        results.into_iter().map(|(_, e)| e).take(50).collect()
     }
 
     /// Search packages by name prefix - O(log n) using binary search
@@ -365,6 +428,7 @@ mod tests {
                     url: "https://example.com/nvim.tar.zst".to_string(),
                     hash: crate::types::Sha256Hash::new("abc123"),
                     hash_type: HashType::Sha256,
+                    patches: vec![],
                 }],
                 deps: vec!["libuv".to_string()],
                 build_deps: vec![],
@@ -374,6 +438,7 @@ mod tests {
                 app: None,
                 source: None,
             }],
+            tags: vec![],
         });
 
         let bytes = index.to_bytes().unwrap();
@@ -410,8 +475,8 @@ mod tests {
             source: None,
         };
 
-        index.upsert_release("test", "Test description", "cli", release1);
-        index.upsert_release("test", "Test description", "cli", release2);
+        index.upsert_release("test", "Test description", "cli", vec![], release1);
+        index.upsert_release("test", "Test description", "cli", vec![], release2);
 
         let entry = index.find("test").unwrap();
         assert_eq!(entry.releases.len(), 2);
@@ -428,7 +493,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(IndexError::VersionMismatch(found, expected)) = result {
             assert_eq!(found, 1);
-            assert_eq!(expected, 3);
+            assert_eq!(expected, 4);
         } else {
             panic!("Expected VersionMismatch error");
         }
@@ -446,6 +511,7 @@ mod tests {
             "ripgrep",
             "Fast grep",
             "cli",
+            vec![],
             VersionInfo {
                 version: "14.0.0".to_string(),
                 binaries: vec![IndexBinary {
@@ -453,6 +519,7 @@ mod tests {
                     url: "https://example.com/foo-arm64".to_string(),
                     hash: crate::types::Sha256Hash::new("hash1"),
                     hash_type: HashType::Sha256,
+                    patches: vec![],
                 }],
                 deps: vec![],
                 build_deps: vec![],
@@ -483,6 +550,7 @@ mod tests {
                 "test-pkg",
                 "Test package",
                 "cli",
+                vec![],
                 VersionInfo {
                     version: version.to_string(),
                     binaries: vec![],
@@ -508,5 +576,62 @@ mod tests {
 
         // latest() should return the highest version
         assert_eq!(entry.latest().unwrap().version, "1.0.0");
+    }
+
+    #[test]
+    fn test_search_fuzzy() {
+        let mut index = PackageIndex::new();
+        let release = VersionInfo {
+            version: "1.0.0".to_string(),
+            binaries: vec![],
+            deps: vec![],
+            build_deps: vec![],
+            build_script: String::new(),
+            bin: vec!["nvim".to_string()],
+            hints: String::new(),
+            app: None,
+            source: None,
+        };
+        index.upsert_release("neovim", "Vim fork", "cli", vec![], release);
+
+        // Exact match
+        assert!(!index.search("neovim").is_empty());
+        // Typo/Fuzzy match (in-order)
+        assert!(!index.search("novim").is_empty());
+        // Bin match
+        assert!(!index.search("nvim").is_empty());
+        // No match
+        assert!(index.search("zsh").is_empty());
+    }
+
+    #[test]
+    fn test_search_tags() {
+        let mut index = PackageIndex::new();
+        let release = VersionInfo {
+            version: "1.0.0".to_string(),
+            binaries: vec![],
+            deps: vec![],
+            build_deps: vec![],
+            build_script: String::new(),
+            bin: vec![],
+            hints: String::new(),
+            app: None,
+            source: None,
+        };
+        index.upsert_release(
+            "ripgrep",
+            "Fast grep",
+            "cli",
+            vec!["Editor".to_string(), "Tool".to_string()],
+            release,
+        );
+
+        // Tag match
+        assert_eq!(index.search("tag:editor").len(), 1);
+        assert_eq!(index.search("tag:tool").len(), 1);
+        // Case-insensitive tag match
+        assert_eq!(index.search("tag:EDITOR").len(), 1);
+        // No match
+        assert_eq!(index.search("tag:network").len(), 0);
     }
 }
