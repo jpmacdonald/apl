@@ -14,10 +14,10 @@ universal = false
 skip_checksums = false
 
 [assets.x86_64-macos]
-suffix = "amd64.tar.gz"
+suffix = "Darwin_amd64.tar.gz"
 
 [assets.arm64-macos]
-suffix = "arm64.tar.gz"
+suffix = "Darwin_arm64.tar.gz"
 
 [install]
 bin = ["k9s"]

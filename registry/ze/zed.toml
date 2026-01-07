@@ -14,10 +14,10 @@ universal = false
 skip_checksums = false
 
 [assets.x86_64-macos]
-suffix = "x86_64.tar.gz"
+suffix = "Zed-x86_64.dmg"
 
 [assets.arm64-macos]
-suffix = "aarch64.tar.gz"
+suffix = "Zed-aarch64.dmg"
 
 [install]
 bin = ["zed"]

@@ -14,10 +14,10 @@ universal = false
 skip_checksums = false
 
 [assets.arm64-macos]
-suffix = "arm64.tar.gz"
+suffix = "darwin_arm64.tar.gz"
 
 [assets.x86_64-macos]
-suffix = "amd64.tar.gz"
+suffix = "darwin_amd64.tar.gz"
 
 [install]
 bin = ["curlie"]

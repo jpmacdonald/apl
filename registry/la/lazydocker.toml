@@ -14,10 +14,10 @@ universal = false
 skip_checksums = false
 
 [assets.x86_64-macos]
-suffix = "x86_64.tar.gz"
+suffix = "darwin_x86_64.tar.gz"
 
 [assets.arm64-macos]
-suffix = "arm64.tar.gz"
+suffix = "darwin_arm64.tar.gz"
 
 [install]
 bin = ["lazydocker"]

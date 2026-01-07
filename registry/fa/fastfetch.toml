@@ -14,10 +14,10 @@ universal = false
 skip_checksums = false
 
 [assets.arm64-macos]
-suffix = "aarch64.tar.gz"
+suffix = "macos-aarch64.tar.gz"
 
 [assets.x86_64-macos]
-suffix = "amd64.tar.gz"
+suffix = "macos-amd64.tar.gz"
 
 [install]
 bin = ["fastfetch"]
