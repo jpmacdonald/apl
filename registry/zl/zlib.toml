@@ -1,0 +1,29 @@
+[package]
+name = "zlib"
+description = "A Massively Spiffy Yet Delicately Unobtrusive Compression Library"
+homepage = "https://zlib.net"
+license = "Zlib"
+tags = ["library", "compression"]
+
+[discovery]
+github = "madler/zlib"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { build = true }
+x86_64-macos = { build = true }
+
+[source]
+url = "https://zlib.net/zlib-{{version}}.tar.gz"
+format = "tar.gz"
+
+[build]
+dependencies = []
+script = """
+./configure --prefix=$PREFIX
+make -j$JOBS
+make install
+"""
+
+[install]
+bin = [] # Library only

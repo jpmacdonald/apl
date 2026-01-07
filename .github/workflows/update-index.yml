@@ -46,10 +46,22 @@ jobs:
           APL_ARTIFACT_STORE_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
           APL_ARTIFACT_STORE_BUCKET: apl-store
           APL_ARTIFACT_STORE_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          APL_SIGNING_KEY: ${{ secrets.APL_SIGNING_KEY }}
         run: cargo run --bin apl-pkg -- index
         
       - name: Release Index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload latest index.bin --clobber || gh release create latest index.bin --title "Latest Registry Index" --notes "Automated index generation"
+          gh release upload latest index.bin index.bin.sig --clobber || gh release create latest index.bin index.bin.sig --title "Latest Registry Index" --notes "Automated index generation"
+
+      - name: Sync Index to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          # Upload index.bin, signature, and metadata to R2
+          aws s3 cp index.bin s3://apl-store/index.bin --endpoint-url ${{ secrets.R2_ENDPOINT }}
+          aws s3 cp index.bin.sig s3://apl-store/index.bin.sig --endpoint-url ${{ secrets.R2_ENDPOINT }}
+          aws s3 cp latest-apl.json s3://apl-store/latest-apl.json --endpoint-url ${{ secrets.R2_ENDPOINT }}

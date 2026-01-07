@@ -43,6 +43,8 @@ enum Commands {
     },
     /// Migrate legacy registry to Selectors Pattern
     MigrateSelectors,
+    /// Generate a new Ed25519 signing keypair
+    Keygen,
 }
 
 #[tokio::main]
@@ -219,6 +221,9 @@ async fn main() -> Result<()> {
         Commands::MigrateSelectors => {
             cli_migrate_selectors(&registry_dir).await?;
         }
+        Commands::Keygen => {
+            cli_keygen()?;
+        }
     }
 
     Ok(())
@@ -258,6 +263,49 @@ async fn cli_index(
     .await?;
 
     index.save_compressed(index_path)?;
+
+    // Sign the index if key is present
+    if let Ok(secret_b64) = std::env::var("APL_SIGNING_KEY") {
+        use base64::Engine;
+        use ed25519_dalek::{Signer, SigningKey};
+
+        println!("🔒 Signing index...");
+        let secret_bytes = base64::engine::general_purpose::STANDARD
+            .decode(secret_b64.trim())
+            .expect("Invalid Base64 signing key");
+
+        let signing_key = SigningKey::from_bytes(
+            secret_bytes
+                .as_slice()
+                .try_into()
+                .expect("Key must be 32 bytes"),
+        );
+
+        // Read back the exact file we just wrote to ensure signature matches disk content
+        let index_data = fs::read(index_path)?;
+        let signature = signing_key.sign(&index_data);
+
+        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+        let sig_path = index_path.with_extension("bin.sig");
+        fs::write(&sig_path, sig_b64)?;
+        println!("   Created signature: {}", sig_path.display());
+    } else {
+        println!("⚠️  APL_SIGNING_KEY not set. Index is UNSIGNED.");
+    }
+
+    // Export latest 'apl' info for the Cloudflare Worker router
+    if let Some(entry) = index.find("apl") {
+        if let Some(latest) = entry.latest() {
+            let info = serde_json::json!({
+                "version": latest.version,
+                "binaries": latest.binaries,
+            });
+            let info_path = index_path.with_file_name("latest-apl.json");
+            fs::write(&info_path, serde_json::to_string_pretty(&info)?)?;
+            println!("   Generated metadata: {}", info_path.display());
+        }
+    }
+
     Ok(())
 }
 async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Result<()> {
@@ -348,5 +396,43 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     fs::write(&target_path, template_toml)?;
 
     println!("   Created template: {}", target_path.display());
+    Ok(())
+}
+
+fn cli_keygen() -> Result<()> {
+    use base64::Engine;
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use std::io::Write;
+
+    use rand::RngCore;
+
+    println!("🔑 Generating new Ed25519 signing keypair...");
+
+    let mut secret_bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret_bytes);
+    let signing_key = SigningKey::from_bytes(&secret_bytes);
+    let verify_key = signing_key.verifying_key();
+
+    // Encode as Base64 (Standard engine)
+    let secret_b64 = base64::engine::general_purpose::STANDARD.encode(signing_key.to_bytes());
+    let public_b64 = base64::engine::general_purpose::STANDARD.encode(verify_key.to_bytes());
+
+    println!("\n{:=^60}", " SECRET KEY (Keep this safe!) ");
+    println!("{secret_b64}");
+    println!("{:=^60}\n", "");
+
+    println!("{:=^60}", " PUBLIC KEY (Embed in app) ");
+    println!("{public_b64}");
+    println!("{:=^60}\n", "");
+
+    // Save to keyfile for convenience
+    let keyfile_path = Path::new("apl.key");
+    if !keyfile_path.exists() {
+        let mut f = fs::File::create(keyfile_path)?;
+        f.write_all(secret_b64.as_bytes())?;
+        println!("✓ Secret key saved to ./apl.key (gitignore this!)");
+    }
+
     Ok(())
 }

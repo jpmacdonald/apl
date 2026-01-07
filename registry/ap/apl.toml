@@ -1,0 +1,20 @@
+[package]
+name = "apl"
+description = "A fast, minimal package manager for macOS"
+homepage = "https://apl.pub"
+license = "MIT"
+tags = ["package-manager", "macos", "cli"]
+
+[discovery]
+github = "jpmacdonald/apl"
+tag_pattern = "v{{version}}"
+
+[assets]
+# APL binaries are named apl-<version>-<arch>.tar.gz
+# or we can use regex to find them reliably
+arm64-macos = { suffix = "arm64.tar.gz" }
+x86_64-macos = { suffix = "x86_64.tar.gz" }
+
+[install]
+strategy = "link"
+bin = ["apl"]

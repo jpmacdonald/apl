@@ -181,7 +181,7 @@ apl clean
 Update APL itself to the latest version:
 
 ```bash
-apl update-self
+apl self-update
 ```
 
 ---
@@ -204,7 +204,7 @@ These options work with any command:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `APL_HOME` | `~/.apl` | Base directory for APL data |
-| `APL_INDEX_URL` | GitHub Releases | Custom index URL |
+| `APL_INDEX_URL` | `https://apl.pub/index` | Custom index URL |
 | `GITHUB_TOKEN` | (none) | For higher API rate limits |
 
 ---

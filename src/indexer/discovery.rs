@@ -274,6 +274,7 @@ pub fn find_asset_by_selector<'a>(
             }
         }
         AssetSelector::Exact { name } => &asset.name == name,
+        AssetSelector::Build { .. } => false,
     })
 }
 

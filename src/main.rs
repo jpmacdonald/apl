@@ -89,11 +89,7 @@ enum Commands {
     /// Update package index from CDN
     Update {
         /// CDN URL for index
-        #[arg(
-            long,
-            env = "APL_INDEX_URL",
-            default_value = "https://github.com/jpmacdonald/apl/releases/download/index/index.bin"
-        )]
+        #[arg(long, env = "APL_INDEX_URL", default_value = "https://apl.pub/index")]
         url: String,
     },
     /// Upgrade installed packages to latest versions
@@ -176,6 +172,18 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    // Auto-detect `apl shell` context
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 1 {
+        // No arguments provided. Check for apl.toml
+        if let Ok(cwd) = std::env::current_dir() {
+            if has_manifest(&cwd) {
+                println!("🔮 Found apl.toml. Entering project shell...");
+                return cmd::shell::shell(false, false, None).await;
+            }
+        }
+    }
+
     let cli = Cli::parse();
     let dry_run = cli.dry_run;
 
@@ -222,5 +230,19 @@ async fn main() -> Result<()> {
             update,
             command,
         } => cmd::shell::shell(frozen, update, command).await,
+    }
+}
+
+fn has_manifest(start: &std::path::Path) -> bool {
+    let mut current = start;
+    loop {
+        if current.join("apl.toml").exists() {
+            return true;
+        }
+        if let Some(parent) = current.parent() {
+            current = parent;
+        } else {
+            return false;
+        }
     }
 }

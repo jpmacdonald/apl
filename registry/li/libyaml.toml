@@ -1,0 +1,29 @@
+[package]
+name = "libyaml"
+description = "YAML Parser and Emitter"
+homepage = "https://pyyaml.org/wiki/LibYAML"
+license = "MIT"
+tags = ["library", "yaml"]
+
+[discovery]
+github = "yaml/libyaml"
+tag_pattern = "{{version}}"
+
+[assets]
+arm64-macos = { build = true }
+x86_64-macos = { build = true }
+
+[source]
+url = "https://github.com/yaml/libyaml/releases/download/{{version}}/yaml-{{version}}.tar.gz"
+format = "tar.gz"
+
+[build]
+dependencies = []
+script = """
+./configure --prefix=$PREFIX
+make -j$JOBS
+make install
+"""
+
+[install]
+bin = []

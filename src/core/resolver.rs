@@ -1,7 +1,7 @@
 use crate::core::index::PackageIndex;
 use crate::types::PackageName;
 use anyhow::{Context, Result, bail};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Resolves dependencies for a set of packages and returns them in installation order.
 pub fn resolve_dependencies(
@@ -23,6 +23,78 @@ pub fn resolve_dependencies(
     }
 
     Ok(resolved_order)
+}
+
+/// Resolves a build plan for the entire index, returning layers of packages
+/// that can be built in parallel.
+pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>> {
+    let mut adjacency: HashMap<PackageName, Vec<PackageName>> = HashMap::new();
+    let mut in_degree: HashMap<PackageName, usize> = HashMap::new();
+    let mut all_packages = HashSet::new();
+
+    for entry in &index.packages {
+        let pkg_name = PackageName::new(&entry.name);
+        all_packages.insert(pkg_name.clone());
+
+        if let Some(latest) = entry.latest() {
+            for dep in &latest.build_deps {
+                let dep_name = PackageName::new(dep);
+                adjacency
+                    .entry(dep_name.clone())
+                    .or_default()
+                    .push(pkg_name.clone());
+                *in_degree.entry(pkg_name.clone()).or_default() += 1;
+                all_packages.insert(dep_name);
+            }
+        }
+    }
+
+    let mut layers = Vec::new();
+    let queue: VecDeque<PackageName> = all_packages
+        .iter()
+        .filter(|p| in_degree.get(*p).copied().unwrap_or(0) == 0)
+        .cloned()
+        .collect();
+
+    // Sort queue for deterministic output
+    let mut sorted_queue: Vec<PackageName> = queue.into_iter().collect();
+    sorted_queue.sort();
+    let mut queue = VecDeque::from(sorted_queue);
+
+    while !queue.is_empty() {
+        let mut current_layer = Vec::new();
+        let mut next_queue_vec = Vec::new();
+
+        while let Some(u) = queue.pop_front() {
+            current_layer.push(u.clone());
+
+            if let Some(neighbors) = adjacency.get(&u) {
+                for v in neighbors {
+                    let degree = in_degree.get_mut(v).unwrap();
+                    *degree -= 1;
+                    if *degree == 0 {
+                        next_queue_vec.push(v.clone());
+                    }
+                }
+            }
+        }
+
+        if !current_layer.is_empty() {
+            current_layer.sort();
+            layers.push(current_layer);
+        }
+
+        next_queue_vec.sort();
+        queue = VecDeque::from(next_queue_vec);
+    }
+
+    // Check for cycles
+    let total_sorted: usize = layers.iter().map(|l| l.len()).sum();
+    if total_sorted < all_packages.len() {
+        bail!("Circular dependency detected in build graph");
+    }
+
+    Ok(layers)
 }
 
 fn resolve_recursive(
@@ -151,5 +223,55 @@ mod tests {
                 .to_string()
                 .contains("Circular dependency")
         );
+    }
+
+    #[test]
+    fn test_build_plan_layers() {
+        let mut entry_a = simple_entry("a", vec![]);
+        entry_a.releases[0].build_deps = vec!["b".to_string(), "c".to_string()];
+
+        let mut entry_b = simple_entry("b", vec![]);
+        entry_b.releases[0].build_deps = vec!["d".to_string()];
+
+        let entry_c = simple_entry("c", vec![]);
+        let entry_d = simple_entry("d", vec![]);
+
+        let index = mock_index(vec![entry_a, entry_b, entry_c, entry_d]);
+
+        let layers = resolve_build_plan(&index).unwrap();
+        // Layer 0: c, d (no build deps or deps satisfied)
+        // Layer 1: b (depends on d)
+        // Layer 2: a (depends on b, c)
+        assert_eq!(layers.len(), 3);
+        assert_eq!(
+            layers[0],
+            vec![PackageName::new("c"), PackageName::new("d")]
+        );
+        assert_eq!(layers[1], vec![PackageName::new("b")]);
+        assert_eq!(layers[2], vec![PackageName::new("a")]);
+    }
+
+    #[test]
+    fn test_deep_build_chain() {
+        // a -> b -> c -> d -> e
+        let mut entries = Vec::new();
+        let names = ["a", "b", "c", "d", "e"];
+        for i in 0..names.len() {
+            let mut entry = simple_entry(names[i], vec![]);
+            if i + 1 < names.len() {
+                entry.releases[0].build_deps = vec![names[i + 1].to_string()];
+            }
+            entries.push(entry);
+        }
+
+        let index = mock_index(entries);
+        let layers = resolve_build_plan(&index).unwrap();
+
+        assert_eq!(layers.len(), 5);
+        assert_eq!(layers[0], vec![PackageName::new("e")]);
+        assert_eq!(layers[1], vec![PackageName::new("d")]);
+        assert_eq!(layers[2], vec![PackageName::new("c")]);
+        assert_eq!(layers[3], vec![PackageName::new("b")]);
+        assert_eq!(layers[4], vec![PackageName::new("a")]);
     }
 }

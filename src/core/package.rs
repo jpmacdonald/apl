@@ -298,6 +298,8 @@ pub enum AssetSelector {
     Suffix { suffix: String },
     /// Match files matching this regex
     Regex { regex: String },
+    /// For packages that must be built from source (hydration)
+    Build { build: bool },
     /// Exact filename match
     Exact { name: String },
 }

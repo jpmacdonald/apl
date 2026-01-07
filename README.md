@@ -1,29 +1,17 @@
-# APL
+# APL (apl.pub)
 
-A fast, minimal package manager for macOS.
+A fast, minimal package manager for macOS, powered by a Content-Addressable Storage (CAS) and an algorithmic registry.
 
 ## Installation
 
-Since APL is currently in development, you can install it by cloning the repository and running the bootstrap script:
-
 ```bash
-# 1. Clone the repository
-git clone https://github.com/jpmacdonald/apl.git
-cd apl
-
-# 2. Build from source
-cargo build --release
-
-# 3. Run the installer
-./install.sh
+curl -fsSL https://apl.pub/install | sh
 ```
-
-The installer will copy the binary to `~/.apl/bin` and help you set up your PATH.
 
 ## Quick Start
 
 ```bash
-# Update the package index
+# Update the package index from apl.pub
 apl update
 
 # Install packages
@@ -31,9 +19,6 @@ apl install ripgrep fd bat
 
 # List installed packages
 apl list
-
-# Upgrade all packages
-apl upgrade
 ```
 
 ## Commands
@@ -62,9 +47,11 @@ See the [User Guide](docs/user-guide.md) for complete command reference.
 ## Features
 
 - **Algorithmic Registry** - Dynamic version discovery via GitHub (zero manual maintenance)
+- **Hybrid Distribution** - Fast binary downloads from Cloudflare R2 + GitHub fallback
+- **Source Hydration** - Automatically builds complex packages from source if binaries are missing
+- **Secure by Default** - Ed25519 index signing and BLAKE3 artifact verification
 - **Fast** - Sub-second installs with streaming downloads
 - **Simple** - TOML packages, no DSLs
-- **Secure** - BLAKE3 hash verification with vendor checksum support
 - **Portable** - Automatic binary relinking for macOS
 - **Version control** - Multiple versions, history, rollback
 

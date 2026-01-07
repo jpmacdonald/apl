@@ -151,15 +151,23 @@ The package registry is now **algorithmic**, meaning it uses templates to dynami
 - **Hydration**: For each discovered version, APL constructs download URLs and fetches integrity hashes (prioritizing vendor checksum files).
 
 ### Hydration Pipeline
+To generate the binary index, APL runs a hydration pipeline that now supports two strategies:
 
-To generate the binary index, APL runs a hydration pipeline:
+#### Strategy A: Vendor Binaries (Fast path)
+1. **GitHub Discovery**: Scan tags via API.
+2. **Checksum Fetching**: Fetch vendor-provided checksums (avoiding full download).
+3. **Fallback Hashing**: If checksums are missing, download once, hash, and cache.
 
-1. **Version Discovery**: Scan GitHub for all tags matching the template.
-2. **Asset Mapping**: For each version, map APL architectures to vendor-specific targets.
-3. **Checksum Fetching**: 
-   - APL tries to fetch the vendor's `.sha256` or `.txt` checksum file first.
-   - **Optimization**: This avoids downloading the full binary (99.9% network savings).
-4. **Fallback Hashing**: If vendor checksums are unavailable, APL downloads the binary once and computes a **BLAKE3** hash, which is then cached locally and in the index.
+#### Strategy B: Source Hydration (The "Chain")
+When a package sets `build = true` (e.g., Ruby, OpenSSL), APL becomes a build system:
+1. **Dependency Resolution**: Recursively builds dependencies (e.g., Ruby -> OpenSSL -> ...).
+2. **CoW Build Environment**: Each build happens in a fresh APFS clonefile sysroot.
+3. **Dependency Mounting**: Dependencies are mounted into the sysroot at `/deps/{name}`.
+4. **Compilation**: The `script` runs (e.g., `./configure --with-openssl-dir=/deps/openssl`).
+5. **Artifact Storage**: The result is bundled (`tar.zst`), hashed (SHA256), and uploaded to the R2-backed **Artifact Store**.
+6. **Index Entry**: The package is added to the index pointing to the R2 URL (`apl.pub/cas/<hash>`).
+
+This allows APL to distribute binaries for tools that don't provide them officially, while maintaining a pure, reproducible chain.
 
 ### Binary Index
 
@@ -275,7 +283,8 @@ history (
 | Feature | Implementation |
 |---------|----------------|
 | Hash verification | BLAKE3 (faster and more secure than SHA-256) |
-| Transport | HTTPS only |
+| Transport | HTTPS only with HSTS |
+| Index Integrity | Ed25519 Detached Signature (Strict verification) |
 | Verification timing | During download (no TOCTOU) |
 | Audit trail | SQLite history table |
 | Code signing | Ad-hoc re-signing after relinking |

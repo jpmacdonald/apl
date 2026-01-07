@@ -43,7 +43,7 @@ impl ArtifactConfig {
             bucket: std::env::var("APL_ARTIFACT_STORE_BUCKET")
                 .unwrap_or_else(|_| "apl-artifacts".to_string()),
             public_base_url: std::env::var("APL_ARTIFACT_STORE_PUBLIC_URL")
-                .unwrap_or_else(|_| "https://cache.apl.pub".to_string()),
+                .unwrap_or_else(|_| "https://apl.pub".to_string()),
         })
     }
 }
@@ -225,13 +225,13 @@ mod tests {
             access_key: "key".to_string(),
             secret_key: "secret".to_string(),
             bucket: "test".to_string(),
-            public_base_url: "https://cache.apl.dev/".to_string(), // Trailing slash
+            public_base_url: "https://apl.pub/".to_string(), // Trailing slash
         };
 
         // Can't test async new() in sync test, but we can test URL construction logic
         let base = config.public_base_url.trim_end_matches('/');
         let hash = "abc123def456";
         let url = format!("{base}/cas/{hash}");
-        assert_eq!(url, "https://cache.apl.dev/cas/abc123def456");
+        assert_eq!(url, "https://apl.pub/cas/abc123def456");
     }
 }

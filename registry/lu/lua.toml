@@ -1,0 +1,25 @@
+[package]
+name = "lua"
+description = "A powerful, efficient, lightweight, embeddable scripting language"
+homepage = "https://www.lua.org"
+license = "MIT"
+tags = ["language", "scripting", "lua"]
+
+[discovery]
+github = "lua/lua"
+tag_pattern = "v{{version}}"
+
+[assets]
+arm64-macos = { select = "macosx" }
+x86_64-macos = { select = "macosx" }
+
+[source]
+url = "https://www.lua.org/ftp/lua-{{version}}.tar.gz"
+format = "tar.gz"
+
+# [build] 
+# Removed: defaulting to binary search
+
+[install]
+strategy = "link"
+bin = ["lua", "luac"]

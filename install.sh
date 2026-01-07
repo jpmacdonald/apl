@@ -19,11 +19,32 @@ mkdir -p "$BIN_DIR"
 mkdir -p "$APL_HOME/cache"
 mkdir -p "$APL_HOME/tmp"
 
-# For local development: copy from build directory
+# Binary Resolution
 if [ -f "./target/release/apl" ]; then
+    echo "  → Using local release build"
     cp "./target/release/apl" "$BIN_DIR/apl"
 elif [ -f "./target/debug/apl" ]; then
+    echo "  → Using local debug build"
     cp "./target/debug/apl" "$BIN_DIR/apl"
+else
+    # Remote Production Download
+    echo "  → Downloading latest release from apl.pub..."
+    
+    # Simple arch mapping
+    if [ "$ARCH" = "arm64" ]; then REMOTE_ARCH="arm64"; else REMOTE_ARCH="x86_64"; fi
+    
+    # The Cloudflare Worker handles the resolution via /active-binary/:arch
+    DOWNLOAD_URL="https://apl.pub/active-binary/${REMOTE_ARCH}"
+    
+    TMP_FILE="$APL_HOME/tmp/apl_install.tar.gz"
+    curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
+    
+    tar -xzf "$TMP_FILE" -C "$APL_HOME/tmp" 2>/dev/null || {
+        echo "✗ Failed to extract binary. Worker might still be updating."
+        exit 1
+    }
+    mv "$APL_HOME/tmp/apl" "$BIN_DIR/apl"
+    rm "$TMP_FILE"
 fi
 
 chmod +x "$BIN_DIR/apl"

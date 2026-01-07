@@ -499,6 +499,7 @@ fn perform_source_build(
     builder
         .build(
             &pkg.extracted_path,
+            &[], // No build-time dependency mounting on client yet
             &build_spec.script,
             store_path,
             false,

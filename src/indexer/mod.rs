@@ -9,6 +9,7 @@ pub use walk::{registry_path, walk_registry_toml_files};
 
 use crate::core::index::{HashType, IndexBinary, PackageIndex, VersionInfo};
 use crate::package::{DiscoveryConfig, PackageTemplate};
+use crate::types::PackageName;
 use anyhow::Result;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -294,188 +295,250 @@ pub async fn generate_index_from_registry(
         .map(|key| format!("github:{}/{}", key.owner, key.repo))
         .collect();
 
-    // Filter templates to only include dirty packages (unchanged packages are already in index)
-    let templates_to_process: Vec<_> = if !force_full && !dirty_source_keys.is_empty() {
-        templates
-            .into_iter()
-            .filter(|(_, template)| {
-                pkg_source_map
-                    .get(&template.package.name.to_string())
-                    .is_some_and(|key| dirty_source_keys.contains(key))
-            })
-            .collect()
-    } else {
-        templates
-    };
+    // Pass 3.5: Build Build Graph to determine order
+    let mut stub_index = PackageIndex::new();
+    for (_, template) in &templates {
+        stub_index.upsert_release(
+            &template.package.name,
+            &template.package.description,
+            "cli",
+            template.package.tags.clone(),
+            VersionInfo {
+                version: "0.0.0".into(),
+                binaries: vec![],
+                deps: vec![],
+                build_deps: template
+                    .build
+                    .as_ref()
+                    .map(|b| b.dependencies.clone())
+                    .unwrap_or_default(),
+                bin: vec![],
+                hints: "".into(),
+                app: None,
+                source: None,
+                build_script: "".into(),
+            },
+        );
+    }
+    let layers = crate::core::resolver::resolve_build_plan(&stub_index)?;
 
-    // Pass 4: Process each dirty package using cached metadata (in parallel)
+    // Map templates by name for lookup
+    let template_map: HashMap<PackageName, (std::path::PathBuf, PackageTemplate)> = templates
+        .iter()
+        .map(|(p, t)| (t.package.name.clone(), (p.clone(), t.clone())))
+        .collect();
+
+    // Pass 4: Process each dirty package using cached metadata (Layered Hydration)
     println!("   Processing Packages...");
     use futures::stream::{self, StreamExt};
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
-
-    let mut results_stream = stream::iter(templates_to_process)
-        .map(|(_template_path, template)| {
-            let client = client.clone();
-            let hash_cache = hash_cache.clone();
-            let pkg_source_map_clone = pkg_source_map.clone();
-            let master_release_cache_clone = master_release_cache.clone();
-
-            async move {
-                let pkg_name = template.package.name.to_string();
-
-                // Discover versions using the master cache or manual config
-                #[allow(clippy::type_complexity)]
-                let (versions, releases_map): (
-                    Vec<(String, String, String)>,
-                    Option<Arc<HashMap<String, ReleaseInfo>>>,
-                ) = match &template.discovery {
-                    DiscoveryConfig::GitHub {
-                        tag_pattern,
-                        include_prereleases,
-                        ..
-                    } => {
-                        let releases = if let Some(key) = pkg_source_map_clone.get(&pkg_name) {
-                            master_release_cache_clone
-                                .get(key)
-                                .cloned()
-                                .unwrap_or_default()
-                        } else {
-                            Vec::new()
-                        };
-
-                        let sorted_releases = releases;
-
-                        let mut versions = Vec::new();
-                        let mut map = HashMap::new();
-
-                        for release in sorted_releases {
-                            map.insert(release.tag_name.clone(), release.clone());
-
-                            if !include_prereleases && release.prerelease {
-                                continue;
-                            }
-
-                            let extracted =
-                                discovery::extract_version_from_tag(&release.tag_name, tag_pattern);
-
-                            if let Some(normalized) = discovery::auto_parse_version(&extracted) {
-                                versions.push((release.tag_name.clone(), extracted, normalized));
-                            }
-                        }
-
-                        (versions, Some(Arc::new(map)))
-                    }
-                    DiscoveryConfig::Manual { manual } => {
-                        let tuples = manual
-                            .iter()
-                            .map(|v| (v.clone(), v.clone(), v.clone()))
-                            .collect();
-                        (tuples, None)
-                    }
-                };
-
-                if versions.is_empty() {
-                    return (
-                        template.clone(),
-                        Vec::new(),
-                        vec![anyhow::anyhow!("no versions found")],
-                    );
-                }
-
-                // Process versions in parallel (nested stream)
-                let versions_stream = stream::iter(versions)
-                    .map(|(full_tag, extracted, normalized)| {
-                        let client = client.clone();
-                        let template_clone = template.clone();
-                        let hash_cache_clone = hash_cache.clone();
-                        let releases_map_clone = releases_map.clone();
-                        let display_ver = normalized.clone();
-                        let tag_for_lookup = full_tag.clone();
-                        async move {
-                            let res = package_to_index_ver(
-                                &client,
-                                &template_clone,
-                                &tag_for_lookup,
-                                &extracted,
-                                &display_ver,
-                                hash_cache_clone,
-                                releases_map_clone,
-                            )
-                            .await;
-                            (display_ver, res)
-                        }
-                    })
-                    .buffer_unordered(10); // Concurrent versions per package
-
-                let version_results: Vec<(String, Result<VersionInfo>)> =
-                    versions_stream.collect().await;
-
-                let mut v_infos = Vec::new();
-                let mut errors = Vec::new();
-
-                for (_ver, res) in version_results {
-                    match res {
-                        Ok(info) => v_infos.push(info),
-                        Err(e) => errors.push(e),
-                    }
-                }
-
-                (template, v_infos, errors)
-            }
-        })
-        .buffer_unordered(20); // Concurrent packages
 
     let mut total_releases = 0;
     let mut fully_indexed = 0;
     let mut partial = 0;
     let mut failed = 0;
 
-    while let Some((template, v_infos, errors)) = results_stream.next().await {
-        let pkg_name = template.package.name.to_string();
-        let mut v_infos = v_infos;
-        let success_count = v_infos.len();
-        let total_versions = v_infos.len() + errors.len();
-        total_releases += success_count;
+    for (layer_idx, layer) in layers.iter().enumerate() {
+        let mut layer_templates = Vec::new();
+        for pkg_name in layer {
+            if let Some((_path, template)) = template_map.get(pkg_name.as_str()) {
+                let is_dirty = force_full
+                    || pkg_source_map
+                        .get(pkg_name.as_str())
+                        .is_some_and(|key| dirty_source_keys.contains(key));
 
-        // Generate binary deltas if artifact store is enabled
-        if let Err(e) =
-            process_deltas(client, &pkg_name, &mut v_infos, artifact_store.as_deref()).await
-        {
-            tracing::warn!("   ⚠ Delta generation failed for {pkg_name}: {e}");
+                if is_dirty {
+                    layer_templates.push(template.clone());
+                }
+            }
         }
 
-        for ver_info in v_infos {
-            // Infer type: App if .app is present, else Cli
-            let kind = if ver_info.app.is_some() { "app" } else { "cli" };
+        if layer_templates.is_empty() {
+            continue;
+        }
 
-            index.upsert_release(
-                &pkg_name,
-                &template.package.description,
-                kind,
-                template.package.tags.clone(),
-                ver_info,
+        if layers.len() > 1 {
+            println!(
+                "   --- Layer {}/{} ({} packages) ---",
+                layer_idx + 1,
+                layers.len(),
+                layer_templates.len()
             );
         }
 
-        // Align package name at 20 characters
-        let name_col = format!("{pkg_name:<20}");
-        if !errors.is_empty() {
-            let error_msg = errors[0].to_string();
-            let human_err = humanize_error(&error_msg);
+        let index_snapshot = Arc::new(index.clone());
 
-            if success_count > 0 {
-                partial += 1;
-                println!("   ⚠ {name_col} {success_count}/{total_versions} versions");
-                println!("     └ {human_err}");
-            } else {
-                failed += 1;
-                eprintln!("   ✗ {name_col} 0/{total_versions} versions");
-                eprintln!("     └ {human_err}");
+        let results_stream = stream::iter(layer_templates)
+            .map(|template| {
+                let client = client.clone();
+                let hash_cache = hash_cache.clone();
+                let pkg_source_map_clone = pkg_source_map.clone();
+                let master_release_cache_clone = master_release_cache.clone();
+                let index_ref = index_snapshot.clone();
+
+                async move {
+                    let pkg_name = template.package.name.to_string();
+
+                    // Discover versions using the master cache or manual config
+                    #[allow(clippy::type_complexity)]
+                    let (versions, releases_map): (
+                        Vec<(String, String, String)>,
+                        Option<Arc<HashMap<String, ReleaseInfo>>>,
+                    ) = match &template.discovery {
+                        DiscoveryConfig::GitHub {
+                            tag_pattern,
+                            include_prereleases,
+                            ..
+                        } => {
+                            let releases = if let Some(key) = pkg_source_map_clone.get(&pkg_name) {
+                                master_release_cache_clone
+                                    .get(key)
+                                    .cloned()
+                                    .unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+
+                            let sorted_releases = releases;
+
+                            let mut versions = Vec::new();
+                            let mut map = HashMap::new();
+
+                            for release in sorted_releases {
+                                map.insert(release.tag_name.clone(), release.clone());
+
+                                if !include_prereleases && release.prerelease {
+                                    continue;
+                                }
+
+                                let extracted = discovery::extract_version_from_tag(
+                                    &release.tag_name,
+                                    tag_pattern,
+                                );
+
+                                if let Some(normalized) = discovery::auto_parse_version(&extracted)
+                                {
+                                    versions.push((
+                                        release.tag_name.clone(),
+                                        extracted,
+                                        normalized,
+                                    ));
+                                }
+                            }
+
+                            (versions, Some(Arc::new(map)))
+                        }
+                        DiscoveryConfig::Manual { manual } => {
+                            let tuples = manual
+                                .iter()
+                                .map(|v| (v.clone(), v.clone(), v.clone()))
+                                .collect();
+                            (tuples, None)
+                        }
+                    };
+
+                    if versions.is_empty() {
+                        return (
+                            template.clone(),
+                            Vec::new(),
+                            vec![anyhow::anyhow!("no versions found")],
+                        );
+                    }
+
+                    // Process versions in parallel (nested stream)
+                    let versions_stream = stream::iter(versions)
+                        .map(|(full_tag, extracted, normalized)| {
+                            let client = client.clone();
+                            let template_clone = template.clone();
+                            let hash_cache_clone = hash_cache.clone();
+                            let releases_map_clone = releases_map.clone();
+                            let display_ver = normalized.clone();
+                            let tag_for_lookup = full_tag.clone();
+                            let local_index_ref = index_ref.clone();
+                            async move {
+                                let res = package_to_index_ver(
+                                    &client,
+                                    &template_clone,
+                                    &tag_for_lookup,
+                                    &extracted,
+                                    &display_ver,
+                                    hash_cache_clone,
+                                    releases_map_clone,
+                                    &local_index_ref,
+                                )
+                                .await;
+                                (display_ver, res)
+                            }
+                        })
+                        .buffer_unordered(10); // Concurrent versions per package
+
+                    let version_results: Vec<(String, Result<VersionInfo>)> =
+                        versions_stream.collect().await;
+
+                    let mut v_infos = Vec::new();
+                    let mut errors = Vec::new();
+
+                    for (_ver, res) in version_results {
+                        match res {
+                            Ok(info) => v_infos.push(info),
+                            Err(e) => errors.push(e),
+                        }
+                    }
+
+                    (template, v_infos, errors)
+                }
+            })
+            .buffer_unordered(20); // Concurrent packages
+
+        let layer_results: Vec<_> = results_stream.collect().await;
+
+        for (template, v_infos, errors) in layer_results {
+            let pkg_name = template.package.name.to_string();
+            let mut v_infos = v_infos;
+            let success_count = v_infos.len();
+            let total_versions = v_infos.len() + errors.len();
+            total_releases += success_count;
+
+            // Generate binary deltas if artifact store is enabled
+            if let Err(e) =
+                process_deltas(client, &pkg_name, &mut v_infos, artifact_store.as_deref()).await
+            {
+                tracing::warn!("   ⚠ Delta generation failed for {pkg_name}: {e}");
             }
-        } else {
-            fully_indexed += 1;
-            println!("   ✓ {name_col} {total_versions} versions indexed");
+
+            for ver_info in v_infos {
+                // Infer type: App if .app is present, else Cli
+                let kind = if ver_info.app.is_some() { "app" } else { "cli" };
+
+                index.upsert_release(
+                    &pkg_name,
+                    &template.package.description,
+                    kind,
+                    template.package.tags.clone(),
+                    ver_info,
+                );
+            }
+
+            // Align package name at 20 characters
+            let name_col = format!("{pkg_name:<20}");
+            if !errors.is_empty() {
+                let error_msg = errors[0].to_string();
+                let human_err = humanize_error(&error_msg);
+
+                if success_count > 0 {
+                    partial += 1;
+                    println!("   ⚠ {name_col} {success_count}/{total_versions} versions");
+                    println!("     └ {human_err}");
+                } else {
+                    failed += 1;
+                    eprintln!("   ✗ {name_col} 0/{total_versions} versions");
+                    eprintln!("     └ {human_err}");
+                }
+            } else {
+                fully_indexed += 1;
+                println!("   ✓ {name_col} {total_versions} versions indexed");
+            }
         }
     }
 
@@ -522,6 +585,7 @@ pub async fn package_to_index_ver(
     display_version: &str,
     hash_cache: Arc<Mutex<HashCache>>,
     releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
+    index: &PackageIndex,
 ) -> Result<VersionInfo> {
     // Strategy 0: Build from source (Registry Hydration)
     if let Some(build_spec) = &template.build {
@@ -538,6 +602,7 @@ pub async fn package_to_index_ver(
             display_version,
             build_spec,
             &store,
+            index,
         )
         .await
         {
@@ -882,6 +947,7 @@ async fn hydrate_from_source(
     display_version: &str,
     build_spec: &crate::core::package::BuildSpec,
     store: &ArtifactStore,
+    index: &PackageIndex,
 ) -> Result<VersionInfo> {
     use crate::core::builder::Builder;
     use crate::core::sysroot::Sysroot;
@@ -921,24 +987,77 @@ async fn hydrate_from_source(
     crate::io::extract::extract_auto(&source_archive, &extract_dir)?;
     crate::io::extract::strip_components(&extract_dir)?;
 
-    // 5. Build in Sysroot
+    // 5. Resolve and download dependencies
+    let mut build_deps = Vec::new();
+    let mut dep_tmps = Vec::new();
+
+    for dep_name in &build_spec.dependencies {
+        // Find dependency in the index
+        if let Some(entry) = index.find(dep_name) {
+            if let Some(latest) = entry.latest() {
+                // Find binary for current architecture
+                #[cfg(target_arch = "aarch64")]
+                let my_arch = crate::types::Arch::Arm64;
+                #[cfg(target_arch = "x86_64")]
+                let my_arch = crate::types::Arch::X86_64;
+                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+                let my_arch = crate::types::Arch::Universal;
+
+                if let Some(bin) = latest
+                    .binaries
+                    .iter()
+                    .find(|b| b.arch == my_arch || b.arch == crate::types::Arch::Universal)
+                {
+                    println!(
+                        "      📦 Satisfying build dep: {} ({})",
+                        dep_name, latest.version
+                    );
+
+                    let dep_tmp = tempfile::tempdir()?;
+                    let dep_archive = dep_tmp.path().join("dep.archive");
+
+                    // Download the dependency artifact
+                    let resp = client.get(&bin.url).send().await?;
+                    if !resp.status().is_success() {
+                        anyhow::bail!(
+                            "Failed to download dependency {}: {}",
+                            dep_name,
+                            resp.status()
+                        );
+                    }
+                    let content = resp.bytes().await?;
+                    std::fs::write(&dep_archive, content)?;
+
+                    // Extract it to a dedicated directory for mounting
+                    let dep_extract_dir = tmp_dir.path().join("deps").join(dep_name);
+                    crate::io::extract::extract_auto(&dep_archive, &dep_extract_dir)?;
+
+                    build_deps.push((dep_name.clone(), dep_extract_dir));
+                    dep_tmps.push(dep_tmp);
+                }
+            }
+        }
+    }
+
+    // 6. Build in Sysroot
     let sysroot = Sysroot::new()?;
     let builder = Builder::new(&sysroot);
     let log_path = crate::build_log_path(&template.package.name.to_string(), display_version);
 
     builder.build(
         &extract_dir,
+        &build_deps,
         &build_spec.script,
         &build_dir,
         false, // verbose
         &log_path,
     )?;
 
-    // 6. Bundle Output (tar.zst)
+    // 7. Bundle Output (tar.zst)
     let bundle_path = tmp_dir.path().join("bundle.tar.zst");
     bundle_directory(&build_dir, &bundle_path)?;
 
-    // 7. Compute Hash and Upload to Artifact Store (R2)
+    // 8. Compute Hash and Upload to Artifact Store (R2)
     let bundle_data = std::fs::read(&bundle_path)?;
     let mut hasher = sha2::Sha256::new();
     hasher.update(&bundle_data);
@@ -947,7 +1066,7 @@ async fn hydrate_from_source(
     let mirror_url = store.upload(&hash_hex, bundle_data).await?;
     println!("      ☁️  Uploaded to mirror: {mirror_url}");
 
-    // 8. Determine Arch
+    // 9. Determine Arch
     #[cfg(target_arch = "aarch64")]
     let arch = crate::types::Arch::Arm64;
     #[cfg(target_arch = "x86_64")]
@@ -955,7 +1074,7 @@ async fn hydrate_from_source(
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     let arch = crate::types::Arch::Universal;
 
-    // 9. Return VersionInfo pointing to our hydrated binary
+    // 10. Return VersionInfo pointing to our hydrated binary
     Ok(VersionInfo {
         version: display_version.to_string(),
         binaries: vec![IndexBinary {
@@ -1087,6 +1206,7 @@ mod indexer_tests {
 
         let releases_map = Some(Arc::new(map));
 
+        let index = PackageIndex::new();
         // Attempt to hydrate v1.0.0
         let result = package_to_index_ver(
             &client,
@@ -1096,6 +1216,7 @@ mod indexer_tests {
             "1.0.0",  // display_version
             hash_cache,
             releases_map,
+            &index,
         )
         .await;
 
