@@ -296,13 +296,19 @@ async fn cli_index(
     // Export latest 'apl' info for the Cloudflare Worker router
     if let Some(entry) = index.find("apl") {
         if let Some(latest) = entry.latest() {
-            let info = serde_json::json!({
-                "version": latest.version,
-                "binaries": latest.binaries,
-            });
-            let info_path = index_path.with_file_name("latest.json");
-            fs::write(&info_path, serde_json::to_string_pretty(&info)?)?;
-            println!("   Generated metadata: {}", info_path.display());
+            let mut content = format!("version={}\n", latest.version);
+            for bin in &latest.binaries {
+                let key = match bin.arch {
+                    apl::types::Arch::Arm64 => "darwin_arm64",
+                    apl::types::Arch::X86_64 => "darwin_x86_64",
+                    apl::types::Arch::Universal => "darwin_universal",
+                };
+                content.push_str(&format!("{key}={}\n", bin.url));
+            }
+
+            let info_path = index_path.with_file_name("latest.txt");
+            fs::write(&info_path, content)?;
+            println!("   Generated manifest: {}", info_path.display());
         }
     }
 

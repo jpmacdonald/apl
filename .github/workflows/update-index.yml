@@ -64,4 +64,4 @@ jobs:
           # Upload index.bin, signature, and metadata to R2
           aws s3 cp index.bin s3://apl-store/index.bin --endpoint-url ${{ secrets.R2_ENDPOINT }}
           aws s3 cp index.bin.sig s3://apl-store/index.bin.sig --endpoint-url ${{ secrets.R2_ENDPOINT }}
-          aws s3 cp latest.json s3://apl-store/latest.json --endpoint-url ${{ secrets.R2_ENDPOINT }}
+          aws s3 cp latest.txt s3://apl-store/latest.txt --endpoint-url ${{ secrets.R2_ENDPOINT }}

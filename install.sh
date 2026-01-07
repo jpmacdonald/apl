@@ -33,8 +33,18 @@ else
     # Simple arch mapping
     if [ "$ARCH" = "arm64" ]; then REMOTE_ARCH="arm64"; else REMOTE_ARCH="x86_64"; fi
     
-    # The Cloudflare Worker handles the resolution via /active-binary/:arch
-    DOWNLOAD_URL="https://apl.pub/active-binary/${REMOTE_ARCH}"
+    # Fetch manifest
+    MANIFEST_URL="https://apl.pub/latest"
+    MANIFEST=$(curl -sL "$MANIFEST_URL")
+    
+    # Parse URL for platform (e.g., darwin_arm64)
+    PLATFORM="darwin_$(uname -m)"
+    DOWNLOAD_URL=$(echo "$MANIFEST" | grep "^$PLATFORM=" | cut -d= -f2)
+
+    if [ -z "$DOWNLOAD_URL" ]; then
+        echo "✗ No binary found for platform: $PLATFORM"
+        exit 1
+    fi
     
     TMP_FILE="$APL_HOME/tmp/apl_install.tar.gz"
     curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
