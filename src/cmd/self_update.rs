@@ -102,7 +102,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
         .map(|base| format!("{}/cas/{}", base, binary.hash))
         .unwrap_or_else(|| binary.url.clone());
 
-    output.info(&format!("Downloading from {}...", download_url));
+    output.info(&format!("Downloading from {download_url}..."));
 
     // Download the binary to a temporary file
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
@@ -193,8 +193,7 @@ async fn self_update_github_fallback(client: Client, dry_run: bool) -> Result<()
     }
 
     output.warning(&format!(
-        "Update available on GitHub: v{} -> v{}",
-        current_version, latest_version
+        "Update available on GitHub: v{current_version} -> v{latest_version}"
     ));
 
     if dry_run {

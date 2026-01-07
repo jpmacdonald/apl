@@ -325,7 +325,7 @@ pub struct AssetConfig {
     pub checksum_url: Option<String>,
 }
 
-/// Installation specification with optional fields for inference
+// /// Installation specification with optional fields for inference
 // (Removed duplicate InstallSpec definition)
 
 #[cfg(test)]

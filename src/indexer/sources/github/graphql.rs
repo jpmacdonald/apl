@@ -154,15 +154,13 @@ pub async fn fetch_batch_releases(
                     if let Some(errors) = raw_body.errors {
                         if !errors.is_empty() {
                             // If specifically a timeout error equivalent
-                            if errors[0].message.contains("couldn't respond") {
-                                if attempt < 3 {
-                                    eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(
-                                        1000 * attempt,
-                                    ))
-                                    .await;
-                                    continue;
-                                }
+                            if errors[0].message.contains("couldn't respond") && attempt < 3 {
+                                eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
+                                tokio::time::sleep(tokio::time::Duration::from_millis(
+                                    1000 * attempt,
+                                ))
+                                .await;
+                                continue;
                             }
                             eprintln!("GraphQL Warning: {}", errors[0].message);
                         }
@@ -202,16 +200,13 @@ pub async fn fetch_batch_releases(
                         }
                     }
                     return Ok(result);
-                } else if resp.status().is_server_error() {
-                    if attempt < 3 {
-                        eprintln!(
-                            "   ⚠ GitHub server error {}, retrying ({attempt}/3)...",
-                            resp.status()
-                        );
-                        tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
-                            .await;
-                        continue;
-                    }
+                } else if resp.status().is_server_error() && attempt < 3 {
+                    eprintln!(
+                        "   ⚠ GitHub server error {}, retrying ({attempt}/3)...",
+                        resp.status()
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt)).await;
+                    continue;
                 }
 
                 // If we get here, it's a non-retriable error or we exhausted retries
@@ -327,11 +322,9 @@ pub async fn fetch_latest_versions_batch(
                         result.insert(key.clone(), latest_tag);
                     }
                     return Ok(result);
-                } else if resp.status().is_server_error() {
-                    if attempt < 3 {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
-                        continue;
-                    }
+                } else if resp.status().is_server_error() && attempt < 3 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
+                    continue;
                 }
                 let text = resp.text().await?;
                 anyhow::bail!("GraphQL request failed: {text}");

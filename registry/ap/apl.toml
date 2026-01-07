@@ -12,8 +12,8 @@ tag_pattern = "v{{version}}"
 [assets]
 # APL binaries are named apl-<version>-<arch>.tar.gz
 # or we can use regex to find them reliably
-arm64-macos = { suffix = "arm64.tar.gz" }
-x86_64-macos = { suffix = "x86_64.tar.gz" }
+arm64-macos = { suffix = "aarch64-apple-darwin.tar.gz" }
+x86_64-macos = { suffix = "x86_64-apple-darwin.tar.gz" }
 
 [install]
 strategy = "link"

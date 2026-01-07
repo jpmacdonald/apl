@@ -107,30 +107,26 @@ pub async fn generate_index_from_registry(
             }
         }
 
-        match &template.discovery {
-            DiscoveryConfig::GitHub {
-                github,
-                tag_pattern,
-                ..
-            } => {
-                if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
-                    let key = crate::types::RepoKey {
-                        owner: repo_ref.owner().to_string(),
-                        repo: repo_ref.name().to_string(),
-                    };
-                    let source_key = format!("github:{}/{}", key.owner, key.repo);
+        if let DiscoveryConfig::GitHub {
+            github,
+            tag_pattern,
+            ..
+        } = &template.discovery
+        {
+            if let Ok(repo_ref) = crate::types::GitHubRepo::new(github) {
+                let key = crate::types::RepoKey {
+                    owner: repo_ref.owner().to_string(),
+                    repo: repo_ref.name().to_string(),
+                };
+                let source_key = format!("github:{}/{}", key.owner, key.repo);
 
-                    if !pkg_source_map.values().any(|k| k == &source_key) {
-                        github_repos.push(key.clone());
-                    }
-                    pkg_repo_map.insert(template.package.name.to_string(), key);
-                    pkg_tag_pattern_map
-                        .insert(template.package.name.to_string(), tag_pattern.clone());
-                    pkg_source_map.insert(template.package.name.to_string(), source_key);
+                if !pkg_source_map.values().any(|k| k == &source_key) {
+                    github_repos.push(key.clone());
                 }
+                pkg_repo_map.insert(template.package.name.to_string(), key);
+                pkg_tag_pattern_map.insert(template.package.name.to_string(), tag_pattern.clone());
+                pkg_source_map.insert(template.package.name.to_string(), source_key);
             }
-            // Add other source types here in the future
-            _ => {}
         }
 
         templates.push((template_path, template));
@@ -457,15 +453,18 @@ pub async fn generate_index_from_registry(
                             let tag_for_lookup = full_tag.clone();
                             let local_index_ref = index_ref.clone();
                             async move {
+                                let ctx = IndexingContext {
+                                    client: &client,
+                                    hash_cache: hash_cache_clone,
+                                    releases_map: releases_map_clone,
+                                    index: &local_index_ref,
+                                };
                                 let res = package_to_index_ver(
-                                    &client,
+                                    ctx,
                                     &template_clone,
                                     &tag_for_lookup,
                                     &extracted,
                                     &display_ver,
-                                    hash_cache_clone,
-                                    releases_map_clone,
-                                    &local_index_ref,
                                 )
                                 .await;
                                 (display_ver, res)
@@ -577,15 +576,22 @@ fn humanize_error(e: &str) -> String {
     }
 }
 
+pub struct IndexingContext<'a> {
+    pub client: &'a Client,
+    pub hash_cache: Arc<Mutex<HashCache>>,
+    pub releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
+    pub index: &'a PackageIndex,
+}
+
 pub async fn package_to_index_ver(
-    client: &Client,
+    ctx: IndexingContext<'_>,
     template: &PackageTemplate,
     full_tag: &str,
     _url_version: &str,
     display_version: &str,
-    hash_cache: Arc<Mutex<HashCache>>,
-    releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
-    index: &PackageIndex,
+    // hash_cache: Arc<Mutex<HashCache>>,
+    // releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
+    // index: &PackageIndex,
 ) -> Result<VersionInfo> {
     // Strategy 0: Build from source (Registry Hydration)
     if let Some(build_spec) = &template.build {
@@ -596,13 +602,13 @@ pub async fn package_to_index_ver(
         })?;
 
         match hydrate_from_source(
-            client,
+            ctx.client,
             template,
             full_tag,
             display_version,
             build_spec,
             &store,
-            index,
+            ctx.index,
         )
         .await
         {
@@ -613,7 +619,8 @@ pub async fn package_to_index_ver(
         }
     }
 
-    let release_info = releases_map
+    let release_info = ctx
+        .releases_map
         .as_ref()
         .and_then(|map| map.get(full_tag))
         .ok_or_else(|| anyhow::anyhow!("Release {full_tag} not found in map"))?;
@@ -625,12 +632,12 @@ pub async fn package_to_index_ver(
         if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
             // Resolve hash
             let hash_res = resolve_hash(
-                client,
+                ctx.client,
                 template,
                 &asset.download_url,
                 full_tag,
-                hash_cache.clone(),
-                releases_map.clone(),
+                ctx.hash_cache.clone(),
+                ctx.releases_map.clone(),
             )
             .await;
 
@@ -665,12 +672,12 @@ pub async fn package_to_index_ver(
         if let Some(selector) = selector {
             if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
                 let hash = resolve_hash(
-                    client,
+                    ctx.client,
                     template,
                     &asset.download_url,
                     full_tag,
-                    hash_cache.clone(),
-                    releases_map.clone(),
+                    ctx.hash_cache.clone(),
+                    ctx.releases_map.clone(),
                 )
                 .await?;
 
@@ -761,7 +768,7 @@ async fn process_deltas(
                 );
 
                 // 1. Get old binary data
-                let old_data = match store.get(&old_bin.hash.to_string()).await {
+                let old_data = match store.get(old_bin.hash.as_ref()).await {
                     Ok(d) => d,
                     Err(_) => match client.get(&old_bin.url).send().await {
                         Ok(resp) => resp.bytes().await?.to_vec(),
@@ -770,7 +777,7 @@ async fn process_deltas(
                 };
 
                 // 2. Get new binary data
-                let new_data = match store.get(&new_bin.hash.to_string()).await {
+                let new_data = match store.get(new_bin.hash.as_ref()).await {
                     Ok(d) => d,
                     Err(_) => match client.get(&new_bin.url).send().await {
                         Ok(resp) => resp.bytes().await?.to_vec(),
@@ -1042,7 +1049,7 @@ async fn hydrate_from_source(
     // 6. Build in Sysroot
     let sysroot = Sysroot::new()?;
     let builder = Builder::new(&sysroot);
-    let log_path = crate::build_log_path(&template.package.name.to_string(), display_version);
+    let log_path = crate::build_log_path(template.package.name.as_ref(), display_version);
 
     builder.build(
         &extract_dir,
@@ -1208,15 +1215,17 @@ mod indexer_tests {
 
         let index = PackageIndex::new();
         // Attempt to hydrate v1.0.0
-        let result = package_to_index_ver(
-            &client,
-            &template,
-            "v1.0.0", // full_tag for map lookup
-            "1.0.0",  // url_version for templates
-            "1.0.0",  // display_version
+        let ctx = IndexingContext {
+            client: &client,
             hash_cache,
             releases_map,
-            &index,
+            index: &index,
+        };
+        // Attempt to hydrate v1.0.0
+        let result = package_to_index_ver(
+            ctx, &template, "v1.0.0", // full_tag for map lookup
+            "1.0.0",  // url_version for templates
+            "1.0.0",  // display_version
         )
         .await;
 

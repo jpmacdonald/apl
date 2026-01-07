@@ -38,7 +38,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
 
     // 🔒 Verify Signature
     if !dry_run {
-        let sig_url = format!("{}.sig", url);
+        let sig_url = format!("{url}.sig");
         // output.info(&format!("Verifying signature: {}", sig_url)); // Optional verbosity
 
         let sig_response = client.get(&sig_url).send().await;
@@ -83,8 +83,7 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
                 // If the signature file is missing, we fail.
                 output.error("Missing index signature");
                 bail!(
-                    "Security Error: Index signature not found at {}. We enforce signed indexes.",
-                    sig_url
+                    "Security Error: Index signature not found at {sig_url}. We enforce signed indexes."
                 );
             }
         }

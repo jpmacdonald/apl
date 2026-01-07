@@ -10,8 +10,8 @@ github = "lua/lua"
 tag_pattern = "v{{version}}"
 
 [assets]
-arm64-macos = { select = "macosx" }
-x86_64-macos = { select = "macosx" }
+arm64-macos = { suffix = "macosx" }
+x86_64-macos = { suffix = "macosx" }
 
 [source]
 url = "https://www.lua.org/ftp/lua-{{version}}.tar.gz"

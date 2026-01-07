@@ -23,9 +23,12 @@ pub struct Sysroot {
 impl Sysroot {
     /// Create a new disposable sysroot in a temp directory
     pub fn new() -> Result<Self> {
+        let tmp = crate::tmp_path();
+        std::fs::create_dir_all(&tmp)?;
+
         let temp_dir = tempfile::Builder::new()
             .prefix("apl-build-")
-            .tempdir_in(crate::tmp_path())?;
+            .tempdir_in(&tmp)?;
 
         Ok(Self { temp_dir })
     }

@@ -402,7 +402,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
 fn cli_keygen() -> Result<()> {
     use base64::Engine;
     use ed25519_dalek::SigningKey;
-    use rand::rngs::OsRng;
+
     use std::io::Write;
 
     use rand::RngCore;
