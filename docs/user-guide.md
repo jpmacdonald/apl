@@ -1,35 +1,36 @@
-# APL User Guide
+# User Guide
 
-Complete reference for all APL commands.
+Reference for APL CLI commands.
 
 ## Package Management
 
-### Install Packages
+### Install
+
+`apl install <package> [@version]`
 
 ```bash
-# Install one or more packages
+# Install packages
 apl install ripgrep fd bat
 
-# Install a specific version
+# Install specific version
 apl install jq@1.7.1
 
-# Dry run (see what would happen)
+# Dry run
 apl install --dry-run neovim
 ```
 
-### Remove Packages
+### Remove
+
+`apl remove <package>`
 
 ```bash
-# Remove a package
-apl remove ripgrep
+# Remove packages
+apl remove ripgrep fd
 
-# Remove multiple packages
-apl remove fd bat
-
-# Remove all installed packages
+# Remove all
 apl remove --all
 
-# Skip confirmation prompt
+# Skip confirmation
 apl remove --yes ripgrep
 ```
 

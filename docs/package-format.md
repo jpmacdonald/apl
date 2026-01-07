@@ -1,8 +1,8 @@
 # Package Format
 
-APL uses **Algorithmic Templates** to define packages. Instead of listing every version manually, you define a template that tells APL how to discover versions from GitHub and how to construct download URLs.
+APL uses **Algorithmic Templates** to discover release assets dynamically.
 
-## Quick Example: `ripgrep.toml`
+## Example: `ripgrep.toml`
 
 ```toml
 [package]
@@ -16,8 +16,8 @@ github = "BurntSushi/ripgrep"
 tag_pattern = "{{version}}" # Discovery pattern for tags
 
 [assets]
-# Use {{version}} and {{target}} placeholders
-url_template = "https://github.com/BurntSushi/ripgrep/releases/download/{{version}}/ripgrep-{{version}}-{{target}}.tar.gz"
+# GitHub is currently the only supported binary source
+
 
 [assets.targets]
 arm64 = "aarch64-apple-darwin"
@@ -60,7 +60,7 @@ include_prereleases = false    # Hide beta/rc versions by default
 ```
 
 ### Discovery Types
-Currently, only **GitHub Releases** discovery is fully implemented.
+APL currently supports **GitHub Releases** for binary distribution. Manual version listing is supported only for packages built from source.
 
 ---
 
@@ -70,8 +70,8 @@ Defines how to construct download URLs for different architectures.
 
 | Field | Description |
 |-------|-------------|
-| `url_template` | URL with `{{version}}` and `{{target}}` placeholders |
-| `universal` | If true, ignore `targets` and use same URL for all |
+| `universal` | If true, ignore `targets` and use same URL for all (requires `universal-macos` selector) |
+| `select` | Map of architecture to asset selector (suffix/regex) |
 
 ### `[assets.targets]` Mapping
 Maps APL architectures to vendor-specific strings used in URLs.
@@ -136,16 +136,7 @@ app = "Firefox.app"        # name for .app bundles
 
 ---
 
-## Placeholders
 
-Templates use the following placeholders:
-
-| Placeholder | Replaced with... |
-|-------------|------------------|
-| `{{version}}` | The discovered version string (e.g. `1.2.3`) |
-| `{{target}}` | The target-specific string from `assets.targets` |
-
----
 
 ## Location & Sharding
 

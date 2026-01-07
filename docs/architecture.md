@@ -8,7 +8,7 @@ APL is built around three principles:
 
 1. **Speed** - Sub-second installs via streaming pipelines and binary indexes
 2. **Simplicity** - TOML packages, no DSLs, minimal dependencies
-3. **Safety** - BLAKE3 verification, atomic installs, version history
+3. **Safety** - SHA-256 verification, atomic installs, version history
 
 ---
 
@@ -66,6 +66,7 @@ APL is built around three principles:
 | `remove.rs` | Package removal and cleanup |
 | `switch.rs` | Version switching |
 | `flow.rs` | Resolve → Download → Extract pipeline |
+| `resolve.rs` | Project manifest dependency solver (semver) |
 
 ### I/O (`src/io/`)
 
@@ -104,7 +105,7 @@ APL is built around three principles:
 
 2. Download + Extract (Streaming)
    HTTP Stream ─┬─→ Cache File
-                ├─→ BLAKE3 Hasher
+                ├─→ SHA-256 Hasher
                 └─→ Decompressor → Tar/Zip Unpack
 
 3. Installation
@@ -114,7 +115,7 @@ APL is built around three principles:
    ~/.apl/store/.../bin/rg → ~/.apl/bin/rg (symlink)
 
 5. Database Update
-   StateDb.install_package(name, version, blake3, files)
+   StateDb.install_package(name, version, sha256, files)
 ```
 
 ### UI Event Flow
@@ -183,7 +184,7 @@ Downloads are extracted on-the-fly without writing intermediate files:
 
 ```rust
 HTTP Response → AsyncRead → Decompressor → Tar Entries → Filesystem
-                    ↳ BLAKE3 Hasher (parallel verification)
+                    ↳ SHA-256 Hasher (parallel verification)
 ```
 
 ### Mach-O Relinker
@@ -208,6 +209,20 @@ Source builds use macOS APFS copy-on-write for fast, isolated build roots:
 // Near-instant directory copy
 clonefile(source, build_root);
 ```
+
+---
+
+## Project Context
+
+APL includes experimental support for project-local environments (similar to `nix-shell`):
+
+- **Manifest (`apl.toml`)**: Declares project dependency requirements (semver ranges).
+- **Lockfile (`apl.lock`)**: Pin exact versions and timestamps.
+- **Ephemeral Shell (`apl shell`)**: Creates a temporary `Sysroot`, mounts requested packages, and spawns a shell with strict `PATH`.
+
+### Asset Strings
+
+APL uses a heuristic `AssetPattern` matcher (`src/core/asset_pattern.rs`) to map loose release filenames (e.g. `foo-macos-arm64.zip`) to strict architecture/OS variants.
 
 ---
 
@@ -241,7 +256,7 @@ clonefile(source, build_root);
 packages (
     name TEXT,
     version TEXT,
-    blake3 TEXT,
+    sha256 TEXT,
     active BOOLEAN,
     installed_at DATETIME,
     size_bytes INTEGER
@@ -251,7 +266,7 @@ packages (
 installed_files (
     path TEXT,
     package TEXT,
-    blake3 TEXT
+    sha256 TEXT
 )
 
 -- Version history
@@ -282,7 +297,7 @@ history (
 
 | Feature | Implementation |
 |---------|----------------|
-| Hash verification | BLAKE3 (faster and more secure than SHA-256) |
+| Hash verification | SHA-256 |
 | Transport | HTTPS only with HSTS |
 | Index Integrity | Ed25519 Detached Signature (Strict verification) |
 | Verification timing | During download (no TOCTOU) |

@@ -1,8 +1,6 @@
-# Contributing to APL
+# Contributing
 
-Guide for contributing to APL development.
-
-## Development Setup
+## Setup
 
 ### Prerequisites
 
@@ -53,9 +51,9 @@ cargo clippy -- -D warnings
 
 ### Conventions
 
-- **Error handling**: Use `thiserror` for error types, `anyhow` for propagation
-- **Async**: Use `tokio` runtime, avoid blocking in async contexts
-- **Documentation**: Add doc comments to public APIs
+- **Error handling**: Use `thiserror` for library errors, `anyhow` for applications.
+- **Async**: Use `tokio` runtime.
+- **Documentation**: Add doc comments for public APIs.
 
 ---
 

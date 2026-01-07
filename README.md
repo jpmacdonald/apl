@@ -1,6 +1,6 @@
-# APL (apl.pub)
+# APL
 
-A fast, minimal package manager for macOS, powered by a Content-Addressable Storage (CAS) and an algorithmic registry.
+A fast, minimal package manager for macOS. APL uses Content-Addressable Storage and an algorithmic registry to deliver sub-second installs with high security.
 
 ## Installation
 
@@ -46,19 +46,19 @@ See the [User Guide](docs/user-guide.md) for complete command reference.
 
 ## Features
 
-- **Algorithmic Registry** - Dynamic version discovery via GitHub (zero manual maintenance)
-- **Hybrid Distribution** - Fast binary downloads from Cloudflare R2 + GitHub fallback
-- **Source Hydration** - Automatically builds complex packages from source if binaries are missing
-- **Secure by Default** - Ed25519 index signing and BLAKE3 artifact verification
-- **Fast** - Sub-second installs with streaming downloads
-- **Simple** - TOML packages, no DSLs
-- **Portable** - Automatic binary relinking for macOS
-- **Version control** - Multiple versions, history, rollback
+- **Algorithmic Registry** - Discovers versions dynamically via the GitHub Tags API to eliminate manual package maintenance.
+- **Hybrid Distribution** - Streamlines downloads by prioritizing Cloudflare R2, with automatic fallback to GitHub Releases.
+- **Source Hydration** - Compiles releases from source automatically when pre-built binaries are unavailable for the host architecture.
+- **Secure by Default** - Enforces Ed25519 index signatures and SHA-256 artifact verification on every operation.
+- **Fast Installation** - Streams downloads directly to disk, avoiding intermediate temp files for sub-second performance.
+- **Simplicity** - Uses standard TOML for package definitions. No complex DSLs or hidden logic.
+- **Portability** - Retargets Mach-O binaries automatically to ensuring they run from any location.
+- **Version Control** - Supports parallel installation of multiple versions and atomic rollback.
 
 ## Requirements
 
 - macOS 14.0 or later
-- Apple Silicon (native) or Intel (Rosetta 2)
+- Apple Silicon or Intel architecture
 
 ## License
 

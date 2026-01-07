@@ -300,7 +300,7 @@ async fn cli_index(
                 "version": latest.version,
                 "binaries": latest.binaries,
             });
-            let info_path = index_path.with_file_name("latest-apl.json");
+            let info_path = index_path.with_file_name("latest.json");
             fs::write(&info_path, serde_json::to_string_pretty(&info)?)?;
             println!("   Generated metadata: {}", info_path.display());
         }

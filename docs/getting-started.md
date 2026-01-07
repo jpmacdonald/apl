@@ -1,10 +1,8 @@
-# Getting Started with APL
+# Getting Started
 
-APL is a fast, minimal package manager for macOS CLI tools.
+Fast, minimal package manager for macOS CLI tools.
 
 ## Installation
-
-### Quick Install (Recommended)
 
 ```bash
 curl -fsSL https://apl.dev/install.sh | sh
@@ -19,63 +17,53 @@ cargo build --release
 cp target/release/apl ~/.local/bin/
 ```
 
-## Setup
+## Configuration
 
-### Add to PATH
+Add the binary path `~/.apl/bin` to your shell profile.
 
-APL installs binaries to `~/.apl/bin`. Add it to your shell profile:
-
-**Zsh** (`~/.zshrc`):
+### Zsh
+`~/.zshrc`:
 ```bash
 export PATH="$HOME/.apl/bin:$PATH"
 ```
 
-**Bash** (`~/.bashrc` or `~/.bash_profile`):
+### Bash
+`~/.bashrc`:
 ```bash
 export PATH="$HOME/.apl/bin:$PATH"
 ```
 
-**Fish** (`~/.config/fish/config.fish`):
+### Fish
+`~/.config/fish/config.fish`:
 ```fish
 fish_add_path ~/.apl/bin
 ```
 
-Then reload your shell:
-```bash
-source ~/.zshrc  # or restart your terminal
-```
+## Usage
 
-## Your First Install
-
-Update the package index and install a package:
+Update the index and install a package:
 
 ```bash
-# Fetch the latest package index
 apl update
-
-# Install ripgrep (a fast search tool)
 apl install rg
-
-# Verify it works
 rg --version
 ```
 
 ## Shell Completions
 
-Enable tab completion for your shell:
+Generate and source completions for your shell.
 
-**Zsh**:
+### Zsh
 ```bash
 apl completions zsh > ~/.zfunc/_apl
-# Add to ~/.zshrc: fpath+=~/.zfunc && autoload -Uz compinit && compinit
 ```
 
-**Bash**:
+### Bash
 ```bash
 apl completions bash > /etc/bash_completion.d/apl
 ```
 
-**Fish**:
+### Fish
 ```bash
 apl completions fish > ~/.config/fish/completions/apl.fish
 ```
