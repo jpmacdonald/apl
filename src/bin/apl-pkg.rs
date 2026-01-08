@@ -392,6 +392,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
         },
         source: None,
         build: None,
+        dependencies: apl::package::Dependencies::default(),
         install: InstallSpec::default(),
         hints: Hints::default(),
     };

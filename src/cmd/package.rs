@@ -59,14 +59,24 @@ bin = ["{name}"]
 
 /// Validate a package file
 pub fn check(path: &Path) -> Result<()> {
-    let pkg = Package::from_file(path).context("Failed to parse package")?;
-
+    let content = std::fs::read_to_string(path).context("Failed to read package file")?;
     let output = apl::ui::Output::new();
-    output.success("Package is valid");
+
+    if let Ok(template) = apl::package::PackageTemplate::parse(&content) {
+        output.success("Package (Template) is valid");
+        println!("  Name: {}", template.package.name);
+        println!(
+            "  Source: {}",
+            template.discovery.github_repo().unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    let pkg = Package::parse(&content).context("Failed to parse package")?;
+    output.success("Package (Standard) is valid");
     println!("  Name: {}", pkg.package.name);
     println!("  Version: {}", pkg.package.version);
 
-    // Check for source since targets are gone from new schema
     if !pkg.source.url.is_empty() {
         println!("  Source: {}", pkg.source.url);
     } else {

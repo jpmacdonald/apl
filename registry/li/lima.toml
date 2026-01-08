@@ -1,11 +1,11 @@
 [package]
-name = "colima"
-description = "Container runtimes on macOS with minimal setup"
-homepage = "https://github.com/abiosoft/colima"
-license = ""
+name = "lima"
+description = "Linux virtual machines (and containers) on macOS"
+homepage = "https://github.com/lima-vm/lima"
+license = "Apache-2.0"
 
 [discovery]
-github = "abiosoft/colima"
+github = "lima-vm/lima"
 tag_pattern = "v{{version}}"
 include_prereleases = false
 
@@ -14,19 +14,18 @@ universal = false
 skip_checksums = false
 
 [assets.arm64-macos]
-suffix = "Darwin-arm64"
+suffix = "Darwin-arm64.tar.gz"
 
 [assets.x86_64-macos]
-suffix = "Darwin-x86_64"
+suffix = "Darwin-x86_64.tar.gz"
 
 [install]
-bin = ["colima"]
+bin = ["limactl"]
 lib = []
 include = []
 script = ""
 
 [dependencies]
-runtime = ["lima"]
 
 [hints]
 post_install = ""

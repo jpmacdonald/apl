@@ -37,7 +37,7 @@ pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>>
         all_packages.insert(pkg_name.clone());
 
         if let Some(latest) = entry.latest() {
-            for dep in &latest.build_deps {
+            for dep in latest.build_deps.iter().chain(latest.deps.iter()) {
                 let dep_name = PackageName::new(dep);
                 adjacency
                     .entry(dep_name.clone())

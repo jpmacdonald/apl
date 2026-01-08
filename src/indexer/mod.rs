@@ -302,12 +302,12 @@ pub async fn generate_index_from_registry(
             VersionInfo {
                 version: "0.0.0".into(),
                 binaries: vec![],
-                deps: vec![],
+                deps: template.dependencies.runtime.clone(),
                 build_deps: template
                     .build
                     .as_ref()
                     .map(|b| b.dependencies.clone())
-                    .unwrap_or_default(),
+                    .unwrap_or_else(|| template.dependencies.build.clone()),
                 bin: vec![],
                 hints: "".into(),
                 app: None,
@@ -619,11 +619,24 @@ pub async fn package_to_index_ver(
         }
     }
 
-    let release_info = ctx
-        .releases_map
-        .as_ref()
-        .and_then(|map| map.get(full_tag))
-        .ok_or_else(|| anyhow::anyhow!("Release {full_tag} not found in map"))?;
+    let release_info = if let Some(map) = ctx.releases_map.as_ref() {
+        map.get(full_tag)
+            .ok_or_else(|| anyhow::anyhow!("Release {full_tag} not found in map"))?
+            .clone()
+    } else {
+        // For Manual discovery, we don't have a map, so we create a stub
+        ReleaseInfo {
+            tag_name: full_tag.to_string(),
+            prune: false,
+            body: String::new(),
+            prerelease: false,
+            assets: vec![sources::traits::AssetInfo {
+                name: full_tag.to_string(), // Heuristic for manual
+                download_url: String::new(),
+                digest: None,
+            }],
+        }
+    };
 
     let mut binaries = Vec::new();
 
@@ -708,9 +721,17 @@ pub async fn package_to_index_ver(
         version: display_version.to_string(),
         binaries,
         source: None,
-        deps: Vec::new(),
-        build_deps: Vec::new(),
-        build_script: String::new(),
+        deps: template.dependencies.runtime.clone(),
+        build_deps: template
+            .build
+            .as_ref()
+            .map(|b| b.dependencies.clone())
+            .unwrap_or_else(|| template.dependencies.build.clone()),
+        build_script: template
+            .build
+            .as_ref()
+            .map(|b| b.script.clone())
+            .unwrap_or_default(),
         bin: bin_list,
         hints: template.hints.post_install.clone(),
         app: template.install.app.clone(),
@@ -1189,6 +1210,7 @@ mod indexer_tests {
             },
             source: None,
             build: None,
+            dependencies: crate::package::Dependencies::default(),
             install: InstallSpec::default(),
             hints: crate::package::Hints::default(),
         };
@@ -1236,5 +1258,61 @@ mod indexer_tests {
         println!(
             "Test success: Version skipped gracefully because asset was missing from local map."
         );
+    }
+
+    #[tokio::test]
+    async fn test_dependency_population() {
+        let client = Client::new();
+        let hash_cache = Arc::new(Mutex::new(HashCache::default()));
+
+        let mut select = HashMap::new();
+        select.insert(
+            "universal-macos".to_string(),
+            crate::package::AssetSelector::Suffix {
+                suffix: "1.0.0".to_string(),
+            },
+        );
+
+        let template = PackageTemplate {
+            package: crate::package::PackageInfoTemplate {
+                name: "test-pkg".into(),
+                description: "test".to_string(),
+                homepage: "".to_string(),
+                license: "".to_string(),
+                tags: vec![],
+            },
+            discovery: DiscoveryConfig::Manual {
+                manual: vec!["1.0.0".to_string()],
+            },
+            assets: AssetConfig {
+                universal: true,
+                select,
+                skip_checksums: true,
+                checksum_url: None,
+            },
+            source: None,
+            build: None,
+            dependencies: crate::package::Dependencies {
+                runtime: vec!["runtime-dep".to_string()],
+                build: vec!["build-dep".to_string()],
+                optional: vec![],
+            },
+            install: InstallSpec::default(),
+            hints: crate::package::Hints::default(),
+        };
+
+        let ctx = IndexingContext {
+            client: &client,
+            index: &PackageIndex::new(),
+            hash_cache,
+            releases_map: None,
+        };
+
+        let ver_info = package_to_index_ver(ctx, &template, "v1.0.0", "1.0.0", "1.0.0")
+            .await
+            .unwrap();
+
+        assert_eq!(ver_info.deps, vec!["runtime-dep"]);
+        assert_eq!(ver_info.build_deps, vec!["build-dep"]);
     }
 }

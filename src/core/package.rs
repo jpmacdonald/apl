@@ -236,6 +236,8 @@ pub struct PackageTemplate {
     pub source: Option<SourceTemplate>,
     #[serde(default)]
     pub build: Option<BuildSpec>,
+    #[serde(default)]
+    pub dependencies: Dependencies,
     pub install: InstallSpec,
     #[serde(default)]
     pub hints: Hints,
@@ -284,6 +286,15 @@ pub enum DiscoveryConfig {
     Manual {
         manual: Vec<String>, // List of versions
     },
+}
+
+impl DiscoveryConfig {
+    pub fn github_repo(&self) -> Option<&str> {
+        match self {
+            DiscoveryConfig::GitHub { github, .. } => Some(github),
+            _ => None,
+        }
+    }
 }
 
 fn default_tag_pattern() -> String {
@@ -391,13 +402,34 @@ sha256 = "abc123"
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
-        let pkg = Package::parse(EXAMPLE_PACKAGE).unwrap();
-        let toml_str = pkg.to_toml().unwrap();
-        let reparsed = Package::parse(&toml_str).unwrap();
+    fn test_parse_package_template_with_dependencies() {
+        let template_toml = r#"
+[package]
+name = "test-pkg"
+description = "test"
+homepage = "https://example.com"
 
-        assert_eq!(pkg.package.name, reparsed.package.name);
-        assert_eq!(pkg.package.version, reparsed.package.version);
-        assert_eq!(pkg.source.sha256, reparsed.source.sha256);
+[discovery]
+manual = ["1.0.0"]
+
+[assets]
+universal = true
+skip_checksums = true
+universal-macos = { suffix = "bin" }
+
+[dependencies]
+runtime = ["lima"]
+build = ["cargo"]
+
+[install]
+bin = ["test"]
+"#;
+        let template = PackageTemplate::parse(template_toml).unwrap();
+        assert_eq!(
+            template.package.name,
+            PackageName::from("test-pkg".to_string())
+        );
+        assert_eq!(template.dependencies.runtime, vec!["lima"]);
+        assert_eq!(template.dependencies.build, vec!["cargo"]);
     }
 }

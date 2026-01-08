@@ -48,6 +48,9 @@ use std::path::PathBuf;
 
 /// Returns the primary configuration directory, or None if the user's home cannot be resolved.
 pub fn try_apl_home() -> Option<PathBuf> {
+    if let Ok(val) = std::env::var("APL_HOME") {
+        return Some(PathBuf::from(val));
+    }
     home_dir().map(|h| h.join(".apl"))
 }
 
