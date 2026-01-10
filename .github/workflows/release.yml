@@ -51,10 +51,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Generate manifest.json
+      - name: Generate latest.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cat > manifest.json << EOF
+          cat > latest.json << EOF
           {
             "version": "${VERSION}",
             "binaries": {
