@@ -394,10 +394,10 @@ async fn cli_index(
                 urls.insert(key.to_string(), serde_json::Value::String(bin.url.clone()));
             }
 
-            // Write manifest.json with simple key-value pairs for install.sh
-            let manifest_path = index_path.with_file_name("manifest.json");
+            // Write latest.json with simple key-value pairs for install.sh
+            let manifest_path = index_path.with_file_name("latest.json");
             fs::write(&manifest_path, serde_json::to_string_pretty(&urls)?)?;
-            println!("   Generated manifest: {}", manifest_path.display());
+            println!("   Generated latest.json: {}", manifest_path.display());
         }
     }
 

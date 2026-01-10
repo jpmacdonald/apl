@@ -303,3 +303,33 @@ history (
 | Verification timing | During download (no TOCTOU) |
 | Audit trail | SQLite history table |
 | Code signing | Ad-hoc re-signing after relinking |
+
+## Release Pipeline Architecture
+
+To ensure the install script always sees the latest release immediately, we use a unified signal flow between the binary repository (`apl`) and the registry repository (`apl-core`).
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Release as apl/release.yml
+    participant Registry as apl-core/update-index.yml
+    participant CDN as apl.pub (R2)
+    participant User as install.sh
+
+    Dev->>Release: Push tag v0.5.0
+    Release->>Release: Build Binaries
+    Release->>Release: Publish GitHub Release
+    
+    note over Release, Registry: Repository Dispatch Trigger
+    Release->>Registry: Dispatch event (release)
+    
+    Registry->>Registry: Run `apl-pkg index`
+    Registry->>Registry: Generate index.bin
+    Registry->>Registry: Generate latest.json
+    
+    Registry->>CDN: Upload index.bin
+    Registry->>CDN: Upload latest.json
+    
+    User->>CDN: GET /latest.json
+    User->>User: Download v0.5.0
+```

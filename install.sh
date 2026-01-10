@@ -36,7 +36,7 @@ else
     esac
     
     # Fetch release manifest (JSON)
-    MANIFEST_URL="https://apl.pub/manifest.json"
+    MANIFEST_URL="https://apl.pub/latest.json"
     MANIFEST=$(curl -sL "$MANIFEST_URL")
 
     if [ -z "$MANIFEST" ]; then

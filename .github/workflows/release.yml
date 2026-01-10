@@ -71,7 +71,9 @@ jobs:
           }
           EOF
 
-      - name: Upload manifest
-        uses: softprops/action-gh-release@v1
+      - name: Trigger Index Update
+        uses: peter-evans/repository-dispatch@v2
         with:
-          files: manifest.json
+          token: ${{ secrets.PAT_TOKEN }}
+          repository: jpmacdonald/apl-core
+          event-type: release
