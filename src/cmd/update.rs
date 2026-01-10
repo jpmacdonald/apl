@@ -138,22 +138,23 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         use crossterm::style::Stylize;
 
         println!();
+        // U.S. Graphics: Clean summary line, no separator
         println!(
-            "   {}",
-            format!("{} packages can be upgraded:", update_list.len()).with(theme.colors.header)
+            "{}",
+            format!("{} packages can be upgraded", update_list.len()).dark_grey()
         );
-        println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+        println!();
 
         for (name, old, new) in &update_list {
+            let name_part = format!("{:<width$}", name, width = theme.layout.name_width);
             println!(
-                "   {} {} {} → {}",
-                theme.icons.info.with(theme.colors.active),
-                name.clone().with(theme.colors.package_name),
-                old.clone().dark_grey(),
-                new.clone().with(theme.colors.success)
+                "  {} {}  →  {}",
+                name_part.with(theme.colors.package_name),
+                old.as_str().dark_grey(),
+                new.as_str().with(theme.colors.success)
             );
         }
-        println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+        println!();
         output.info("Run 'apl upgrade' to apply these updates.");
     }
 

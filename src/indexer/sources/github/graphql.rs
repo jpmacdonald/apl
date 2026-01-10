@@ -115,6 +115,12 @@ pub async fn fetch_batch_releases(
     let query_str = format!("query {{ {fragment} }}");
     let payload = GraphQlQuery { query: query_str };
 
+    if token.is_empty() {
+        anyhow::bail!(
+            "GITHUB_TOKEN is missing or empty. Indexing requires partial auth to fetch releases via GraphQL."
+        );
+    }
+
     let mut attempt = 0;
     while attempt < 3 {
         attempt += 1;
@@ -133,7 +139,7 @@ pub async fn fetch_batch_releases(
                     // Check for "couldn't respond in time" in the body even if status is 200 (GraphQL quirk)
                     if text.contains("couldn't respond to your request in time") {
                         if attempt < 3 {
-                            eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
+                            println!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
                             tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
                                 .await;
                             continue;
@@ -146,57 +152,66 @@ pub async fn fetch_batch_releases(
                     let raw_body: GraphQlResponse<HashMap<String, Option<RepositoryData>>> =
                         serde_json::from_str(&text).map_err(|e| {
                             let snippet: String = text.chars().take(500).collect();
-                            anyhow::anyhow!(
-                                "Failed to parse GraphQL JSON: {e}. Response snippet: {snippet}"
-                            )
+                            anyhow::anyhow!("Failed to parse JSON: {e}. Snippet: {snippet}")
                         })?;
 
-                    if let Some(errors) = raw_body.errors {
+                    if let Some(ref errors) = raw_body.errors {
                         if !errors.is_empty() {
-                            // If specifically a timeout error equivalent
-                            if errors[0].message.contains("couldn't respond") && attempt < 3 {
-                                eprintln!("   ⚠ GitHub timeout, retrying ({attempt}/3)...");
-                                tokio::time::sleep(tokio::time::Duration::from_millis(
-                                    1000 * attempt,
-                                ))
-                                .await;
-                                continue;
+                            for err in errors {
+                                println!("   ⚠ GraphQL Error: {}", err.message);
                             }
-                            eprintln!("GraphQL Warning: {}", errors[0].message);
                         }
                     }
 
-                    let data = raw_body
-                        .data
-                        .ok_or_else(|| anyhow::anyhow!("No data in GraphQL response"))?;
+                    // Clone errors if needed for the error message, or just print them above
+                    let data = raw_body.data.ok_or_else(|| {
+                        anyhow::anyhow!("No data in response (errors: {:?})", raw_body.errors)
+                    })?;
+
+                    // Debug: mismatched keys?
+                    // println!("   Debug: Response keys: {:?}", data.keys().collect::<Vec<_>>());
 
                     let mut result = HashMap::new();
                     for (i, key) in repos.iter().enumerate() {
                         let alias = repo_alias(i);
-                        if let Some(Some(repo_data)) = data.get(&alias) {
-                            let mut releases = Vec::new();
-                            for node in &repo_data.releases.nodes {
-                                let assets = node
-                                    .release_assets
-                                    .nodes
-                                    .iter()
-                                    .map(|a| GithubAsset {
-                                        name: a.name.clone(),
-                                        browser_download_url: a.download_url.clone(),
-                                        digest: a.digest.clone(),
-                                    })
-                                    .collect();
+                        match data.get(&alias) {
+                            Some(Some(repo_data)) => {
+                                let mut releases = Vec::new();
+                                for node in &repo_data.releases.nodes {
+                                    let assets = node
+                                        .release_assets
+                                        .nodes
+                                        .iter()
+                                        .map(|a| GithubAsset {
+                                            name: a.name.clone(),
+                                            browser_download_url: a.download_url.clone(),
+                                            digest: a.digest.clone(),
+                                        })
+                                        .collect();
 
-                                releases.push(GithubRelease {
-                                    id: 0,
-                                    tag_name: node.tag_name.clone(),
-                                    draft: node.is_draft,
-                                    prerelease: node.is_prerelease,
-                                    body: node.description.clone(),
-                                    assets,
-                                });
+                                    releases.push(GithubRelease {
+                                        id: 0,
+                                        tag_name: node.tag_name.clone(),
+                                        draft: node.is_draft,
+                                        prerelease: node.is_prerelease,
+                                        body: node.description.clone(),
+                                        assets,
+                                    });
+                                }
+                                result.insert(key.clone(), releases);
                             }
-                            result.insert(key.clone(), releases);
+                            Some(None) => {
+                                eprintln!(
+                                    "   ⚠ Repo found but data is null: {} (alias: {})",
+                                    key, alias
+                                );
+                            }
+                            None => {
+                                eprintln!(
+                                    "   ⚠ Repo missing from response: {} (alias: {})",
+                                    key, alias
+                                );
+                            }
                         }
                     }
                     return Ok(result);

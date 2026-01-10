@@ -10,7 +10,7 @@ pub fn status() -> Result<()> {
     let db = StateDb::open().context("Failed to open state database")?;
 
     // 1. Version
-    let pkg_version = env!("CARGO_PKG_VERSION");
+    let pkg_version = env!("APL_VERSION");
 
     // 2. Index info
     let index_path = apl_home().join("index.bin");
@@ -75,78 +75,62 @@ pub fn status() -> Result<()> {
     use crossterm::style::Stylize;
 
     let theme = Theme::default();
+    let label_width = 12;
 
     println!();
-    // Header
-    println!("   {}", "System Status".with(theme.colors.header));
-    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+    // U.S. Graphics: Section title, no separators
+    println!("{}", "System status".dark_grey());
+    println!();
 
     // Section 1: Core
+    println!("{:<width$}{}", "Version:", pkg_version, width = label_width);
     println!(
-        "   {:<18} {}",
-        "Version:".with(theme.colors.secondary),
-        pkg_version.with(theme.colors.version)
-    );
-    println!(
-        "   {:<18} {}",
-        "Index:".with(theme.colors.secondary),
+        "{:<width$}{}",
+        "Index:",
         if index.is_some() {
-            format!("{index_date} (up to date)").with(theme.colors.success)
+            format!("{index_date}")
         } else {
-            "Not found".to_string().with(theme.colors.error)
-        }
+            "Not found".to_string()
+        },
+        width = label_width
     );
     println!(
-        "   {:<18} {}",
-        "Packages:".with(theme.colors.secondary),
-        format!("{} installed", packages.len()).with(theme.colors.version)
+        "{:<width$}{}",
+        "Packages:",
+        format!("{} installed", packages.len()),
+        width = label_width
     );
     println!(
-        "   {:<18} {}",
-        "Cache:".with(theme.colors.secondary),
-        format!(
-            "{} ({} items)",
-            apl::ui::theme::format_size(total_size),
-            cache_items
-        )
-        .with(theme.colors.version)
-    );
-    println!(
-        "   {:<18} {}",
-        "Config:".with(theme.colors.secondary),
-        apl_home()
-            .join("config.toml")
-            .display()
-            .to_string()
-            .with(theme.colors.secondary)
+        "{:<width$}{} ({} items)",
+        "Cache:",
+        apl::ui::theme::format_size(total_size),
+        cache_items,
+        width = label_width
     );
 
     // Section 2: Updates (if any)
     if !update_list.is_empty() {
         println!();
         println!(
-            "   {:<18} {}",
-            "Updates:".with(theme.colors.secondary),
-            format!(
-                "{} package{} available",
-                update_list.len(),
-                if update_list.len() == 1 { "" } else { "s" }
-            )
-            .with(theme.colors.warning)
+            "{}",
+            format!("{} packages can be upgraded", update_list.len()).dark_grey()
         );
+        println!();
 
         for (name, old, new) in update_list {
+            let name_part = format!("{:<width$}", name, width = theme.layout.name_width);
             println!(
-                "     {} {} {} → {}",
-                "└─".dark_grey(),
-                name.with(theme.colors.package_name),
-                old.dark_grey(),
+                "  {} {}  →  {}",
+                name_part.with(theme.colors.package_name),
+                old.as_str().dark_grey(),
                 new.with(theme.colors.success)
             );
         }
+    } else {
+        println!();
+        println!("{}", "System is up to date".dark_grey());
     }
 
-    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
     println!();
     Ok(())
 }

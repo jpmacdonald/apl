@@ -38,8 +38,17 @@ pub fn list() -> Result<()> {
 
         let pkg_name = PackageName::new(&pkg.name);
         let pkg_version = Version::from(pkg.version.as_str());
+        // U.S. Graphics: show description if available, otherwise show date
+        let description = format!("installed {}", dt);
 
-        print_list_row(&mut buffer, &pkg_name, &pkg_version, pkg_size, &dt, " ");
+        print_list_row(
+            &mut buffer,
+            &pkg_name,
+            &pkg_version,
+            pkg_size,
+            &description,
+            " ",
+        );
     }
 
     print_list_footer(&mut buffer, packages.len(), total_size);

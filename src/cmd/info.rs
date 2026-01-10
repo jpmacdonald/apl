@@ -5,9 +5,10 @@ use apl::apl_home;
 use apl::db::StateDb;
 use apl::index::PackageIndex;
 use apl::types::PackageName;
+use apl::ui::theme::format_size;
 use crossterm::style::Stylize;
 
-/// Show info about a specific package
+/// Show info about a specific package (U.S. Graphics style)
 pub fn info(package_str: &str) -> Result<()> {
     let package = PackageName::new(package_str);
     let db = StateDb::open().context("Failed to open state database")?;
@@ -29,48 +30,66 @@ pub fn info(package_str: &str) -> Result<()> {
         bail!("Package '{package}' not found");
     }
 
-    // Manual header for synchronous ordering
+    // U.S. Graphics style: Package name + version as header
     println!();
-    println!(
-        "{} {}",
-        format!("Package {package}").white(),
-        "─".repeat(40).dark_grey()
-    );
-
     if let Some(entry) = &index_entry {
+        let version = entry.latest().map(|v| v.version.as_str()).unwrap_or("?");
+        println!(
+            "{} {}",
+            package.as_str().white().bold(),
+            version.dark_grey()
+        );
+        println!();
+
+        // Description as natural text
+        if !entry.description.is_empty() {
+            println!("{}", entry.description);
+        }
+        println!();
+
+        // Key-value pairs with consistent alignment
+        let label_width = 12;
+        if !entry.homepage.is_empty() {
+            println!(
+                "{:<width$}{}",
+                "Homepage:",
+                entry.homepage,
+                width = label_width
+            );
+        }
         if let Some(latest) = entry.latest() {
-            println!("  Latest Version: {}", latest.version);
-            if !entry.description.is_empty() {
-                println!("  Description: {}", entry.description);
-            }
-
-            // Show versions
-            let version_list: Vec<String> =
-                entry.releases.iter().map(|r| r.version.clone()).collect();
-            println!("  Available Versions: {}", version_list.join(", "));
-
             if !latest.deps.is_empty() {
-                println!("  Dependencies: {}", latest.deps.join(", "));
+                println!(
+                    "{:<width$}{}",
+                    "Requires:",
+                    latest.deps.join(", "),
+                    width = label_width
+                );
             }
-            if !latest.bin.is_empty() {
-                println!("  Binaries: {}", latest.bin.join(", "));
-            }
-        } else {
-            println!("  Latest Version: (none)");
         }
-    }
 
-    if let Some(pkg) = &installed {
-        println!("  Status: Installed ({})", pkg.version);
-        let files = db.get_package_files(package.as_str())?;
-        if !files.is_empty() {
-            println!("  Files:");
-            for file in files {
-                println!("    {}", file.path);
-            }
+        // Installed status
+        if let Some(pkg) = &installed {
+            let size_str = format_size(pkg.size_bytes);
+            println!(
+                "{:<width$}Yes ({})",
+                "Installed:",
+                size_str,
+                width = label_width
+            );
+        } else {
+            println!("{:<width$}No", "Installed:", width = label_width);
         }
-    } else {
-        println!("  Status: Not installed");
+    } else if let Some(pkg) = &installed {
+        // Only installed, no index entry
+        println!(
+            "{} {}",
+            package.as_str().white().bold(),
+            pkg.version.as_str().dark_grey()
+        );
+        println!();
+        let size_str = format_size(pkg.size_bytes);
+        println!("{:<width$}Yes ({})", "Installed:", size_str, width = 12);
     }
 
     Ok(())

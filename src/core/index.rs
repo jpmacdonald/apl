@@ -47,17 +47,6 @@ pub enum IndexError {
     VersionMismatch(u32, u32),
 }
 
-/// Patch information for binary deltas
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PatchInfo {
-    /// SHA256 hash of the source/old binary
-    pub from_hash: crate::types::Sha256Hash,
-    /// SHA256 hash of the patch file itself
-    pub patch_hash: crate::types::Sha256Hash,
-    /// Size of the patch file in bytes
-    pub patch_size: u64,
-}
-
 /// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
@@ -69,10 +58,6 @@ pub struct IndexBinary {
     pub hash: crate::types::Sha256Hash,
     /// Hash algorithm type
     pub hash_type: HashType,
-    /// Available binary patches (deltas from older versions)
-    /// Note: Placed at end for postcard backward compatibility
-    #[serde(default)]
-    pub patches: Vec<PatchInfo>,
 }
 
 /// Source artifact info
@@ -428,7 +413,6 @@ mod tests {
                     url: "https://example.com/nvim.tar.zst".to_string(),
                     hash: crate::types::Sha256Hash::new("abc123"),
                     hash_type: HashType::Sha256,
-                    patches: vec![],
                 }],
                 deps: vec!["libuv".to_string()],
                 build_deps: vec![],
@@ -519,7 +503,6 @@ mod tests {
                     url: "https://example.com/foo-arm64".to_string(),
                     hash: crate::types::Sha256Hash::new("hash1"),
                     hash_type: HashType::Sha256,
-                    patches: vec![],
                 }],
                 deps: vec![],
                 build_deps: vec![],

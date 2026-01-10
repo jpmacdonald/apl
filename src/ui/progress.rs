@@ -51,8 +51,21 @@ pub fn format_download_progress(current: u64, total: u64) -> String {
     } else {
         0
     };
-    let size_str = super::theme::format_size(current);
-    format!("fetching {pct:>3}% {size_str}")
+    let bar = format_progress_bar(current, total, 24);
+    let size_str = super::theme::format_size(total);
+    format!("{bar}  {pct:>3}%  {size_str}")
+}
+
+/// Format a 24-character progress bar using ▓ (filled) and ░ (empty).
+/// This is the U.S. Graphics Company style: clean, minimal Unicode.
+pub fn format_progress_bar(current: u64, total: u64, width: usize) -> String {
+    let filled = if total > 0 {
+        ((current as f64 / total as f64) * width as f64).round() as usize
+    } else {
+        0
+    };
+    let empty = width.saturating_sub(filled);
+    format!("{}{}", "▓".repeat(filled), "░".repeat(empty))
 }
 
 #[cfg(test)]
@@ -73,8 +86,39 @@ mod tests {
 
     #[test]
     fn test_download_progress_format() {
-        assert_eq!(format_download_progress(512, 1024), "fetching  50% 512 B");
-        assert_eq!(format_download_progress(1024, 1024), "fetching 100% 1.0 KB");
-        assert_eq!(format_download_progress(0, 1024), "fetching   0% 0 B");
+        // 50% progress on a 1024 byte download
+        let result = format_download_progress(512, 1024);
+        assert!(result.contains("▓"));
+        assert!(result.contains("░"));
+        assert!(result.contains("50%"));
+        assert!(result.contains("1.0 KB")); // total size
+
+        // 100% progress
+        let result = format_download_progress(1024, 1024);
+        assert!(result.contains("100%"));
+        assert!(!result.contains("░")); // Should be all filled
+
+        // 0% progress
+        let result = format_download_progress(0, 1024);
+        assert!(result.contains("0%"));
+        assert!(!result.contains("▓")); // Should be all empty
+    }
+
+    #[test]
+    fn test_progress_bar_format() {
+        // 50% should be half filled
+        let bar = super::format_progress_bar(50, 100, 10);
+        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 5);
+        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 5);
+
+        // 100% should be all filled
+        let bar = super::format_progress_bar(100, 100, 10);
+        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 10);
+        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 0);
+
+        // 0% should be all empty
+        let bar = super::format_progress_bar(0, 100, 10);
+        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 0);
+        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 10);
     }
 }

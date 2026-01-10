@@ -3,12 +3,10 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // 1. Install Script
         if (path === "/install") {
             return fetch("https://raw.githubusercontent.com/jpmacdonald/apl/main/install.sh");
         }
 
-        // 2. Metadata Inspection (Text Manifest)
         if (path === "/latest") {
             const obj = await env.APL_BUCKET.get("latest.txt");
             if (!obj) return new Response("Not found", { status: 404 });
@@ -20,7 +18,6 @@ export default {
             });
         }
 
-        // 3. Index 
         if (path === "/index") {
             const response = await env.APL_BUCKET.get("index.bin");
             if (!response) return new Response("Index not found", { status: 404 });
@@ -29,7 +26,6 @@ export default {
             });
         }
 
-        // 4. CAS / Storage
         if (path.startsWith("/cas/") || path.startsWith("/deltas/")) {
             const response = await env.APL_BUCKET.get(path.slice(1));
             if (!response) return new Response("Artifact not found", { status: 404 });

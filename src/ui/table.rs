@@ -92,28 +92,8 @@ impl TableRenderer {
             });
         }
 
-        // 3. Print Header and Separator (outside the frame)
+        // 3. U.S. Graphics Style: No headers, no separators. Clean whitespace.
         println!();
-        let pkg_h = format!(
-            "{: <width$}",
-            "PACKAGE",
-            width = self.theme.layout.name_width
-        );
-        let ver_h = format!(
-            "{: <width$}",
-            "VERSION",
-            width = self.theme.layout.version_width
-        );
-        let size_h = format!("{: <width$}", "SIZE", width = self.theme.layout.size_width);
-
-        println!(
-            "   {} {} {} {}",
-            pkg_h.dark_grey(),
-            ver_h.dark_grey(),
-            size_h.dark_grey(),
-            "STATUS".dark_grey()
-        );
-        println!("{}", "─".repeat(self.theme.layout.table_width).dark_grey());
 
         // 4. Initialize the Frame for the rows
         let mut frame = RelativeFrame::new(self.packages.len() as u16);
@@ -279,14 +259,14 @@ impl TableRenderer {
         }
     }
 
-    /// Print footer separator and message with explicit severity
+    /// Print footer message with explicit severity (no separator)
     pub fn print_footer(&mut self, buffer: &mut OutputBuffer, message: &str, severity: Severity) {
         if let Some(mut frame) = self.frame.take() {
             let _ = frame.finish();
         }
         buffer.show_cursor();
 
-        println!("{}", "─".repeat(self.theme.layout.table_width).dark_grey());
+        // U.S. Graphics: No separator, just clean whitespace
         println!();
 
         match severity {

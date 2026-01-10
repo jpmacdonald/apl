@@ -78,26 +78,26 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
     let theme = apl::ui::Theme::default();
 
     println!();
+    // U.S. Graphics: count header, no table chrome
     println!(
-        "   {} {} {}",
-        format!("{:<width$}", "PACKAGE", width = theme.layout.name_width).dark_grey(),
-        format!("{:<width$}", "UPDATE", width = 25).dark_grey(),
-        "STATUS".dark_grey()
+        "{}",
+        format!("{} packages can be upgraded", to_upgrade.len()).dark_grey()
     );
-    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
+    println!();
+
+    // Upgrading header
+    println!("{}", "Upgrading".dark_grey());
+    println!();
 
     for (name, old, new) in &to_upgrade {
         let name_col = format!("{:<width$}", name, width = theme.layout.name_width);
-        let version_col = format!("{:<width$}", format!("{} → {}", old, new), width = 25);
-
         println!(
-            "   {} {} {}",
+            "  {} {}  →  {}",
             name_col.with(theme.colors.package_name),
-            version_col.with(theme.colors.version),
-            "pending".with(theme.colors.warning)
+            old.as_str().dark_grey(),
+            new.as_str().with(theme.colors.success)
         );
     }
-    println!("{}", "─".repeat(theme.layout.table_width).dark_grey());
     println!();
 
     // Ask for confirmation unless --yes flag is set

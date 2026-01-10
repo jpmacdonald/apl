@@ -26,7 +26,7 @@ struct GithubAsset {
 /// Update APL itself
 pub async fn self_update(dry_run: bool) -> Result<()> {
     let output = Output::new();
-    let current_version = env!("CARGO_PKG_VERSION");
+    let current_version = env!("APL_VERSION");
 
     output.info("Checking for APL updates via apl.pub...");
 
@@ -150,7 +150,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
 /// Fallback to GitHub API if apl.pub is down or "apl" is missing from registry.
 async fn self_update_github_fallback(client: Client, dry_run: bool) -> Result<()> {
     let output = Output::new();
-    let current_version = env!("CARGO_PKG_VERSION");
+    let current_version = env!("APL_VERSION");
     let url = format!("https://api.github.com/repos/{APL_REPO_OWNER}/{APL_REPO_NAME}/releases");
 
     let response = client

@@ -48,8 +48,6 @@ pub enum ArtifactKind {
         mirror_url: Option<String>,
         /// SHA256 hash for verification.
         hash: String,
-        /// Available patches for delta updates.
-        patches: Vec<crate::core::index::PatchInfo>,
     },
     /// Source code that requires building.
     Source {
@@ -266,7 +264,6 @@ impl UnresolvedPackage {
                     url: b.url.clone(),
                     mirror_url,
                     hash: b.hash.to_string(),
-                    patches: b.patches.clone(),
                 },
                 current_arch,
             ))
@@ -435,90 +432,18 @@ impl ResolvedPackage {
             let extract_dir = temp_dir.path().join("extracted");
             std::fs::create_dir_all(&extract_dir).map_err(InstallError::Io)?;
 
-            // Delta Update Check
-            let mut downloaded = false;
-            if let ArtifactKind::Binary { patches, .. } = &self.artifact {
-                for patch in patches {
-                    let old_cache_file = crate::cache_path().join(patch.from_hash.as_str());
-                    if old_cache_file.exists() {
-                        reporter.info(&format!(
-                            "{} {}: Using binary delta (from {})",
-                            self.name, self.version, patch.from_hash
-                        ));
-
-                        // Wait, we need the actual mirror base URL from the index.
-                        // For now we assume the mirror URL helper can give us a base.
-                        let mirror_base = self
-                            .artifact
-                            .url()
-                            .trim_end_matches(&format!("/cas/{}", self.artifact.hash()));
-                        let patch_url = format!(
-                            "{}/deltas/{}_{}.zst",
-                            mirror_base,
-                            patch.from_hash,
-                            self.artifact.hash()
-                        );
-
-                        let patch_file = temp_dir.path().join("patch.zst");
-                        let res = crate::io::download::DownloadRequest::new(
-                            client,
-                            &self.name,
-                            &self.version,
-                            &patch_url,
-                            &patch_file,
-                            patch.patch_hash.as_str(),
-                            reporter,
-                        )
-                        .execute()
-                        .await;
-
-                        if res.is_ok() {
-                            // Apply delta
-                            let old_data =
-                                std::fs::read(&old_cache_file).map_err(InstallError::Io)?;
-                            let patch_data =
-                                std::fs::read(&patch_file).map_err(InstallError::Io)?;
-
-                            match crate::io::delta::apply_delta(&old_data, &patch_data) {
-                                Ok(new_data) => {
-                                    // Verify hash
-                                    use sha2::{Digest, Sha256};
-                                    let mut hasher = Sha256::new();
-                                    hasher.update(&new_data);
-                                    let new_hash = format!("{:x}", hasher.finalize());
-
-                                    if new_hash == self.artifact.hash() {
-                                        std::fs::write(&cache_file, new_data)
-                                            .map_err(InstallError::Io)?;
-                                        downloaded = true;
-                                        break;
-                                    }
-                                }
-                                Err(_) => continue,
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !downloaded {
-                crate::io::download::DownloadRequest::new(
-                    client,
-                    &self.name,
-                    &self.version,
-                    self.artifact.url(),
-                    &cache_file,
-                    self.artifact.hash(),
-                    reporter,
-                )
-                .with_extract_dest(&extract_dir)
-                .execute()
-                .await?;
-            } else {
-                // Manually extract since we bypassed the standard DownloadRequest extraction
-                crate::io::extract::extract_auto(&cache_file, &extract_dir)
-                    .map_err(|e| InstallError::Other(e.to_string()))?;
-            }
+            crate::io::download::DownloadRequest::new(
+                client,
+                &self.name,
+                &self.version,
+                self.artifact.url(),
+                &cache_file,
+                self.artifact.hash(),
+                reporter,
+            )
+            .with_extract_dest(&extract_dir)
+            .execute()
+            .await?;
 
             download_or_extract_path = extract_dir;
             if self.artifact.is_source() && self.def.source.strip_components.unwrap_or(0) > 0 {

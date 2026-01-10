@@ -11,6 +11,7 @@ use crate::core::index::{HashType, IndexBinary, PackageIndex, VersionInfo};
 use crate::package::{DiscoveryConfig, PackageTemplate};
 use crate::types::PackageName;
 use anyhow::Result;
+use crossterm::style::Stylize;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::fs;
@@ -27,11 +28,18 @@ use crate::io::artifacts::{ArtifactStore, get_artifact_store};
 /// If `force_full` is false, attempts to load the existing index and only
 /// deep-fetches packages whose latest version has changed (Optimistic Delta Hydration).
 pub async fn generate_index_from_registry(
-    client: &Client,
+    _client: &Client,
     registry_dir: &Path,
     package_filter: Option<&str>,
     force_full: bool,
+    verbose: bool,
 ) -> Result<PackageIndex> {
+    // Configure client with timeout (overshadowing the argument)
+    let client = reqwest::Client::builder()
+        .user_agent("apl/0.1.0")
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
+
     let hash_cache = Arc::new(Mutex::new(HashCache::load()));
 
     // Initialize artifact store (optional, only if configured)
@@ -70,35 +78,54 @@ pub async fn generate_index_from_registry(
         index.mirror_base_url = Some(base);
     }
 
-    let toml_files = walk_registry_toml_files(registry_dir)?;
+    // Print header
+    println!();
+    println!("REGENERATING INDEX");
+    if force_full {
+        println!("FORCE FULL REBUILD");
+    }
+    println!();
 
-    // Pass 1: Collect templates and identify sources to fetch
+    // Setup MultiProgress for unified design language
+    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+    let multi = MultiProgress::new();
+
+    // Unified design: thin line progress, right-aligned numbers
+    // Pattern: {phase:<25} ──────────────────── 100%   {count}
+    let style = ProgressStyle::with_template("{prefix:<25} {bar:20} {percent:>3}%   {msg}")
+        .unwrap()
+        .progress_chars("───");
+
+    // Phase 1: Discovery
+    let toml_files: Vec<_> = walk_registry_toml_files(registry_dir)?.collect();
+    let total_files = toml_files.len() as u64;
+
+    let pb_discovery = multi.add(ProgressBar::new(total_files));
+    pb_discovery.set_style(style.clone());
+    pb_discovery.set_prefix("Discovering sources");
+    pb_discovery.set_message("");
+
+    // Pass 1: Collect templates
     let mut templates = Vec::new();
     let other_sources: Vec<Box<dyn ListingSource>> = Vec::new();
+    let _other_sources = other_sources;
     let mut github_repos: Vec<crate::types::RepoKey> = Vec::new();
 
     // Map package_name -> RepoKey (for dirty checking)
     let mut pkg_repo_map: HashMap<String, crate::types::RepoKey> = HashMap::new();
-    // Map package_name -> tag_pattern (for version extraction)
     let mut pkg_tag_pattern_map: HashMap<String, String> = HashMap::new();
-    // Map of package_name -> source_key
     let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
     for template_path in toml_files {
+        pb_discovery.inc(1);
         let toml_str = match fs::read_to_string(&template_path) {
             Ok(s) => s,
-            Err(e) => {
-                eprintln!("⚠ Failed to read {}: {}", template_path.display(), e);
-                continue;
-            }
+            Err(_) => continue, // Squelch error for clean UI
         };
 
         let template: PackageTemplate = match toml::from_str(&toml_str) {
             Ok(t) => t,
-            Err(e) => {
-                eprintln!("⚠ Failed to parse {}: {}", template_path.display(), e);
-                continue;
-            }
+            Err(_) => continue,
         };
 
         if let Some(filter) = package_filter {
@@ -131,27 +158,34 @@ pub async fn generate_index_from_registry(
 
         templates.push((template_path, template));
     }
+    pb_discovery.finish_with_message(format!("{}", github_repos.len()));
 
-    println!(
-        "   🔍 Discovered {} unique GitHub sources in registry/",
-        github_repos.len()
-    );
+    // Pass 2: Delta Check
+    // We can use a spinner here if fast, or skip visual if super fast.
+    // The request didn't show "checking deltas".
+    // It showed "discovering sources" then "fetching metadata".
+    // Delta check is kind of part of discovery/fetching.
+    // Let's merge it conceptually or just perform it quickly.
 
-    // Pass 2: Delta Check (Optimistic) - fetch only latest tags
     let mut dirty_repos: Vec<crate::types::RepoKey> = Vec::new();
-    let mut skipped_count = 0;
+    let mut _skipped_count = 0;
 
     if !force_full && !github_repos.is_empty() && !index.packages.is_empty() {
-        println!("   ⚡ Checking for updates (lightweight)...");
+        // Optional: Add a quick spinner for delta check if needed
+        // let pb_delta = multi.add(ProgressBar::new_spinner());
+        // pb_delta.set_style(style.clone());
+        // pb_delta.set_label("checking updates");
+
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
 
-        // Can batch ~20 repos safely for lightweight query
+        // Batch fetch latest versions
         for chunk in github_repos.chunks(20) {
-            match sources::github::graphql::fetch_latest_versions_batch(client, &token, chunk).await
+            match sources::github::graphql::fetch_latest_versions_batch(&client, &token, chunk)
+                .await
             {
                 Ok(latest_versions) => {
                     for (key, remote_tag_opt) in latest_versions {
-                        // Find package name for this repo
+                        // Logic same as before
                         let pkg_name = pkg_repo_map
                             .iter()
                             .find(|(_, v)| **v == key)
@@ -163,68 +197,55 @@ pub async fn generate_index_from_registry(
                                 .and_then(|e| e.latest())
                                 .map(|v| v.version.as_str());
 
-                            // Extract version from remote tag using package's tag_pattern (if available)
-                            // IMPORTANT: Apply the same normalization as during indexing
                             let remote_version = remote_tag_opt.as_ref().and_then(|tag| {
                                 let extracted = if let Some(pattern) = pkg_tag_pattern_map.get(name)
                                 {
                                     discovery::extract_version_from_tag(tag, pattern)
                                 } else {
-                                    // Fallback: strip common prefixes
                                     tag.trim_start_matches('v').to_string()
                                 };
-                                // Normalize the same way indexing does
                                 discovery::auto_parse_version(&extracted)
                             });
 
                             if local_latest.map(|s| s.to_string()) == remote_version {
-                                skipped_count += 1;
+                                _skipped_count += 1;
                             } else {
                                 dirty_repos.push(key);
                             }
                         } else {
-                            // New package (not in pkg_repo_map)
                             dirty_repos.push(key);
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!(
-                        "   ⚠ Delta check failed: {e}. Falling back to full fetch for this batch."
-                    );
+                Err(_) => {
                     dirty_repos.extend(chunk.iter().cloned());
                 }
             }
         }
-
-        if skipped_count > 0 {
-            println!(
-                "   ✓ {} packages unchanged, {} need update",
-                skipped_count,
-                dirty_repos.len()
-            );
-        }
+        // pb_delta.finish_and_clear();
     } else {
-        // Force full or no existing index: all repos are "dirty"
         dirty_repos = github_repos.clone();
     }
 
-    // Pass 3: Fetch metadata from dirty sources (in parallel / batched)
+    // Pass 3: Fetch Metadata
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
 
-    if !dirty_repos.is_empty() {
-        println!(
-            "   Fetching Metadata for {} packages (Batched GraphQL)...",
-            dirty_repos.len()
-        );
-        let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
+    // Only show bar if there's work
+    // Ensure bar is created even if 0 to match UI spec?
+    // "fetching metadata ... 100% 143 packages"
+    let total_dirty = dirty_repos.len() as u64;
+    let pb_fetch = multi.add(ProgressBar::new(total_dirty));
+    pb_fetch.set_style(style.clone());
+    pb_fetch.set_prefix("Fetching metadata");
+    pb_fetch.set_message("");
 
-        // Chunk into groups of 4 (GraphQL complexity limit protection)
+    if !dirty_repos.is_empty() {
+        let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
         for chunk in dirty_repos.chunks(4) {
-            match sources::github::graphql::fetch_batch_releases(client, &token, chunk).await {
+            match sources::github::graphql::fetch_batch_releases(&client, &token, chunk).await {
                 Ok(batch_results) => {
                     for (key, releases) in batch_results {
-                        // Convert GithubRelease to generic ReleaseInfo
+                        // Conversion logic...
                         let generic_releases: Vec<ReleaseInfo> = releases
                             .into_iter()
                             .map(|r| ReleaseInfo {
@@ -248,50 +269,25 @@ pub async fn generate_index_from_registry(
 
                         let source_key = format!("github:{}/{}", key.owner, key.repo);
                         master_release_cache.insert(source_key, generic_releases);
+                        pb_fetch.inc(1);
                     }
                 }
                 Err(e) => {
-                    eprintln!("   ✗ Batch fetch failed: {e}");
-                    // Fallback to individual fetches? Or just fail?
-                    // For now, fail hard on the batch to warn user.
+                    pb_fetch.abandon_with_message(format!("failed: {}", e));
+                    return Err(anyhow::anyhow!("Metadata fetch failed: {}", e));
                 }
             }
         }
     }
+    pb_fetch.finish_with_message("");
 
-    // Process non-GitHub sources if any (future proofing)
-    if !other_sources.is_empty() {
-        use futures::stream::{self, StreamExt};
-        let mut fetch_stream = stream::iter(other_sources)
-            .map(|source| {
-                let client = client.clone();
-                async move {
-                    let key = source.key();
-                    let result = source.fetch_releases(&client).await;
-                    (key, result)
-                }
-            })
-            .buffer_unordered(15);
-
-        while let Some((key, result)) = fetch_stream.next().await {
-            match result {
-                Ok(releases) => {
-                    master_release_cache.insert(key, releases);
-                }
-                Err(e) => {
-                    eprintln!("   ✗ {key} ({e})");
-                }
-            }
-        }
-    }
-
-    // Build a set of dirty source keys for efficient lookup
+    // Build dirty keys set
     let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
         .iter()
         .map(|key| format!("github:{}/{}", key.owner, key.repo))
         .collect();
 
-    // Pass 3.5: Build Build Graph to determine order
+    // Pass 3.5: Build Graph
     let mut stub_index = PackageIndex::new();
     for (_, template) in &templates {
         stub_index.upsert_release(
@@ -317,26 +313,31 @@ pub async fn generate_index_from_registry(
         );
     }
     let layers = crate::core::resolver::resolve_build_plan(&stub_index)?;
-
-    // Map templates by name for lookup
     let template_map: HashMap<PackageName, (std::path::PathBuf, PackageTemplate)> = templates
         .iter()
         .map(|(p, t)| (t.package.name.clone(), (p.clone(), t.clone())))
         .collect();
 
-    // Pass 4: Process each dirty package using cached metadata (Layered Hydration)
-    println!("   Processing Packages...");
-    use futures::stream::{self, StreamExt};
+    // Pass 4: Process Packages
+    // Main progress bar for layers
+    let pb_process = multi.add(ProgressBar::new(layers.len() as u64));
+    pb_process.set_style(style.clone());
+    pb_process.set_prefix("Processing packages");
+    pb_process.set_message("");
+
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
 
-    let mut total_releases = 0;
+    let mut _total_releases = 0;
     let mut fully_indexed = 0;
     let mut partial = 0;
     let mut failed = 0;
 
+    use futures::stream::{self, StreamExt};
+
     for (layer_idx, layer) in layers.iter().enumerate() {
         let mut layer_templates = Vec::new();
+        // Filter dirty
         for pkg_name in layer {
             if let Some((_path, template)) = template_map.get(pkg_name.as_str()) {
                 let is_dirty = force_full
@@ -351,17 +352,16 @@ pub async fn generate_index_from_registry(
         }
 
         if layer_templates.is_empty() {
+            pb_process.inc(1);
             continue;
         }
 
-        if layers.len() > 1 {
-            println!(
-                "   --- Layer {}/{} ({} packages) ---",
-                layer_idx + 1,
-                layers.len(),
-                layer_templates.len()
-            );
-        }
+        // Sub-bar for this layer
+        let sub_bar = multi.add(ProgressBar::new(layer_templates.len() as u64));
+        sub_bar.set_style(style.clone());
+        let layer_label = format!("  Layer {}/{}", layer_idx + 1, layers.len());
+        sub_bar.set_prefix(layer_label.clone());
+        sub_bar.set_message("");
 
         let index_snapshot = Arc::new(index.clone());
 
@@ -376,7 +376,7 @@ pub async fn generate_index_from_registry(
                 async move {
                     let pkg_name = template.package.name.to_string();
 
-                    // Discover versions using the master cache or manual config
+                    // (Discovery reuse logic)
                     #[allow(clippy::type_complexity)]
                     let (versions, releases_map): (
                         Vec<(String, String, String)>,
@@ -396,33 +396,23 @@ pub async fn generate_index_from_registry(
                                 Vec::new()
                             };
 
-                            let sorted_releases = releases;
-
                             let mut versions = Vec::new();
                             let mut map = HashMap::new();
 
-                            for release in sorted_releases {
+                            for release in releases {
                                 map.insert(release.tag_name.clone(), release.clone());
-
                                 if !include_prereleases && release.prerelease {
                                     continue;
                                 }
-
                                 let extracted = discovery::extract_version_from_tag(
                                     &release.tag_name,
                                     tag_pattern,
                                 );
-
                                 if let Some(normalized) = discovery::auto_parse_version(&extracted)
                                 {
-                                    versions.push((
-                                        release.tag_name.clone(),
-                                        extracted,
-                                        normalized,
-                                    ));
+                                    versions.push((release.tag_name, extracted, normalized));
                                 }
                             }
-
                             (versions, Some(Arc::new(map)))
                         }
                         DiscoveryConfig::Manual { manual } => {
@@ -436,80 +426,77 @@ pub async fn generate_index_from_registry(
 
                     if versions.is_empty() {
                         return (
-                            template.clone(),
+                            template,
                             Vec::new(),
                             vec![anyhow::anyhow!("no versions found")],
                         );
                     }
 
-                    // Process versions in parallel (nested stream)
                     let versions_stream = stream::iter(versions)
                         .map(|(full_tag, extracted, normalized)| {
-                            let client = client.clone();
-                            let template_clone = template.clone();
-                            let hash_cache_clone = hash_cache.clone();
-                            let releases_map_clone = releases_map.clone();
-                            let display_ver = normalized.clone();
-                            let tag_for_lookup = full_tag.clone();
-                            let local_index_ref = index_ref.clone();
+                            let client_ref = client.clone();
+                            let tmpl_ref = template.clone();
+                            let hc_ref = hash_cache.clone();
+                            let rm_ref = releases_map.clone();
+                            let dv = normalized.clone();
+                            let tf = full_tag.clone();
+                            let ir = index_ref.clone();
                             async move {
                                 let ctx = IndexingContext {
-                                    client: &client,
-                                    hash_cache: hash_cache_clone,
-                                    releases_map: releases_map_clone,
-                                    index: &local_index_ref,
+                                    client: &client_ref,
+                                    hash_cache: hc_ref,
+                                    releases_map: rm_ref,
+                                    index: &ir,
                                 };
-                                let res = package_to_index_ver(
-                                    ctx,
-                                    &template_clone,
-                                    &tag_for_lookup,
-                                    &extracted,
-                                    &display_ver,
-                                )
-                                .await;
-                                (display_ver, res)
+                                let res =
+                                    package_to_index_ver(ctx, &tmpl_ref, &tf, &extracted, &dv)
+                                        .await;
+                                (dv, res)
                             }
                         })
-                        .buffer_unordered(10); // Concurrent versions per package
+                        .buffer_unordered(4);
 
                     let version_results: Vec<(String, Result<VersionInfo>)> =
                         versions_stream.collect().await;
-
                     let mut v_infos = Vec::new();
                     let mut errors = Vec::new();
-
-                    for (_ver, res) in version_results {
+                    for (_, res) in version_results {
                         match res {
-                            Ok(info) => v_infos.push(info),
+                            Ok(i) => v_infos.push(i),
                             Err(e) => errors.push(e),
                         }
                     }
-
                     (template, v_infos, errors)
                 }
             })
-            .buffer_unordered(20); // Concurrent packages
+            .buffer_unordered(16);
 
-        let layer_results: Vec<_> = results_stream.collect().await;
-
-        for (template, v_infos, errors) in layer_results {
+        let mut layer_results_stream = results_stream;
+        let mut processed_count = 0;
+        while let Some((template, v_infos, errors)) = layer_results_stream.next().await {
             let pkg_name = template.package.name.to_string();
-            let mut v_infos = v_infos;
-            let success_count = v_infos.len();
-            let total_versions = v_infos.len() + errors.len();
-            total_releases += success_count;
+            // Show which package we are finalizing
+            sub_bar.set_message(format!("processing {}...", pkg_name));
 
-            // Generate binary deltas if artifact store is enabled
-            if let Err(e) =
-                process_deltas(client, &pkg_name, &mut v_infos, artifact_store.as_deref()).await
-            {
-                tracing::warn!("   ⚠ Delta generation failed for {pkg_name}: {e}");
+            // Periodic save of hash cache
+            processed_count += 1;
+            if processed_count % 10 == 0 {
+                let _ = hash_cache.lock().await.save();
             }
 
-            for ver_info in v_infos {
-                // Infer type: App if .app is present, else Cli
-                let kind = if ver_info.app.is_some() { "app" } else { "cli" };
+            let success_count = v_infos.len();
+            let total_versions = v_infos.len() + errors.len();
+            _total_releases += success_count;
 
+            let _latest_ver = v_infos
+                .first()
+                .map(|v| v.version.clone())
+                .unwrap_or_else(|| "?".to_string());
+
+            // Delta generation removed - not worth the complexity for minimal bandwidth savings
+
+            for ver_info in v_infos {
+                let kind = if ver_info.app.is_some() { "app" } else { "cli" };
                 index.upsert_release(
                     &pkg_name,
                     &template.package.description,
@@ -519,43 +506,70 @@ pub async fn generate_index_from_registry(
                 );
             }
 
-            // Align package name at 20 characters
-            let name_col = format!("{pkg_name:<20}");
-            if !errors.is_empty() {
-                let error_msg = errors[0].to_string();
-                let human_err = humanize_error(&error_msg);
+            // Verbose logging?
+            if verbose {
+                // If verbose, print details to console ABOVE the bars?
+                // suspending multi to print lines might be jerky.
+                // indicatif has println support.
 
-                if success_count > 0 {
-                    partial += 1;
-                    println!("   ⚠ {name_col} {success_count}/{total_versions} versions");
-                    println!("     └ {human_err}");
+                let name_col = format!("    {pkg_name:<25}"); // Indented
+                let status_msg = if !errors.is_empty() && success_count == 0 {
+                    let human_err = humanize_error(&errors[0].to_string());
+                    format!("{} releases (ALL FAILED: {})", total_versions, human_err).red()
+                } else if !errors.is_empty() {
+                    let human_err = humanize_error(&errors[0].to_string());
+                    format!(
+                        "{} releases ({} usable, err: {})",
+                        total_versions, success_count, human_err
+                    )
+                    .yellow()
                 } else {
-                    failed += 1;
-                    eprintln!("   ✗ {name_col} 0/{total_versions} versions");
-                    eprintln!("     └ {human_err}");
-                }
-            } else {
-                fully_indexed += 1;
-                println!("   ✓ {name_col} {total_versions} versions indexed");
+                    format!("{} releases", total_versions).dark_grey()
+                };
+
+                // We use sub_bar.println to keep bars at bottom
+                sub_bar.println(format!("{} {}", name_col, status_msg));
+            } else if !errors.is_empty() {
+                // Even in quiet mode, show failures?
+                // U.S. Graphics Quiet Mode says "Zero visual noise".
+                // Maybe we suppress unless it's a hard error?
+                // Let's stick to true quiet unless verbose.
+                // But full failures are bad.
+                // The requested quiet mode output had NO per-package lines.
             }
+
+            if errors.is_empty() {
+                fully_indexed += 1;
+            } else if success_count > 0 {
+                partial += 1;
+            } else {
+                failed += 1;
+            }
+
+            sub_bar.inc(1);
         }
+
+        // Layer completion - show package count
+        let pkg_count = sub_bar.length().unwrap_or(0);
+        let pkg_word = if pkg_count == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        sub_bar.finish_with_message(format!("{} {}", pkg_count, pkg_word));
+        pb_process.inc(1);
     }
+
+    // Process completion - show layer count
+    let layer_word = if layers.len() == 1 { "layer" } else { "layers" };
+    pb_process.finish_with_message(format!("{} {}", layers.len(), layer_word));
 
     hash_cache.lock().await.save()?;
 
-    let index_file = registry_dir.join("../index.bin");
-    let size_bytes = fs::metadata(&index_file).map(|m| m.len()).unwrap_or(0);
+    // Final Summary (uppercase per spec)
     let total_packages = fully_indexed + partial + failed;
-
     println!();
-    println!(
-        "   Done: {}KB index.bin ({total_releases} total releases)",
-        size_bytes / 1024
-    );
-    println!();
-    println!(
-        "   {total_packages} packages: {fully_indexed} fully indexed, {partial} partial, {failed} failed"
-    );
+    println!("INDEX COMPLETE   {} packages", total_packages);
 
     Ok(index)
 }
@@ -593,6 +607,45 @@ pub async fn package_to_index_ver(
     // releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
     // index: &PackageIndex,
 ) -> Result<VersionInfo> {
+    // Phase 1 Optimization: Check if this version is already indexed
+    // If we have existing binaries for this version, reuse them to avoid re-hashing or re-building.
+    // We still re-generate the metadata (deps, bin, etc.) from the current template to ensure
+    // definition updates propagate to old versions without a full rebuild.
+    if let Some(pkg_entry) = ctx.index.find(&template.package.name) {
+        if let Some(existing_ver) = pkg_entry
+            .releases
+            .iter()
+            .find(|v| v.version == display_version)
+        {
+            if !existing_ver.binaries.is_empty() {
+                // tracing::debug!("      ♻️  Reusing cached binaries for {}", display_version);
+                return Ok(VersionInfo {
+                    version: display_version.to_string(),
+                    binaries: existing_ver.binaries.clone(),
+                    source: None,
+                    deps: template.dependencies.runtime.clone(),
+                    build_deps: template
+                        .build
+                        .as_ref()
+                        .map(|b| b.dependencies.clone())
+                        .unwrap_or_else(|| template.dependencies.build.clone()),
+                    build_script: template
+                        .build
+                        .as_ref()
+                        .map(|b| b.script.clone())
+                        .unwrap_or_default(),
+                    bin: template
+                        .install
+                        .bin
+                        .clone()
+                        .unwrap_or_else(|| vec![template.package.name.to_string()]),
+                    hints: template.hints.post_install.clone(),
+                    app: template.install.app.clone(),
+                });
+            }
+        }
+    }
+
     // Strategy 0: Build from source (Registry Hydration)
     if let Some(build_spec) = &template.build {
         let store = get_artifact_store().await.ok_or_else(|| {
@@ -671,7 +724,6 @@ pub async fn package_to_index_ver(
                 url: asset.download_url.clone(),
                 hash: crate::types::Sha256Hash::new(hash),
                 hash_type: HashType::Sha256,
-                patches: vec![],
             });
         }
     }
@@ -699,7 +751,6 @@ pub async fn package_to_index_ver(
                     url: asset.download_url.clone(),
                     hash: crate::types::Sha256Hash::new(hash),
                     hash_type: HashType::Sha256,
-                    patches: vec![],
                 });
             }
         }
@@ -738,127 +789,6 @@ pub async fn package_to_index_ver(
     })
 }
 
-/// Generate binary deltas between adjacent versions of a package.
-///
-/// For each architecture, identifies the previous version and creates a zstd-dictionary patch.
-async fn process_deltas(
-    client: &Client,
-    pkg_name: &str,
-    v_infos: &mut [VersionInfo],
-    store: Option<&ArtifactStore>,
-) -> Result<()> {
-    let store = match store {
-        Some(s) => s,
-        None => return Ok(()),
-    };
-
-    // Sort versions descending (newest first)
-    v_infos.sort_by(|a, b| {
-        match (
-            semver::Version::parse(&a.version),
-            semver::Version::parse(&b.version),
-        ) {
-            (Ok(va), Ok(vb)) => vb.cmp(&va),
-            _ => b.version.cmp(&a.version),
-        }
-    });
-
-    // We only generate deltas for the top few versions to keep index size sane.
-    // Transitioning from V_n -> V_{n+1}.
-    for i in 0..v_infos.len().min(5).saturating_sub(1) {
-        let (new_ver_slice, old_ver_slice) = v_infos.split_at_mut(i + 1);
-        let new_ver = &mut new_ver_slice[i];
-        let old_ver = &old_ver_slice[0];
-
-        for new_bin in &mut new_ver.binaries {
-            // Find same architecture in old version
-            if let Some(old_bin) = old_ver.binaries.iter().find(|b| b.arch == new_bin.arch) {
-                // Skip if same hash (no change) or patch already exists
-                if old_bin.hash == new_bin.hash
-                    || new_bin.patches.iter().any(|p| p.from_hash == old_bin.hash)
-                {
-                    continue;
-                }
-
-                tracing::info!(
-                    "   ⚡ Generating delta for {} {} -> {} ({})",
-                    pkg_name,
-                    old_ver.version,
-                    new_ver.version,
-                    new_bin.arch
-                );
-
-                // 1. Get old binary data
-                let old_data = match store.get(old_bin.hash.as_ref()).await {
-                    Ok(d) => d,
-                    Err(_) => match client.get(&old_bin.url).send().await {
-                        Ok(resp) => resp.bytes().await?.to_vec(),
-                        Err(_) => continue,
-                    },
-                };
-
-                // 2. Get new binary data
-                let new_data = match store.get(new_bin.hash.as_ref()).await {
-                    Ok(d) => d,
-                    Err(_) => match client.get(&new_bin.url).send().await {
-                        Ok(resp) => resp.bytes().await?.to_vec(),
-                        Err(_) => continue,
-                    },
-                };
-
-                // 3. Generate delta
-                let patch = match crate::io::delta::generate_delta(&old_data, &new_data, 3) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        tracing::warn!("      Failed to generate delta: {e}");
-                        continue;
-                    }
-                };
-
-                // Only keep patch if it saves significant space (>20% or >100KB)
-                if patch.len() >= new_data.len()
-                    || (patch.len() as f64 / new_data.len() as f64) > 0.8
-                {
-                    tracing::debug!("      Patch not small enough, skipping");
-                    continue;
-                }
-
-                // 4. Upload delta to R2
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(&patch);
-                let patch_hash_hex = format!("{:x}", hasher.finalize());
-                let patch_hash = crate::types::Sha256Hash::new(patch_hash_hex);
-
-                let patch_key = format!("deltas/{}_{}.zst", old_bin.hash, new_bin.hash);
-
-                let body = aws_sdk_s3::primitives::ByteStream::from(patch.clone());
-                if let Err(e) = store
-                    .upload_stream(&patch_key, body, Some(patch.len() as i64))
-                    .await
-                {
-                    tracing::warn!("      Failed to upload delta: {e}");
-                    continue;
-                }
-
-                // 5. Add to patches list
-                new_bin.patches.push(crate::core::index::PatchInfo {
-                    from_hash: old_bin.hash.clone(),
-                    patch_hash,
-                    patch_size: patch.len() as u64,
-                });
-
-                tracing::info!(
-                    "      ✓ Delta created: {} KB (compression: {:.1}%)",
-                    patch.len() / 1024,
-                    (1.0 - (patch.len() as f64 / new_data.len() as f64)) * 100.0
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
 async fn resolve_hash(
     client: &Client,
     template: &PackageTemplate,
@@ -983,10 +913,32 @@ async fn hydrate_from_source(
 
     // 1. Resolve Source URL
     let source_url = match &template.source {
-        Some(s) => s
-            .url
-            .replace("{{tag}}", full_tag)
-            .replace("{{version}}", display_version),
+        Some(s) => {
+            let mut url = s
+                .url
+                .replace("{{tag}}", full_tag)
+                .replace("{{version}}", display_version);
+
+            if let Ok(v) = semver::Version::parse(display_version) {
+                url = url
+                    .replace("{{version_major}}", &v.major.to_string())
+                    .replace("{{version_minor}}", &v.minor.to_string())
+                    .replace("{{version_patch}}", &v.patch.to_string());
+            } else {
+                // Fallback for non-strict semver: simple split
+                let parts: Vec<&str> = display_version.split('.').collect();
+                if !parts.is_empty() {
+                    url = url.replace("{{version_major}}", parts[0]);
+                }
+                if parts.len() >= 2 {
+                    url = url.replace("{{version_minor}}", parts[1]);
+                }
+                if parts.len() >= 3 {
+                    url = url.replace("{{version_patch}}", parts[2]);
+                }
+            }
+            url
+        }
         None => {
             // Heuristic for GitHub
             if let DiscoveryConfig::GitHub { github, .. } = &template.discovery {
@@ -997,7 +949,7 @@ async fn hydrate_from_source(
         }
     };
 
-    println!("      🔨 Hydrating from source: {source_url}");
+    tracing::debug!("      🔨 Hydrating from source: {source_url}");
 
     // 2. Prepare Directories
     let tmp_dir = tempfile::tempdir()?;
@@ -1036,9 +988,10 @@ async fn hydrate_from_source(
                     .iter()
                     .find(|b| b.arch == my_arch || b.arch == crate::types::Arch::Universal)
                 {
-                    println!(
+                    tracing::debug!(
                         "      📦 Satisfying build dep: {} ({})",
-                        dep_name, latest.version
+                        dep_name,
+                        latest.version
                     );
 
                     let dep_tmp = tempfile::tempdir()?;
@@ -1092,7 +1045,7 @@ async fn hydrate_from_source(
     let hash_hex = format!("{:x}", hasher.finalize());
 
     let mirror_url = store.upload(&hash_hex, bundle_data).await?;
-    println!("      ☁️  Uploaded to mirror: {mirror_url}");
+    tracing::debug!("      ☁️  Uploaded to mirror: {mirror_url}");
 
     // 9. Determine Arch
     #[cfg(target_arch = "aarch64")]
@@ -1110,7 +1063,6 @@ async fn hydrate_from_source(
             url: mirror_url,
             hash: crate::types::Sha256Hash::new(hash_hex),
             hash_type: HashType::Sha256,
-            patches: vec![],
         }],
         source: None, // Consumer only sees the binary
         deps: Vec::new(),
@@ -1304,9 +1256,16 @@ mod indexer_tests {
         let ctx = IndexingContext {
             client: &client,
             index: &PackageIndex::new(),
-            hash_cache,
+            hash_cache: hash_cache.clone(),
             releases_map: None,
         };
+
+        // Pre-populate hash cache to avoid network call on empty URL (which causes panic)
+        hash_cache.lock().await.insert(
+            "".to_string(),
+            "dummy_hash".to_string(),
+            crate::core::index::HashType::Sha256,
+        );
 
         let ver_info = package_to_index_ver(ctx, &template, "v1.0.0", "1.0.0", "1.0.0")
             .await

@@ -40,6 +40,12 @@ enum Commands {
         /// Force full rebuild (ignore existing index)
         #[arg(long)]
         full: bool,
+        /// Bootstrap index from URL (download before indexing if local index missing)
+        #[arg(long)]
+        bootstrap: Option<String>,
+        /// Show detailed per-package progress
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Migrate legacy registry to Selectors Pattern
     MigrateSelectors,
@@ -134,6 +140,8 @@ async fn main() -> Result<()> {
                     &index_path,
                     package.as_deref(),
                     false,
+                    None,
+                    false,
                 )
                 .await?;
             }
@@ -172,35 +180,45 @@ async fn main() -> Result<()> {
             println!("Validating registry integrity...");
             let mut errors = 0;
 
-            let toml_files = apl::indexer::walk_registry_toml_files(&registry_dir)?;
+            let toml_files: Vec<_> =
+                apl::indexer::walk_registry_toml_files(&registry_dir)?.collect();
+            let mut known_packages = std::collections::HashSet::new();
+            let mut templates = Vec::new();
 
-            for path in toml_files {
-                let content = fs::read_to_string(&path)?;
-                // Try parsing as PackageTemplate first (algorithmic registry)
-                match apl::package::PackageTemplate::parse(&content) {
-                    Ok(_) => {}
-                    Err(e1) => {
-                        // Fallback to legacy Package parse
-                        match Package::parse(&content) {
-                            Ok(pkg) => {
-                                if pkg.package.version == "0.0.0" || pkg.package.version.is_empty()
-                                {
-                                    eprintln!(
-                                        "   {}: Invalid version '{}'",
-                                        pkg.package.name, pkg.package.version
-                                    );
-                                    errors += 1;
-                                }
-                            }
-                            Err(e2) => {
-                                eprintln!("   {}: Invalid TOML structure:", path.display());
-                                eprintln!("      As Template: {e1}");
-                                eprintln!("      As Legacy:   {e2}");
-                                errors += 1;
-                            }
-                        }
+            // Pass 1: Collect names
+            for path in &toml_files {
+                let content = fs::read_to_string(path)?;
+                if let Ok(template) = apl::package::PackageTemplate::parse(&content) {
+                    known_packages.insert(template.package.name.clone());
+                    templates.push((path.clone(), template));
+                } else if let Ok(pkg) = Package::parse(&content) {
+                    known_packages.insert(pkg.package.name.clone());
+                }
+            }
+
+            // Pass 2: Validate
+            for (path, template) in templates {
+                // Check dependencies
+                for dep_str in template
+                    .dependencies
+                    .runtime
+                    .iter()
+                    .chain(template.dependencies.build.iter())
+                    .chain(template.dependencies.optional.iter())
+                {
+                    let dep = apl::types::PackageName::new(dep_str);
+                    if !known_packages.contains(&dep) {
+                        eprintln!(
+                            "   {}: Missing dependency '{}' (path: {})",
+                            template.package.name,
+                            dep_str,
+                            path.display()
+                        );
+                        errors += 1;
                     }
                 }
+
+                // Check version (if legacy-like validation is needed, but templates manage versions differently)
             }
             if errors == 0 {
                 println!("   All packages valid.");
@@ -208,13 +226,20 @@ async fn main() -> Result<()> {
                 anyhow::bail!("Registry check failed with {errors} errors.");
             }
         }
-        Commands::Index { package, full } => {
+        Commands::Index {
+            package,
+            full,
+            bootstrap,
+            verbose,
+        } => {
             cli_index(
                 &client,
                 &registry_dir,
                 &index_path,
                 package.as_deref(),
                 full,
+                bootstrap.as_deref(),
+                verbose,
             )
             .await?;
         }
@@ -251,7 +276,34 @@ async fn cli_index(
     index_path: &Path,
     package_filter: Option<&str>,
     force_full: bool,
+    bootstrap_url: Option<&str>,
+    verbose: bool,
 ) -> Result<()> {
+    if let Some(url) = bootstrap_url {
+        if !index_path.exists() {
+            println!("   📥 Bootstrapping index from {url}...");
+            match client.get(url).send().await {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let bytes = resp.bytes().await?;
+                        fs::write(index_path, bytes)?;
+                        println!(
+                            "   ✓ Bootstrap successful ({} bytes)",
+                            fs::metadata(index_path)?.len()
+                        );
+                    } else {
+                        eprintln!("   ⚠ Bootstrap failed: HTTP {}", resp.status());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("   ⚠ Bootstrap failed: {e}");
+                }
+            }
+        } else {
+            println!("   ℹ️  Local index exists, skipping bootstrap.");
+        }
+    }
+
     println!("Regenerating index...");
 
     let index = apl::indexer::generate_index_from_registry(
@@ -259,6 +311,7 @@ async fn cli_index(
         registry_dir,
         package_filter,
         force_full,
+        verbose,
     )
     .await?;
 

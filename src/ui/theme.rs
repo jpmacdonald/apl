@@ -14,8 +14,7 @@
 use crossterm::style::Color;
 
 /// Default theme for APL UI
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Theme {
     /// Colors for different UI elements
     pub colors: ColorScheme,
@@ -24,7 +23,6 @@ pub struct Theme {
     /// Table layout constants
     pub layout: Layout,
 }
-
 
 /// Color scheme for UI elements
 #[derive(Debug, Clone)]
@@ -120,16 +118,18 @@ pub struct Layout {
 
 impl Default for Layout {
     fn default() -> Self {
+        // U.S. Graphics Style: generous whitespace, precise alignment
+        // Name (24) | Version (11) | Progress Bar (24) | Pct (5) | Size (8)
         Self {
             col_status: 0,
-            col_name: 3,
-            col_version: 20,
-            col_size: 33,
-            col_progress: 44,
-            table_width: 70,
-            name_width: 16,
-            version_width: 12,
-            size_width: 10,
+            col_name: 2,
+            col_version: 26,
+            col_size: 37,
+            col_progress: 48,
+            table_width: 80,
+            name_width: 24,
+            version_width: 11,
+            size_width: 8,
         }
     }
 }
@@ -183,6 +183,6 @@ mod tests {
         let theme = Theme::default();
         assert_eq!(theme.icons.success, "✓");
         assert_eq!(theme.icons.error, "✗");
-        assert_eq!(theme.layout.table_width, 70);
+        assert_eq!(theme.layout.table_width, 80);
     }
 }

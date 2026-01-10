@@ -116,7 +116,7 @@ pub fn filename_from_url(url: &str) -> &str {
 pub const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// User Agent string
-pub const USER_AGENT: &str = concat!("apl/", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = concat!("apl/", env!("APL_VERSION"));
 
 /// Root of Trust: Ed25519 Public Key for Index Verification (Base64)
 /// Corresponds to the private key in CI credentials.
