@@ -186,6 +186,6 @@ mod tests {
         let theme = Theme::default();
         assert_eq!(theme.icons.success, "✓");
         assert_eq!(theme.icons.error, "✗");
-        assert_eq!(theme.layout.table_width, 80);
+        assert_eq!(theme.layout.table_width, 100);
     }
 }
