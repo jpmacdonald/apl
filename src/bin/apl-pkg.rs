@@ -1,5 +1,5 @@
 use anyhow::Result;
-use apl::indexer::sources::github::{self, build_client};
+use apl::indexer::forges::github::{self, build_client};
 use apl::package::Package;
 use clap::{Parser, Subcommand};
 use std::collections::HashMap;
@@ -51,6 +51,14 @@ enum Commands {
     MigrateSelectors,
     /// Generate a new Ed25519 signing keypair
     Keygen,
+    /// Import package definitions from other repositories
+    Import {
+        /// Import source (e.g. "homebrew")
+        #[arg(long, default_value = "homebrew")]
+        from: String,
+        /// Package names to import
+        packages: Vec<String>,
+    },
 }
 
 #[tokio::main]
@@ -249,6 +257,9 @@ async fn main() -> Result<()> {
         Commands::Keygen => {
             cli_keygen()?;
         }
+        Commands::Import { from, packages } => {
+            apl::indexer::import::import_packages(&from, &packages, &registry_dir).await?;
+        }
     }
 
     Ok(())
@@ -346,7 +357,7 @@ async fn cli_index(
         println!("⚠️  APL_SIGNING_KEY not set. Index is UNSIGNED.");
     }
 
-    // Export manifest.json for install.sh and CDN
+    // Export manifest.json for install.sh and programmatic consumers
     if let Some(entry) = index.find("apl") {
         if let Some(latest) = entry.latest() {
             let mut urls = serde_json::Map::new();

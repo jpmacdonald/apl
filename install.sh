@@ -26,28 +26,27 @@ elif [ -f "./target/debug/apl" ]; then
     cp "./target/debug/apl" "$BIN_DIR/apl"
 else
     # Remote Production Download
-    echo "  → Fetching manifest from apl.pub..."
+    echo "  → Fetching latest release info..."
     
-    # Map architecture
+    # Map architecture to manifest key
     case "$ARCH" in
-        arm64|aarch64) PLATFORM="darwin-arm64" ;;
-        x86_64)        PLATFORM="darwin-x64" ;;
+        arm64|aarch64) PLATFORM_KEY="darwin-arm64" ;;
+        x86_64)        PLATFORM_KEY="darwin-x64" ;;
         *)             echo "✗ Unsupported architecture: $ARCH"; exit 1 ;;
     esac
     
-    # Fetch manifest.json
+    # Fetch manifest.json and parse with python3 (available on all modern macOS)
     MANIFEST=$(curl -sL "https://apl.pub/manifest.json")
-    
-    # Parse with python3 (available on all supported macOS versions)
-    DOWNLOAD_URL=$(echo "$MANIFEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['apl']['$PLATFORM'])")
+    DOWNLOAD_URL=$(echo "$MANIFEST" | python3 -c "import sys, json; m=json.load(sys.stdin); print(m.get('apl',{}).get('$PLATFORM_KEY',''))")
 
     if [ -z "$DOWNLOAD_URL" ]; then
-        echo "✗ No binary found for platform: $PLATFORM"
-        echo "   Manifest: $MANIFEST"
+        echo "✗ No binary found for platform: $PLATFORM_KEY"
+        echo "   Manifest:"
+        echo "$MANIFEST" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))"
         exit 1
     fi
     
-    echo "  → Downloading apl for $PLATFORM..."
+    echo "  → Downloading apl for $ARCH..."
     TMP_FILE="$APL_HOME/tmp/apl_install.tar.gz"
     curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
     

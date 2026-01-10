@@ -1,0 +1,68 @@
+//! Importers for translating external package registries (Homebrew, Nix) to APL TOML.
+
+pub mod homebrew;
+
+use anyhow::Result;
+use std::path::Path;
+
+use crate::package::{AssetConfig, AssetSelector, DiscoveryConfig};
+use std::collections::HashMap;
+
+pub async fn import_packages(source: &str, packages: &[String], registry_dir: &Path) -> Result<()> {
+    match source {
+        "homebrew" => homebrew::import_homebrew_packages(packages, registry_dir).await,
+        _ => anyhow::bail!("Unknown import source: {source}"),
+    }
+}
+
+/// Analyzes a URL to determine the upstream source repository (Forge).
+///
+/// This distinguishes between the "Importer Source" (e.g. Homebrew, which provides metadata)
+/// and the "Upstream Source" (e.g. GitHub, GitLab, which hosts the binaries).
+pub fn analyze_upstream_url(url: &str) -> Result<(DiscoveryConfig, AssetConfig)> {
+    // Check for GitHub
+    if url.contains("github.com") {
+        let re = regex::Regex::new(r"github\.com/([^/]+)/([^/]+)")?;
+        if let Some(caps) = re.captures(url) {
+            let owner = &caps[1];
+            let repo = caps[2].trim_end_matches(".git");
+            let source_repo = format!("{owner}/{repo}");
+
+            let discovery = DiscoveryConfig::GitHub {
+                github: source_repo.clone(),
+                tag_pattern: "{{version}}".to_string(), // Default, user might need to adjust
+                include_prereleases: false,
+            };
+
+            // Default assets config for typical Rust/Go apps
+            let mut select = HashMap::new();
+            select.insert(
+                "arm64-macos".to_string(),
+                AssetSelector::Suffix {
+                    suffix: "aarch64-apple-darwin".to_string(),
+                },
+            );
+            select.insert(
+                "x86_64-macos".to_string(),
+                AssetSelector::Suffix {
+                    suffix: "x86_64-apple-darwin".to_string(),
+                },
+            );
+
+            let assets = AssetConfig {
+                universal: false,
+                select,
+                skip_checksums: false,
+                checksum_url: None,
+            };
+
+            return Ok((discovery, assets));
+        }
+    }
+
+    // TODO: Add logic to detect GitLab/SourceForge URLs once DiscoveryConfig supports them.
+    // Note: GitLab is a Source Forge (where code lives), not a Package Repository (where formulas live).
+
+    // Fallback: Manual (User needs to fill this in)
+    anyhow::bail!("Could not automatically detect upstream GitHub repository from URL: {url}")
+}

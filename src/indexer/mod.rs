@@ -1,6 +1,7 @@
 pub mod discovery;
+pub mod forges;
 pub mod hashing;
-pub mod sources;
+pub mod import;
 pub mod walk;
 
 pub use discovery::*;
@@ -19,7 +20,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use sources::traits::{ListingSource, ReleaseInfo};
+use forges::traits::{ListingSource, ReleaseInfo};
 
 use crate::io::artifacts::{ArtifactStore, get_artifact_store};
 
@@ -180,8 +181,7 @@ pub async fn generate_index_from_registry(
 
         // Batch fetch latest versions
         for chunk in github_repos.chunks(20) {
-            match sources::github::graphql::fetch_latest_versions_batch(&client, &token, chunk)
-                .await
+            match forges::github::graphql::fetch_latest_versions_batch(&client, &token, chunk).await
             {
                 Ok(latest_versions) => {
                     for (key, remote_tag_opt) in latest_versions {
@@ -242,7 +242,7 @@ pub async fn generate_index_from_registry(
     if !dirty_repos.is_empty() {
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
         for chunk in dirty_repos.chunks(4) {
-            match sources::github::graphql::fetch_batch_releases(&client, &token, chunk).await {
+            match forges::github::graphql::fetch_batch_releases(&client, &token, chunk).await {
                 Ok(batch_results) => {
                     for (key, releases) in batch_results {
                         // Conversion logic...
@@ -256,7 +256,7 @@ pub async fn generate_index_from_registry(
                                 assets: r
                                     .assets
                                     .into_iter()
-                                    .map(|a| sources::traits::AssetInfo {
+                                    .map(|a| forges::traits::AssetInfo {
                                         name: a.name,
                                         download_url: a.browser_download_url,
                                         digest: a
@@ -273,8 +273,8 @@ pub async fn generate_index_from_registry(
                     }
                 }
                 Err(e) => {
-                    pb_fetch.abandon_with_message(format!("failed: {}", e));
-                    return Err(anyhow::anyhow!("Metadata fetch failed: {}", e));
+                    pb_fetch.abandon_with_message(format!("failed: {e}"));
+                    return Err(anyhow::anyhow!("Metadata fetch failed: {e}"));
                 }
             }
         }
@@ -476,7 +476,7 @@ pub async fn generate_index_from_registry(
         while let Some((template, v_infos, errors)) = layer_results_stream.next().await {
             let pkg_name = template.package.name.to_string();
             // Show which package we are finalizing
-            sub_bar.set_message(format!("processing {}...", pkg_name));
+            sub_bar.set_message(format!("processing {pkg_name}..."));
 
             // Periodic save of hash cache
             processed_count += 1;
@@ -515,20 +515,17 @@ pub async fn generate_index_from_registry(
                 let name_col = format!("    {pkg_name:<25}"); // Indented
                 let status_msg = if !errors.is_empty() && success_count == 0 {
                     let human_err = humanize_error(&errors[0].to_string());
-                    format!("{} releases (ALL FAILED: {})", total_versions, human_err).red()
+                    format!("{total_versions} releases (ALL FAILED: {human_err})").red()
                 } else if !errors.is_empty() {
                     let human_err = humanize_error(&errors[0].to_string());
-                    format!(
-                        "{} releases ({} usable, err: {})",
-                        total_versions, success_count, human_err
-                    )
-                    .yellow()
+                    format!("{total_versions} releases ({success_count} usable, err: {human_err})")
+                        .yellow()
                 } else {
-                    format!("{} releases", total_versions).dark_grey()
+                    format!("{total_versions} releases").dark_grey()
                 };
 
                 // We use sub_bar.println to keep bars at bottom
-                sub_bar.println(format!("{} {}", name_col, status_msg));
+                sub_bar.println(format!("{name_col} {status_msg}"));
             } else if !errors.is_empty() {
                 // Even in quiet mode, show failures?
                 // U.S. Graphics Quiet Mode says "Zero visual noise".
@@ -556,7 +553,7 @@ pub async fn generate_index_from_registry(
         } else {
             "packages"
         };
-        sub_bar.finish_with_message(format!("{} {}", pkg_count, pkg_word));
+        sub_bar.finish_with_message(format!("{pkg_count} {pkg_word}"));
         pb_process.inc(1);
     }
 
@@ -569,7 +566,7 @@ pub async fn generate_index_from_registry(
     // Final Summary (uppercase per spec)
     let total_packages = fully_indexed + partial + failed;
     println!();
-    println!("INDEX COMPLETE   {} packages", total_packages);
+    println!("INDEX COMPLETE   {total_packages} packages");
 
     Ok(index)
 }
@@ -683,7 +680,7 @@ pub async fn package_to_index_ver(
             prune: false,
             body: String::new(),
             prerelease: false,
-            assets: vec![sources::traits::AssetInfo {
+            assets: vec![forges::traits::AssetInfo {
                 name: full_tag.to_string(), // Heuristic for manual
                 download_url: String::new(),
                 digest: None,
@@ -1122,7 +1119,7 @@ async fn fetch_and_parse_checksum(
 mod indexer_tests {
     use super::*;
     use crate::package::{AssetConfig, DiscoveryConfig, InstallSpec};
-    use sources::traits::{AssetInfo, ReleaseInfo};
+    use forges::traits::{AssetInfo, ReleaseInfo};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::Mutex;

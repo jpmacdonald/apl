@@ -17,5 +17,5 @@ fn main() {
         .map(|s| s.trim().trim_start_matches('v').to_string())
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
 
-    println!("cargo:rustc-env=APL_VERSION={}", version);
+    println!("cargo:rustc-env=APL_VERSION={version}");
 }

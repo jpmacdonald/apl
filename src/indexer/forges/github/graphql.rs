@@ -202,14 +202,12 @@ pub async fn fetch_batch_releases(
                             }
                             Some(None) => {
                                 eprintln!(
-                                    "   ⚠ Repo found but data is null: {} (alias: {})",
-                                    key, alias
+                                    "   ⚠ Repo found but data is null: {key} (alias: {alias})"
                                 );
                             }
                             None => {
                                 eprintln!(
-                                    "   ⚠ Repo missing from response: {} (alias: {})",
-                                    key, alias
+                                    "   ⚠ Repo missing from response: {key} (alias: {alias})"
                                 );
                             }
                         }

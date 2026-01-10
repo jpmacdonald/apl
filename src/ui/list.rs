@@ -47,7 +47,7 @@ pub fn print_list_footer(buffer: &mut OutputBuffer, count: usize, _total_size: u
 
     buffer.write_line("", theme.colors.border);
 
-    let msg = format!("{} packages total", count);
+    let msg = format!("{count} packages total");
     buffer.write_line(&msg.dark_grey().to_string(), theme.colors.secondary);
     buffer.write_line("", theme.colors.success);
 }

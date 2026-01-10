@@ -1,4 +1,4 @@
-use crate::indexer::sources::traits::{AssetInfo, ReleaseInfo};
+use crate::indexer::forges::traits::{AssetInfo, ReleaseInfo};
 use crate::package::AssetSelector;
 use crate::types::Sha256Digest;
 use anyhow::Result;
