@@ -88,16 +88,16 @@ pub fn status() -> Result<()> {
         "{:<width$}{}",
         "Index:",
         if index.is_some() {
-            format!("{index_date}")
+            index_date.to_string()
         } else {
             "Not found".to_string()
         },
         width = label_width
     );
     println!(
-        "{:<width$}{}",
+        "{:<width$}{} installed",
         "Packages:",
-        format!("{} installed", packages.len()),
+        packages.len(),
         width = label_width
     );
     println!(

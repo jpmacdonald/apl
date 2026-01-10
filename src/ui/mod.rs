@@ -79,5 +79,5 @@ pub mod theme;
 pub mod engine;
 pub use engine::RelativeFrame;
 pub use output::Output;
-pub use reporter::Reporter;
+pub use reporter::{NullReporter, Reporter};
 pub use theme::Theme;

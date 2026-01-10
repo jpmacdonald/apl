@@ -258,7 +258,7 @@ impl UnresolvedPackage {
             .find(|b| b.arch == current_arch || b.arch == Arch::Universal);
 
         if let Some(b) = bin_artifact {
-            let mirror_url = mirror_base_url.map(|base| format!("{base}/cas/{}", b.hash));
+            let mirror_url = mirror_base_url.map(|base| format!("{base}/manifests/{}", b.hash));
             Ok((
                 ArtifactKind::Binary {
                     url: b.url.clone(),
@@ -268,7 +268,7 @@ impl UnresolvedPackage {
                 current_arch,
             ))
         } else if let Some(src) = &release.source {
-            let mirror_url = mirror_base_url.map(|base| format!("{base}/cas/{}", src.hash));
+            let mirror_url = mirror_base_url.map(|base| format!("{base}/manifests/{}", src.hash));
             Ok((
                 ArtifactKind::Source {
                     url: src.url.clone(),

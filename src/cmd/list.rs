@@ -39,7 +39,7 @@ pub fn list() -> Result<()> {
         let pkg_name = PackageName::new(&pkg.name);
         let pkg_version = Version::from(pkg.version.as_str());
         // U.S. Graphics: show description if available, otherwise show date
-        let description = format!("installed {}", dt);
+        let description = format!("installed {dt}");
 
         print_list_row(
             &mut buffer,

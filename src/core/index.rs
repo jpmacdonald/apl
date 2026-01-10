@@ -145,25 +145,28 @@ impl IndexEntry {
 /// Package index (binary format)
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageIndex {
-    /// Index format version (Bumped to 5 for artifact store support)
+    /// Index format version (Bumped to 6 for Merkle root support)
     pub version: u32,
     /// Unix timestamp of last update
     pub updated_at: i64,
     /// Package entries
     pub packages: Vec<IndexEntry>,
     /// Base URL for artifact mirror (CAS layout: {base_url}/cas/{hash})
-    /// Note: Placed at end for postcard backward compatibility
     #[serde(default)]
     pub mirror_base_url: Option<String>,
+    /// Merkle tree root hash (BLAKE3) for integrity verification
+    #[serde(default)]
+    pub merkle_root: Option<crate::types::Blake3Hash>,
 }
 
 impl PackageIndex {
     /// Create a new empty index
     pub fn new() -> Self {
         Self {
-            version: 5,
+            version: 6,
             updated_at: 0,
             mirror_base_url: None,
+            merkle_root: None,
             packages: Vec::new(),
         }
     }

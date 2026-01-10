@@ -107,6 +107,11 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
     // Initialize progress state
     reporter.downloading(pkg_name, version, 0, total_size);
 
+    // Detect if this is a manifest-based chunked download
+    if url.contains("/manifests/") {
+        return download_from_manifest(req).await;
+    }
+
     if total_size > 10 * 1024 * 1024 && accept_ranges {
         let opts = ChunkedDownloadOptions {
             pkg_name: Some(pkg_name),
@@ -152,6 +157,99 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
             actual: actual_hash,
         });
     }
+
+    Ok(actual_hash)
+}
+
+/// Downloads a manifest and reassembles the blob from chunks.
+async fn download_from_manifest<R: Reporter + Clone + 'static>(
+    req: DownloadRequest<'_, R>,
+) -> Result<String, DownloadError> {
+    use crate::io::chunked::BlobManifest;
+    use tokio::sync::Semaphore;
+
+    let client = req.client;
+    let url = req.url;
+    let dest = req.dest;
+    let reporter = req.reporter;
+    let pkg_name = req.pkg_name;
+    let version = req.version;
+    let expected_hash = req.expected_hash;
+
+    // 1. Fetch Manifest
+    let resp = client.get(url).send().await?.error_for_status()?;
+    let manifest_json = resp.text().await?;
+    
+    let manifest = BlobManifest::from_json(&manifest_json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    let total_size = manifest.size;
+    reporter.downloading(pkg_name, version, 0, total_size);
+
+    // 2. Prepare for chunk downloads
+    let base_url = url.split("/manifests/").next().unwrap_or_default();
+    let downloaded = Arc::new(tokio::sync::Mutex::new(0u64));
+    let semaphore = Arc::new(Semaphore::new(16)); // Max 16 concurrent chunk downloads
+    let mut handles = Vec::new();
+
+    // We store chunks in memory or temp files?
+    // For small/medium blobs, memory is fine. For large ones, we should use a temp store.
+    // Let's use memory for now as a baseline.
+    let chunk_map = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
+    for chunk_ref in manifest.chunks.clone() {
+        let chunk_hash = chunk_ref.hash.as_str().to_string();
+        let chunk_url = format!("{base_url}/cas/{chunk_hash}");
+        let client = client.clone();
+        let chunk_map = chunk_map.clone();
+        let semaphore = semaphore.clone();
+        let downloaded = downloaded.clone();
+        let reporter = reporter.clone();
+        let pkg_name = pkg_name.clone();
+        let version = version.clone();
+
+        handles.push(tokio::spawn(async move {
+            let _permit = semaphore.acquire().await.map_err(|_| std::io::Error::other("Semaphore closed"))?;
+            
+            let resp = client.get(&chunk_url).send().await?.error_for_status()?;
+            let data = resp.bytes().await?;
+            
+            let len = data.len() as u64;
+            chunk_map.lock().await.insert(chunk_hash, data.to_vec());
+            
+            let mut d = downloaded.lock().await;
+            *d += len;
+            reporter.downloading(&pkg_name, &version, *d, total_size);
+            
+            Ok::<(), DownloadError>(())
+        }));
+    }
+
+    // Wait for all chunks
+    for handle in handles {
+        handle.await.map_err(std::io::Error::other)??;
+    }
+
+    // 3. Reassemble
+    let final_chunk_map = Arc::try_unwrap(chunk_map).unwrap().into_inner();
+    let reassembled = crate::io::chunked::reassemble(&manifest, &final_chunk_map)
+        .ok_or_else(|| std::io::Error::other("Failed to reassemble blob from chunks"))?;
+
+    // 4. Verify original hash
+    let mut hasher = Sha256::new();
+    hasher.update(&reassembled);
+    let actual_hash = hex::encode(hasher.finalize());
+
+    if actual_hash != expected_hash {
+        reporter.failed(pkg_name, version, "hash mismatch");
+        return Err(DownloadError::HashMismatch {
+            expected: expected_hash.to_string(),
+            actual: actual_hash,
+        });
+    }
+
+    // 5. Write to destination
+    tokio::fs::write(dest, reassembled).await?;
 
     Ok(actual_hash)
 }

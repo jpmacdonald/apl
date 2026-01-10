@@ -719,9 +719,16 @@ pub async fn package_to_index_ver(
             binaries.push(IndexBinary {
                 arch,
                 url: asset.download_url.clone(),
-                hash: crate::types::Sha256Hash::new(hash),
+                hash: crate::types::Sha256Hash::new(hash.clone()),
                 hash_type: HashType::Sha256,
             });
+
+            // Mirror asset to CAS if store is enabled
+            if let Some(store) = get_artifact_store().await {
+                if let Err(e) = mirror_asset(ctx.client, &asset.download_url, &hash, &store).await {
+                    tracing::warn!("      ⚠️  Failed to mirror {}: {}", asset.name, e);
+                }
+            }
         }
     }
 
@@ -746,9 +753,16 @@ pub async fn package_to_index_ver(
                 binaries.push(IndexBinary {
                     arch: crate::types::Arch::Universal,
                     url: asset.download_url.clone(),
-                    hash: crate::types::Sha256Hash::new(hash),
+                    hash: crate::types::Sha256Hash::new(hash.clone()),
                     hash_type: HashType::Sha256,
                 });
+
+                // Mirror asset to CAS if store is enabled
+                if let Some(store) = get_artifact_store().await {
+                    if let Err(e) = mirror_asset(ctx.client, &asset.download_url, &hash, &store).await {
+                        tracing::warn!("      ⚠️  Failed to mirror {}: {}", asset.name, e);
+                    }
+                }
             }
         }
     }
@@ -1041,8 +1055,8 @@ async fn hydrate_from_source(
     hasher.update(&bundle_data);
     let hash_hex = format!("{:x}", hasher.finalize());
 
-    let mirror_url = store.upload(&hash_hex, bundle_data).await?;
-    tracing::debug!("      ☁️  Uploaded to mirror: {mirror_url}");
+    let mirror_url = store.upload_chunked(&hash_hex, &bundle_data).await?;
+    tracing::debug!("      ☁️  Uploaded to mirror (chunked): {mirror_url}");
 
     // 9. Determine Arch
     #[cfg(target_arch = "aarch64")]
@@ -1073,6 +1087,21 @@ async fn hydrate_from_source(
         hints: template.hints.post_install.clone(),
         app: template.install.app.clone(),
     })
+}
+
+/// Downloads an asset from a URL and uploads it to the artifact store using chunking.
+async fn mirror_asset(client: &Client, url: &str, hash: &str, store: &ArtifactStore) -> Result<()> {
+    // Skip if artifact already mirrored (optimization)
+    // Actually, ArtifactStore::upload_chunked already does exists() checks per chunk.
+    // But we can check for the manifest existence.
+    // We don't have a public exists_manifest, but we can just use ArtifactStore's exists check if we form the key.
+    // Let's just call upload_chunked and let it handle existence checks.
+
+    let resp = client.get(url).send().await?.error_for_status()?;
+    let data = resp.bytes().await?;
+
+    store.upload_chunked(hash, &data).await?;
+    Ok(())
 }
 
 /// Helper to bundle a directory into a .tar.zst archive for the artifact store.

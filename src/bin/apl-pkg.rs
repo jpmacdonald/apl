@@ -59,6 +59,11 @@ enum Commands {
         /// Package names to import
         packages: Vec<String>,
     },
+    /// Verify a package by installing and smoke-testing
+    Verify {
+        /// Path to the package TOML file
+        package: std::path::PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -259,6 +264,9 @@ async fn main() -> Result<()> {
         }
         Commands::Import { from, packages } => {
             apl::indexer::import::import_packages(&from, &packages, &registry_dir).await?;
+        }
+        Commands::Verify { package } => {
+            cli_verify(&client, &package).await?;
         }
     }
 
@@ -508,5 +516,95 @@ fn cli_keygen() -> Result<()> {
         println!("✓ Secret key saved to ./apl.key (gitignore this!)");
     }
 
+    Ok(())
+}
+
+/// Verify a package by installing to a temp directory and running a smoke test.
+async fn cli_verify(client: &reqwest::Client, package_path: &Path) -> Result<()> {
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    println!("Verifying {}...", package_path.display());
+
+    // Parse the package definition
+    let pkg = Package::from_file(package_path)?;
+    let pkg_name = pkg.package.name.clone();
+    let bin_list = pkg.install.effective_bin(&pkg_name);
+
+    if bin_list.is_empty() {
+        anyhow::bail!("Package defines no binaries to verify");
+    }
+
+    // Create temp APL_HOME
+    let temp_home = TempDir::new()?;
+    let temp_bin = temp_home.path().join("bin");
+    fs::create_dir_all(&temp_bin)?;
+
+    // Install using the flow system
+    let unresolved = apl::ops::flow::UnresolvedPackage::new(pkg_name.clone(), None);
+    let resolved = unresolved.resolve(None).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let reporter = apl::ui::NullReporter;
+    let prepared = resolved.prepare(client, &reporter).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    // Copy binaries to temp bin
+    for bin_name in &bin_list {
+        let src = prepared.extracted_path.join(bin_name);
+        let dest = temp_bin.join(bin_name);
+        if src.exists() {
+            fs::copy(&src, &dest)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
+            }
+        }
+    }
+
+    // Smoke test each binary
+    let mut failed = false;
+    for bin_name in &bin_list {
+        let bin_path = temp_bin.join(bin_name);
+        if !bin_path.exists() {
+            println!("  ✗ Binary not found: {bin_name}");
+            failed = true;
+            continue;
+        }
+
+        // Try --version first, then --help
+        let result = Command::new(&bin_path).arg("--version").output();
+
+        match result {
+            Ok(output) if output.status.success() => {
+                println!("  ✓ {bin_name} --version succeeded");
+            }
+            _ => {
+                // Fallback to --help
+                let result = Command::new(&bin_path).arg("--help").output();
+                match result {
+                    Ok(output) if output.status.success() => {
+                        println!("  ✓ {bin_name} --help succeeded");
+                    }
+                    Ok(output) => {
+                        println!(
+                            "  ✗ {bin_name} failed (exit {})",
+                            output.status.code().unwrap_or(-1)
+                        );
+                        failed = true;
+                    }
+                    Err(e) => {
+                        println!("  ✗ {bin_name} failed to execute: {e}");
+                        failed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if failed {
+        anyhow::bail!("Verification failed for {pkg_name}");
+    }
+
+    println!("✓ {pkg_name} verified successfully");
     Ok(())
 }

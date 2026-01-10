@@ -87,3 +87,57 @@ impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
         (**self).summary_plain(count, status)
     }
 }
+
+/// A no-op reporter for silent operations (e.g., verification, testing).
+#[derive(Clone, Copy)]
+pub struct NullReporter;
+
+impl Reporter for NullReporter {
+    fn prepare_pipeline(&self, _: &[(PackageName, Option<Version>)]) {}
+    fn section(&self, _: &str) {}
+    fn downloading(&self, _: &PackageName, _: &Version, _: u64, _: u64) {}
+    fn installing(&self, _: &PackageName, _: &Version) {}
+    fn removing(&self, _: &PackageName, _: &Version) {}
+    fn done(&self, _: &PackageName, _: &Version, _: &str, _: Option<u64>) {}
+    fn failed(&self, _: &PackageName, _: &Version, _: &str) {}
+    fn info(&self, _: &str) {}
+    fn success(&self, _: &str) {}
+    fn warning(&self, _: &str) {}
+    fn error(&self, _: &str) {}
+    fn summary(&self, _: usize, _: &str, _: f64) {}
+    fn summary_plain(&self, _: usize, _: &str) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn null_reporter_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<NullReporter>();
+    }
+
+    #[test]
+    fn null_reporter_implements_all_methods() {
+        let reporter = NullReporter;
+        let name = PackageName::from("test");
+        let version = Version::from("1.0.0");
+
+        // All methods should be no-ops (no panics)
+        reporter.prepare_pipeline(&[(name.clone(), Some(version.clone()))]);
+        reporter.section("test");
+        reporter.downloading(&name, &version, 0, 100);
+        reporter.installing(&name, &version);
+        reporter.removing(&name, &version);
+        reporter.done(&name, &version, "done", Some(1024));
+        reporter.failed(&name, &version, "error");
+        reporter.info("info");
+        reporter.success("success");
+        reporter.warning("warning");
+        reporter.error("error");
+        reporter.summary(1, "installed", 1.0);
+        reporter.summary_plain(1, "installed");
+    }
+}
+

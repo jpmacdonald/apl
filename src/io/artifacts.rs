@@ -1,7 +1,5 @@
-//! Artifact Store for R2-compatible CAS (Content-Addressable Storage)
-//!
-//! Manages uploads and existence checks for the unified artifact store.
-//! Layout: `cas/<sha256>` - all files addressed by their content hash.
+//! Layout: `cas/<hash>` - all files addressed by their content hash.
+//! Layout: `manifests/<hash>` - manifest JSON files listing chunks.
 
 use anyhow::{Context, Result};
 use aws_sdk_s3 as s3;
@@ -144,6 +142,11 @@ impl ArtifactStore {
         format!("{}/cas/{hash}", self.public_base_url)
     }
 
+    /// Get the public URL for a manifest.
+    pub fn manifest_url(&self, hash: &str) -> String {
+        format!("{}/manifests/{hash}", self.public_base_url)
+    }
+
     /// Upload an artifact to the store.
     ///
     /// Returns the public URL on success.
@@ -162,6 +165,84 @@ impl ArtifactStore {
             .context("Failed to upload artifact to R2")?;
 
         Ok(self.public_url(hash))
+    }
+
+    /// Upload a chunked artifact (Deduplication).
+    ///
+    /// 1. Chunks the data.
+    /// 2. Uploads missing chunks.
+    /// 3. Uploads the manifest.
+    ///
+    /// Returns the public manifest URL.
+    pub async fn upload_chunked(&self, hash: &str, data: &[u8]) -> Result<String> {
+        use crate::io::chunked::BlobManifest;
+        
+        let manifest = BlobManifest::from_data(data);
+        let chunks = manifest.chunks.clone();
+        
+        // Upload chunks
+        for chunk_ref in &chunks {
+            let chunk_hash = chunk_ref.hash.as_str();
+            if !self.exists(chunk_hash).await {
+                // Find chunk data
+                // In a more optimized version, we'd avoid re-searching or use an iterator
+                // But for now, we re-calculate or slice based on original data
+                // BlobManifest::from_data already computed hashes, so we just need the slice
+            }
+        }
+        
+        // Let's optimize this: BlobManifest::from_data should probably return the slices or we re-slice here
+        let mut offset = 0;
+        for chunk_ref in &chunks {
+            let chunk_hash = chunk_ref.hash.as_str();
+            let chunk_size = chunk_ref.size as usize;
+            let chunk_slice = &data[offset..offset + chunk_size];
+            
+            if !self.exists(chunk_hash).await {
+                self.upload(chunk_hash, chunk_slice.to_vec()).await?;
+            }
+            
+            offset += chunk_size;
+        }
+
+        // Upload manifest
+        let manifest_json = manifest.to_json();
+        let manifest_key = format!("manifests/{hash}");
+        let body = s3::primitives::ByteStream::from(manifest_json.into_bytes());
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&manifest_key)
+            .body(body)
+            .content_type("application/json")
+            .send()
+            .await
+            .context("Failed to upload manifest to R2")?;
+
+        Ok(self.manifest_url(hash))
+    }
+
+    /// Retrieve a manifest from the store.
+    pub async fn get_manifest(&self, hash: &str) -> Result<crate::io::chunked::BlobManifest> {
+        let key = format!("manifests/{hash}");
+        let resp = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .context("Failed to get manifest from R2")?;
+
+        let bytes = resp
+            .body
+            .collect()
+            .await
+            .context("Failed to read manifest body from R2")?;
+        
+        let json = String::from_utf8(bytes.to_vec()).context("Invalid UTF-8 manifest")?;
+        crate::io::chunked::BlobManifest::from_json(&json).context("Failed to parse manifest JSON")
     }
 
     /// Upload from a stream (for large files).

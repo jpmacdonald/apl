@@ -66,3 +66,55 @@ pub fn analyze_upstream_url(url: &str) -> Result<(DiscoveryConfig, AssetConfig)>
     // Fallback: Manual (User needs to fill this in)
     anyhow::bail!("Could not automatically detect upstream GitHub repository from URL: {url}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_github_from_release_url() {
+        let url = "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-1.7.1.tar.gz";
+        let result = analyze_upstream_url(url);
+        assert!(result.is_ok());
+
+        let (discovery, _assets) = result.unwrap();
+        match discovery {
+            DiscoveryConfig::GitHub { github, .. } => {
+                assert_eq!(github, "jqlang/jq");
+            }
+            _ => panic!("Expected GitHub discovery config"),
+        }
+    }
+
+    #[test]
+    fn detects_github_from_archive_url() {
+        let url = "https://github.com/BurntSushi/ripgrep/archive/refs/tags/14.1.0.tar.gz";
+        let result = analyze_upstream_url(url);
+        assert!(result.is_ok());
+
+        let (discovery, _) = result.unwrap();
+        match discovery {
+            DiscoveryConfig::GitHub { github, .. } => {
+                assert_eq!(github, "BurntSushi/ripgrep");
+            }
+            _ => panic!("Expected GitHub discovery config"),
+        }
+    }
+
+    #[test]
+    fn fails_for_non_github_url() {
+        let url = "https://example.com/some/package.tar.gz";
+        let result = analyze_upstream_url(url);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sets_default_asset_patterns() {
+        let url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0.tar.gz";
+        let (_, assets) = analyze_upstream_url(url).unwrap();
+
+        assert!(!assets.universal);
+        assert!(assets.select.contains_key("arm64-macos"));
+        assert!(assets.select.contains_key("x86_64-macos"));
+    }
+}

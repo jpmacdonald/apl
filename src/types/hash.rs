@@ -120,3 +120,71 @@ impl From<Sha256Digest> for Sha256Hash {
         Sha256Hash::new(digest.as_str())
     }
 }
+
+/// BLAKE3 hash for fast internal operations (CAS keys, dedup).
+///
+/// BLAKE3 is ~7x faster than SHA256 on modern CPUs. Used for internal
+/// content-addressable storage, while SHA256 is used for upstream verification.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Blake3Hash(String);
+
+impl Blake3Hash {
+    /// Create a new Blake3Hash (64 hex chars).
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+
+    /// Compute BLAKE3 hash of data.
+    pub fn compute(data: &[u8]) -> Self {
+        let hash = blake3::hash(data);
+        Self(hash.to_hex().to_string())
+    }
+
+    /// Compute BLAKE3 hash of a file.
+    pub fn compute_file(path: &std::path::Path) -> std::io::Result<Self> {
+        let data = std::fs::read(path)?;
+        Ok(Self::compute(&data))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Blake3Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for Blake3Hash {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blake3_compute_works() {
+        let hash = Blake3Hash::compute(b"hello world");
+        assert_eq!(hash.as_str().len(), 64); // 32 bytes = 64 hex chars
+    }
+
+    #[test]
+    fn blake3_deterministic() {
+        let h1 = Blake3Hash::compute(b"test data");
+        let h2 = Blake3Hash::compute(b"test data");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn blake3_different_inputs_different_hashes() {
+        let h1 = Blake3Hash::compute(b"input 1");
+        let h2 = Blake3Hash::compute(b"input 2");
+        assert_ne!(h1, h2);
+    }
+}
