@@ -16,15 +16,15 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
 ) -> Result<(), InstallError> {
     let db = DbHandle::spawn().map_err(|e| InstallError::context("Failed to open database", e))?;
 
-    let mut task_list: Vec<(PackageName, Option<Version>)> = Vec::new();
+    let mut task_list: Vec<(PackageName, Option<Version>, usize)> = Vec::new();
 
     // Resolve package status
     for pkg_name_str in packages {
         let pkg_name = PackageName::new(pkg_name_str);
         if let Ok(Some(info)) = db.get_package(pkg_name.to_string()).await {
-            task_list.push((pkg_name, Some(Version::from(info.version))));
+            task_list.push((pkg_name, Some(Version::from(info.version)), 0));
         } else {
-            task_list.push((pkg_name, None));
+            task_list.push((pkg_name, None, 0));
         }
     }
 
@@ -38,7 +38,7 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
     let mut remove_count = 0;
     let mut handles = Vec::new();
 
-    for (pkg, version_opt) in task_list {
+    for (pkg, version_opt, _) in task_list {
         if version_opt.is_none() {
             reporter.failed(&pkg, &Version::from("-"), "not installed");
             continue;

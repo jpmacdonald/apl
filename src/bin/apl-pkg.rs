@@ -325,14 +325,22 @@ async fn cli_index(
 
     println!("Regenerating index...");
 
+    // Initialize UI actor for Mission Control output via Output handle
+    let reporter = std::sync::Arc::new(apl::ui::Output::new());
+
     let index = apl::indexer::generate_index_from_registry(
         client,
         registry_dir,
         package_filter,
         force_full,
         verbose,
+        reporter.clone(),
     )
     .await?;
+
+    // Sync UI to ensure all logs are flushed
+    reporter.wait_async().await;
+    reporter.shutdown();
 
     index.save_compressed(index_path)?;
 
@@ -373,7 +381,7 @@ async fn cli_index(
         println!("⚠️  APL_SIGNING_KEY not set. Index is UNSIGNED.");
     }
 
-    // Export manifest.json for install.sh and programmatic consumers
+    // Export manifest for install.sh and programmatic consumers
     if let Some(entry) = index.find("apl") {
         if let Some(latest) = entry.latest() {
             let mut urls = serde_json::Map::new();
@@ -385,12 +393,10 @@ async fn cli_index(
                 };
                 urls.insert(key.to_string(), serde_json::Value::String(bin.url.clone()));
             }
-            let manifest = serde_json::json!({
-                "version": latest.version,
-                "apl": urls,
-            });
+
+            // Write manifest.json with simple key-value pairs for install.sh
             let manifest_path = index_path.with_file_name("manifest.json");
-            fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
+            fs::write(&manifest_path, serde_json::to_string_pretty(&urls)?)?;
             println!("   Generated manifest: {}", manifest_path.display());
         }
     }

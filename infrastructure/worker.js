@@ -7,27 +7,34 @@ export default {
             return fetch("https://raw.githubusercontent.com/jpmacdonald/apl/main/install.sh");
         }
 
-        if (path === "/latest") {
-            const obj = await env.APL_BUCKET.get("latest.txt");
+        // Handle manifest.json (used by install.sh)
+        if (path === "/manifest.json") {
+            const obj = await env.APL_BUCKET.get("manifest.json");
             if (!obj) return new Response("Not found", { status: 404 });
             return new Response(obj.body, {
                 headers: {
-                    "Content-Type": "text/plain",
+                    "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*"
                 }
             });
         }
 
-        if (path === "/index") {
-            const response = await env.APL_BUCKET.get("index.bin");
-            if (!response) return new Response("Index not found", { status: 404 });
+        // Handle both /index and /index.sig
+        if (path === "/index" || path === "/index.sig") {
+            const key = path.slice(1);
+            const response = await env.APL_BUCKET.get(key);
+            if (!response) return new Response(`${key} not found`, { status: 404 });
             return new Response(response.body, {
-                headers: { "Content-Type": "application/octet-stream" },
+                headers: {
+                    "Content-Type": path.endsWith(".sig") ? "application/pgp-signature" : "application/octet-stream",
+                    "Access-Control-Allow-Origin": "*"
+                },
             });
         }
 
         if (path.startsWith("/cas/") || path.startsWith("/deltas/")) {
-            const response = await env.APL_BUCKET.get(path.slice(1));
+            const key = path.slice(1);
+            const response = await env.APL_BUCKET.get(key);
             if (!response) return new Response("Artifact not found", { status: 404 });
             return new Response(response.body, {
                 headers: {

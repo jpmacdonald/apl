@@ -6,8 +6,14 @@
 use crate::types::{PackageName, Version};
 
 pub trait Reporter: Send + Sync {
+    /// Prepare a live-updated phase (e.g. "Phase 1: Discovering sources...")
+    fn live_phase(&self, title: &str);
+
+    /// Update the current live phase with a status (e.g. "COMPLETE")
+    fn live_phase_update(&self, status: &str, success: bool);
+
     /// Reserve space for a set of packages in the output display.
-    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]);
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>, usize)]);
 
     /// Indicates a new section or phase has started (e.g. "Fetching", "Installing").
     fn section(&self, title: &str);
@@ -47,7 +53,7 @@ pub trait Reporter: Send + Sync {
 }
 
 impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
-    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>, usize)]) {
         (**self).prepare_pipeline(packages)
     }
     fn section(&self, title: &str) {
@@ -86,6 +92,14 @@ impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
     fn summary_plain(&self, count: usize, status: &str) {
         (**self).summary_plain(count, status)
     }
+
+    fn live_phase(&self, title: &str) {
+        (**self).live_phase(title)
+    }
+
+    fn live_phase_update(&self, status: &str, success: bool) {
+        (**self).live_phase_update(status, success)
+    }
 }
 
 /// A no-op reporter for silent operations (e.g., verification, testing).
@@ -93,7 +107,9 @@ impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
 pub struct NullReporter;
 
 impl Reporter for NullReporter {
-    fn prepare_pipeline(&self, _: &[(PackageName, Option<Version>)]) {}
+    fn live_phase(&self, _: &str) {}
+    fn live_phase_update(&self, _: &str, _: bool) {}
+    fn prepare_pipeline(&self, _: &[(PackageName, Option<Version>, usize)]) {}
     fn section(&self, _: &str) {}
     fn downloading(&self, _: &PackageName, _: &Version, _: u64, _: u64) {}
     fn installing(&self, _: &PackageName, _: &Version) {}
@@ -125,7 +141,7 @@ mod tests {
         let version = Version::from("1.0.0");
 
         // All methods should be no-ops (no panics)
-        reporter.prepare_pipeline(&[(name.clone(), Some(version.clone()))]);
+        reporter.prepare_pipeline(&[(name.clone(), Some(version.clone()), 0)]);
         reporter.section("test");
         reporter.downloading(&name, &version, 0, 100);
         reporter.installing(&name, &version);
@@ -140,4 +156,3 @@ mod tests {
         reporter.summary_plain(1, "installed");
     }
 }
-

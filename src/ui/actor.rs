@@ -23,6 +23,7 @@ use super::buffer::OutputBuffer;
 use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
 use crate::types::{PackageName, Version};
+use crossterm::style::Stylize;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -32,10 +33,14 @@ use std::time::Duration;
 pub enum UiEvent {
     /// Prepare the table for a pipeline of packages
     PreparePipeline {
-        items: Vec<(PackageName, Option<Version>)>,
+        items: Vec<(PackageName, Option<Version>, usize)>,
     },
     /// Print a simple header section
     PrintHeader { title: String },
+    /// Live Phase: Print "Phase X: Title..." without newline and flush
+    LivePhase { title: String },
+    /// Live Phase Update: Append status and newline
+    LivePhaseUpdate { status: String, success: bool },
     /// Update package state to downloading
     Downloading {
         name: PackageName,
@@ -133,8 +138,21 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
             }
             Ok(UiEvent::PrintHeader { title }) => {
                 println!();
-                println!("{} {}", title, "─".repeat(40));
+                println!("{}", title.bold());
                 buffer.flush();
+            }
+            Ok(UiEvent::LivePhase { title }) => {
+                use std::io::Write;
+                let padded = format!("{: <width$}", title, width = theme.layout.phase_padding);
+                print!("{}", padded.dark_grey());
+                let _ = std::io::stdout().flush();
+            }
+            Ok(UiEvent::LivePhaseUpdate { status, success }) => {
+                if success {
+                    println!("{}", status.green().bold());
+                } else {
+                    println!("{}", status.red().bold());
+                }
             }
             Ok(UiEvent::Downloading {
                 name,
@@ -200,14 +218,24 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
                 action,
                 elapsed_secs,
             }) => {
+                let operation = action.to_uppercase();
                 let msg = format!(
-                    "{} package{} {} in {:.1}s",
-                    count,
-                    if count == 1 { "" } else { "s" },
-                    action,
-                    elapsed_secs
+                    "{} COMPLETE {}, elapsed {:.1}s",
+                    operation, count, elapsed_secs
                 );
                 table.print_footer(&mut buffer, &msg, Severity::Success);
+
+                // JSON RESULT for CI
+                let result_json = serde_json::json!({
+                    "operation": action,
+                    "status": "success",
+                    "count": count,
+                    "elapsed": elapsed_secs
+                });
+                println!(
+                    "\nRESULT {}",
+                    serde_json::to_string(&result_json).unwrap_or_default()
+                );
             }
             Ok(UiEvent::Sync(tx)) => {
                 // All previous events are processed because of sequential mpsc

@@ -77,6 +77,7 @@ pub mod theme;
 
 // Re-export main types for convenience
 pub mod engine;
+pub use actor::UiActor;
 pub use engine::RelativeFrame;
 pub use output::Output;
 pub use reporter::{NullReporter, Reporter};

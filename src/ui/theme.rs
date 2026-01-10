@@ -57,7 +57,7 @@ impl Default for ColorScheme {
             success: Color::Green,
             warning: Color::Yellow,
             error: Color::Red,
-            active: Color::Red,
+            active: Color::White,
             border: Color::DarkGrey,
         }
     }
@@ -114,22 +114,25 @@ pub struct Layout {
     pub version_width: usize,
     /// Width allocated for size column
     pub size_width: usize,
+    /// Rigid padding for Mission Control phases (col 41 starts at +40)
+    pub phase_padding: usize,
 }
 
 impl Default for Layout {
     fn default() -> Self {
-        // U.S. Graphics Style: generous whitespace, precise alignment
-        // Name (24) | Version (11) | Progress Bar (24) | Pct (5) | Size (8)
+        // Mission Control Style: Cold, hardened precision.
+        // Rigid Column 41 alignment for values.
         Self {
             col_status: 0,
-            col_name: 2,
-            col_version: 26,
-            col_size: 37,
-            col_progress: 48,
-            table_width: 80,
-            name_width: 24,
-            version_width: 11,
-            size_width: 8,
+            col_name: 4,
+            col_version: 30,
+            col_size: 41,
+            col_progress: 52,
+            table_width: 100,
+            name_width: 28,
+            version_width: 12,
+            size_width: 10,
+            phase_padding: 40,
         }
     }
 }

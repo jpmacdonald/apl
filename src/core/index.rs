@@ -233,7 +233,6 @@ impl PackageIndex {
             .map_err(|_| IndexError::Postcard(postcard::Error::DeserializeBadVarint))?;
 
         if header.version < 4 {
-            // We could implement migration here, but for now just bail with a clear message.
             return Err(IndexError::VersionMismatch(header.version, 4));
         }
 

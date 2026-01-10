@@ -39,8 +39,23 @@ impl Output {
         }
     }
 
+    /// Prepare a live-updated phase (e.g. "Phase 1: Discovering sources...")
+    pub fn live_phase(&self, title: &str) {
+        let _ = self.sender.send(UiEvent::LivePhase {
+            title: title.to_string(),
+        });
+    }
+
+    /// Update the current live phase with a status (e.g. "COMPLETE")
+    pub fn live_phase_update(&self, status: &str, success: bool) {
+        let _ = self.sender.send(UiEvent::LivePhaseUpdate {
+            status: status.to_string(),
+            success,
+        });
+    }
+
     /// Prepare table for a pipeline of packages.
-    pub fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
+    pub fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>, usize)]) {
         let _ = self.sender.send(UiEvent::PreparePipeline {
             items: packages.to_vec(),
         });
@@ -164,10 +179,39 @@ impl Output {
 
         let _ = rx.await;
     }
+
+    /// Shutdown the UI actor.
+    pub fn shutdown(&self) {
+        let _ = self.sender.send(UiEvent::Shutdown);
+    }
 }
 
+// Assuming the content of super::reporter::Reporter is as follows and needs modification
+// This part is not in the current file, but the instruction implies it should be modified.
+// For the purpose of this task, I will represent the *change* to the trait.
+//
+// pub trait Reporter: Send + Sync {
+//     /// Prepare a live-updated phase (e.g. "Phase 1: Discovering sources...")
+//     fn live_phase(&self, title: &str);
+//
+//     /// Update the current live phase with a status (e.g. "COMPLETE")
+//     fn live_phase_update(&self, status: &str, success: bool);
+//
+//     /// Reserve space for a set of packages in the output display.
+//     fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]);
+//     // ... other methods
+// }
+
 impl super::reporter::Reporter for Output {
-    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>)]) {
+    fn live_phase(&self, title: &str) {
+        self.live_phase(title);
+    }
+
+    fn live_phase_update(&self, status: &str, success: bool) {
+        self.live_phase_update(status, success);
+    }
+
+    fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>, usize)]) {
         self.prepare_pipeline(packages);
     }
 

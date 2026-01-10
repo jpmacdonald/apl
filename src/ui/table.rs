@@ -7,7 +7,7 @@
 use super::buffer::OutputBuffer;
 use super::engine::RelativeFrame;
 use super::progress::{ProgressIndicator, format_download_progress};
-use super::theme::{Theme, format_size};
+use super::theme::Theme;
 use crate::types::{PackageName, Version};
 use crossterm::style::Stylize;
 use std::io::Write;
@@ -38,6 +38,7 @@ struct PackageRow {
     version: String,
     state: PackageState,
     size: u64,
+    depth: usize,
 }
 
 /// Table mode determines column layout
@@ -74,7 +75,7 @@ impl TableRenderer {
     pub fn prepare_pipeline(
         &mut self,
         buffer: &mut OutputBuffer,
-        items: &[(PackageName, Option<Version>)],
+        items: &[(PackageName, Option<Version>, usize)],
     ) {
         buffer.hide_cursor();
         // 1. Clear old state
@@ -82,13 +83,14 @@ impl TableRenderer {
         self.mode = TableMode::Standard;
 
         // 2. Initialize package data
-        for (name, version) in items {
+        for (name, version, depth) in items {
             let ver = version.as_ref().map(|v| v.as_str()).unwrap_or("-");
             self.packages.push(PackageRow {
                 name: name.clone(),
                 version: ver.to_string(),
                 size: 0,
                 state: PackageState::Pending,
+                depth: *depth,
             });
         }
 
@@ -177,7 +179,7 @@ impl TableRenderer {
 
             let _ = frame.write_row(idx as u16, |stdout| {
                 // Determine colors from theme
-                let (icon_color, name_color, status_color) = match &pkg.state {
+                let (_icon_color, name_color, status_color) = match &pkg.state {
                     PackageState::Pending => (
                         theme.colors.secondary,
                         theme.colors.package_name,
@@ -228,28 +230,30 @@ impl TableRenderer {
                     PackageState::Failed { reason } => format!("FAILED: {reason}"),
                 };
 
-                let size_str = if pkg.size > 0 {
-                    format_size(pkg.size)
+                // (Size column removed for Mission Control style)
+
+                // Mission Control formatting: 2-space indent for top-level,
+                // +2 spaces and └─ for children.
+                let prefix = if pkg.depth > 0 {
+                    format!("{:indent$}└─ ", "", indent = pkg.depth * 2)
                 } else {
-                    "-".to_string()
+                    "".to_string()
                 };
 
-                // Format with proper padding BEFORE applying colors
-                let name_part = format!("{: <width$}", pkg.name, width = theme.layout.name_width);
+                let name_full = format!("  {}{} {}", prefix, icon_str, pkg.name);
+                let name_part =
+                    format!("{: <width$}", name_full, width = theme.layout.phase_padding);
                 let version_part = format!(
                     "{: <width$}",
                     pkg.version,
                     width = theme.layout.version_width
                 );
-                let size_part = format!("{: <width$}", size_str, width = theme.layout.size_width);
 
                 // Build line
                 let line = format!(
-                    "{}  {} {} {} {}",
-                    icon_str.with(icon_color),
+                    "{} {} {}",
                     name_part.with(name_color),
                     version_part.with(theme.colors.version),
-                    size_part.with(theme.colors.secondary),
                     status_text.with(status_color)
                 );
 

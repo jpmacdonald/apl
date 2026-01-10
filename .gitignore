@@ -1,6 +1,6 @@
 /target
-index.bin
+index
+index.sig
 *.lock
 apl.key
-latest.txt
 infrastructure/

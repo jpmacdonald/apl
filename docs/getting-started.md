@@ -83,6 +83,6 @@ APL stores all data in `~/.apl/`:
 ├── bin/          # Symlinks to installed binaries
 ├── store/        # Installed packages (versioned)
 ├── cache/        # Downloaded archives
-├── index.bin     # Package index
+├── index         # Package index
 └── state.db      # Installation database
 ```

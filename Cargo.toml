@@ -69,7 +69,8 @@ aws-config = "1.8.12"
 ed25519-dalek = "2.2.0"
 base64 = "0.22.1"
 rand = { version = "0.9.2", features = ["std"] }
-indicatif = { version = "0.18.3", features = ["improved_unicode"] }
+comfy-table = "7.1"
+# REPLACED: indicatif removed per user request
 
 [profile.release]
 lto = true

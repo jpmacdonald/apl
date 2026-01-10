@@ -181,12 +181,12 @@ pub async fn install_packages(
         return Ok(());
     }
 
-    let table_items: Vec<(PackageName, Option<Version>)> = tasks
+    let table_items: Vec<(PackageName, Option<Version>, usize)> = tasks
         .iter()
         .map(|t| match t {
-            InstallTask::Download(n, v) => (n.clone(), v.clone()),
-            InstallTask::AlreadyInstalled(n, v) => (n.clone(), Some(v.clone())),
-            InstallTask::Switch(n, v) => (n.clone(), Some(v.clone())),
+            InstallTask::Download(n, v) => (n.clone(), v.clone(), 0),
+            InstallTask::AlreadyInstalled(n, v) => (n.clone(), Some(v.clone()), 0),
+            InstallTask::Switch(n, v) => (n.clone(), Some(v.clone()), 0),
         })
         .collect();
 

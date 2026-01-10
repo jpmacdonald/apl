@@ -30,21 +30,36 @@ else
     
     # Map architecture to manifest key
     case "$ARCH" in
-        arm64|aarch64) PLATFORM_KEY="darwin-arm64" ;;
-        x86_64)        PLATFORM_KEY="darwin-x64" ;;
+        arm64|aarch64) TARGET="darwin-arm64" ;;
+        x86_64)        TARGET="darwin-x64" ;;
         *)             echo "✗ Unsupported architecture: $ARCH"; exit 1 ;;
     esac
     
-    # Fetch manifest.json and parse with python3 (available on all modern macOS)
-    MANIFEST=$(curl -sL "https://apl.pub/manifest.json")
-    DOWNLOAD_URL=$(echo "$MANIFEST" | python3 -c "import sys, json; m=json.load(sys.stdin); print(m.get('apl',{}).get('$PLATFORM_KEY',''))")
+    # Fetch release manifest (JSON)
+    MANIFEST_URL="https://apl.pub/manifest.json"
+    MANIFEST=$(curl -sL "$MANIFEST_URL")
 
-    if [ -z "$DOWNLOAD_URL" ]; then
-        echo "✗ No binary found for platform: $PLATFORM_KEY"
-        echo "   Manifest:"
-        echo "$MANIFEST" | python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2))"
+    if [ -z "$MANIFEST" ]; then
+        error "Failed to fetch release manifest from $MANIFEST_URL"
         exit 1
     fi
+
+# Parse JSON to find URL for target using python for reliability
+if command -v python3 >/dev/null 2>&1; then
+    DOWNLOAD_URL=$(echo "$MANIFEST" | python3 -c "import sys, json; print(json.load(sys.stdin).get('$TARGET', ''))")
+elif command -v python >/dev/null 2>&1; then
+    DOWNLOAD_URL=$(echo "$MANIFEST" | python -c "import sys, json; print(json.load(sys.stdin).get('$TARGET', ''))")
+else
+    error "Python is required to parse the manifest, but it was not found."
+    exit 1
+fi
+
+if [ -z "$DOWNLOAD_URL" ]; then
+    error "No binary found for platform: $TARGET"
+    echo "   Manifest content:"
+    echo "$MANIFEST"
+    exit 1
+fi
     
     echo "  → Downloading apl for $ARCH..."
     TMP_FILE="$APL_HOME/tmp/apl_install.tar.gz"

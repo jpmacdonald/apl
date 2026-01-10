@@ -34,6 +34,7 @@ pub async fn generate_index_from_registry(
     package_filter: Option<&str>,
     force_full: bool,
     verbose: bool,
+    reporter: Arc<dyn crate::ui::Reporter>,
 ) -> Result<PackageIndex> {
     // Configure client with timeout (overshadowing the argument)
     let client = reqwest::Client::builder()
@@ -87,24 +88,12 @@ pub async fn generate_index_from_registry(
     }
     println!();
 
-    // Setup MultiProgress for unified design language
-    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-    let multi = MultiProgress::new();
-
-    // Unified design: thin line progress, right-aligned numbers
-    // Pattern: {phase:<25} ──────────────────── 100%   {count}
-    let style = ProgressStyle::with_template("{prefix:<25} {bar:20} {percent:>3}%   {msg}")
-        .unwrap()
-        .progress_chars("───");
+    // Phases for Mission Control
+    reporter.live_phase("Phase 1: Discovering sources...");
 
     // Phase 1: Discovery
     let toml_files: Vec<_> = walk_registry_toml_files(registry_dir)?.collect();
-    let total_files = toml_files.len() as u64;
-
-    let pb_discovery = multi.add(ProgressBar::new(total_files));
-    pb_discovery.set_style(style.clone());
-    pb_discovery.set_prefix("Discovering sources");
-    pb_discovery.set_message("");
+    let _total_files = toml_files.len() as u64;
 
     // Pass 1: Collect templates
     let mut templates = Vec::new();
@@ -118,7 +107,6 @@ pub async fn generate_index_from_registry(
     let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
     for template_path in toml_files {
-        pb_discovery.inc(1);
         let toml_str = match fs::read_to_string(&template_path) {
             Ok(s) => s,
             Err(_) => continue, // Squelch error for clean UI
@@ -159,7 +147,7 @@ pub async fn generate_index_from_registry(
 
         templates.push((template_path, template));
     }
-    pb_discovery.finish_with_message(format!("{}", github_repos.len()));
+    reporter.live_phase_update(&format!("{} FOUND", github_repos.len()), true);
 
     // Pass 2: Delta Check
     // We can use a spinner here if fast, or skip visual if super fast.
@@ -227,17 +215,10 @@ pub async fn generate_index_from_registry(
         dirty_repos = github_repos.clone();
     }
 
-    // Pass 3: Fetch Metadata
+    // Phase 2: Metadata Fetching
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
-
-    // Only show bar if there's work
-    // Ensure bar is created even if 0 to match UI spec?
-    // "fetching metadata ... 100% 143 packages"
-    let total_dirty = dirty_repos.len() as u64;
-    let pb_fetch = multi.add(ProgressBar::new(total_dirty));
-    pb_fetch.set_style(style.clone());
-    pb_fetch.set_prefix("Fetching metadata");
-    pb_fetch.set_message("");
+    reporter.live_phase("Phase 2: Fetching metadata...");
+    let _total_dirty = dirty_repos.len() as u64;
 
     if !dirty_repos.is_empty() {
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
@@ -269,17 +250,16 @@ pub async fn generate_index_from_registry(
 
                         let source_key = format!("github:{}/{}", key.owner, key.repo);
                         master_release_cache.insert(source_key, generic_releases);
-                        pb_fetch.inc(1);
                     }
                 }
                 Err(e) => {
-                    pb_fetch.abandon_with_message(format!("failed: {e}"));
+                    reporter.live_phase_update(&format!("FAILED: {e}"), false);
                     return Err(anyhow::anyhow!("Metadata fetch failed: {e}"));
                 }
             }
         }
     }
-    pb_fetch.finish_with_message("");
+    reporter.live_phase_update(&format!("{} UPDATED", master_release_cache.len()), true);
 
     // Build dirty keys set
     let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
@@ -318,12 +298,8 @@ pub async fn generate_index_from_registry(
         .map(|(p, t)| (t.package.name.clone(), (p.clone(), t.clone())))
         .collect();
 
-    // Pass 4: Process Packages
-    // Main progress bar for layers
-    let pb_process = multi.add(ProgressBar::new(layers.len() as u64));
-    pb_process.set_style(style.clone());
-    pb_process.set_prefix("Processing packages");
-    pb_process.set_message("");
+    // Phase 3: Processing
+    reporter.live_phase("Phase 3: Processing packages...");
 
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
@@ -335,7 +311,7 @@ pub async fn generate_index_from_registry(
 
     use futures::stream::{self, StreamExt};
 
-    for (layer_idx, layer) in layers.iter().enumerate() {
+    for layer in layers {
         let mut layer_templates = Vec::new();
         // Filter dirty
         for pkg_name in layer {
@@ -352,16 +328,8 @@ pub async fn generate_index_from_registry(
         }
 
         if layer_templates.is_empty() {
-            pb_process.inc(1);
             continue;
         }
-
-        // Sub-bar for this layer
-        let sub_bar = multi.add(ProgressBar::new(layer_templates.len() as u64));
-        sub_bar.set_style(style.clone());
-        let layer_label = format!("  Layer {}/{}", layer_idx + 1, layers.len());
-        sub_bar.set_prefix(layer_label.clone());
-        sub_bar.set_message("");
 
         let index_snapshot = Arc::new(index.clone());
 
@@ -475,8 +443,6 @@ pub async fn generate_index_from_registry(
         let mut processed_count = 0;
         while let Some((template, v_infos, errors)) = layer_results_stream.next().await {
             let pkg_name = template.package.name.to_string();
-            // Show which package we are finalizing
-            sub_bar.set_message(format!("processing {pkg_name}..."));
 
             // Periodic save of hash cache
             processed_count += 1;
@@ -487,13 +453,6 @@ pub async fn generate_index_from_registry(
             let success_count = v_infos.len();
             let total_versions = v_infos.len() + errors.len();
             _total_releases += success_count;
-
-            let _latest_ver = v_infos
-                .first()
-                .map(|v| v.version.clone())
-                .unwrap_or_else(|| "?".to_string());
-
-            // Delta generation removed - not worth the complexity for minimal bandwidth savings
 
             for ver_info in v_infos {
                 let kind = if ver_info.app.is_some() { "app" } else { "cli" };
@@ -508,10 +467,6 @@ pub async fn generate_index_from_registry(
 
             // Verbose logging?
             if verbose {
-                // If verbose, print details to console ABOVE the bars?
-                // suspending multi to print lines might be jerky.
-                // indicatif has println support.
-
                 let name_col = format!("    {pkg_name:<25}"); // Indented
                 let status_msg = if !errors.is_empty() && success_count == 0 {
                     let human_err = humanize_error(&errors[0].to_string());
@@ -524,15 +479,7 @@ pub async fn generate_index_from_registry(
                     format!("{total_versions} releases").dark_grey()
                 };
 
-                // We use sub_bar.println to keep bars at bottom
-                sub_bar.println(format!("{name_col} {status_msg}"));
-            } else if !errors.is_empty() {
-                // Even in quiet mode, show failures?
-                // U.S. Graphics Quiet Mode says "Zero visual noise".
-                // Maybe we suppress unless it's a hard error?
-                // Let's stick to true quiet unless verbose.
-                // But full failures are bad.
-                // The requested quiet mode output had NO per-package lines.
+                println!("{name_col} {status_msg}");
             }
 
             if errors.is_empty() {
@@ -542,24 +489,10 @@ pub async fn generate_index_from_registry(
             } else {
                 failed += 1;
             }
-
-            sub_bar.inc(1);
         }
-
-        // Layer completion - show package count
-        let pkg_count = sub_bar.length().unwrap_or(0);
-        let pkg_word = if pkg_count == 1 {
-            "package"
-        } else {
-            "packages"
-        };
-        sub_bar.finish_with_message(format!("{pkg_count} {pkg_word}"));
-        pb_process.inc(1);
     }
 
-    // Process completion - show layer count
-    let layer_word = if layers.len() == 1 { "layer" } else { "layers" };
-    pb_process.finish_with_message(format!("{} {}", layers.len(), layer_word));
+    reporter.live_phase_update(&format!("{fully_indexed} COMPLETE"), true);
 
     hash_cache.lock().await.save()?;
 
@@ -759,7 +692,9 @@ pub async fn package_to_index_ver(
 
                 // Mirror asset to CAS if store is enabled
                 if let Some(store) = get_artifact_store().await {
-                    if let Err(e) = mirror_asset(ctx.client, &asset.download_url, &hash, &store).await {
+                    if let Err(e) =
+                        mirror_asset(ctx.client, &asset.download_url, &hash, &store).await
+                    {
                         tracing::warn!("      ⚠️  Failed to mirror {}: {}", asset.name, e);
                     }
                 }

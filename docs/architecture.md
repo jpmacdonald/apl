@@ -101,7 +101,7 @@ APL is built around three principles:
 
 ```
 1. Index Lookup
-   ~/.apl/index.bin (MMAP) → find("ripgrep") → VersionInfo
+   ~/.apl/cache/index (MMAP) → find("ripgrep") → VersionInfo
 
 2. Download + Extract (Streaming)
    HTTP Stream ─┬─→ Cache File
@@ -243,7 +243,7 @@ APL uses a heuristic `AssetPattern` matcher (`src/core/asset_pattern.rs`) to map
 ├── cache/                  # Downloaded archives
 ├── logs/                   # Build logs
 ├── tmp/                    # Temporary extraction
-├── index.bin               # Package index
+├── index                   # Package index
 └── state.db                # SQLite database
 ```
 
