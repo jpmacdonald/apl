@@ -323,7 +323,7 @@ pub struct AssetConfig {
     pub universal: bool,
 
     /// Explicit selectors for each architecture.
-    /// Flattened so they appear directly under [assets] in TOML.
+    /// Flattened so they appear directly under `[assets]` in TOML.
     #[serde(flatten)]
     pub select: HashMap<String, AssetSelector>,
 

@@ -154,16 +154,36 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> Result<()> 
     Ok(())
 }
 
-/// Read the last N lines from a file
+/// Read the last N lines from a file efficiently.
+///
+/// Instead of loading the entire file, we seek to near the end and read a fixed-size
+/// tail buffer. This prevents OOM on large build logs (e.g., compiling LLVM).
 fn read_last_lines(path: &Path, n: usize) -> Result<String> {
     use std::fs::File;
-    use std::io::{BufRead, BufReader};
+    use std::io::{Read, Seek, SeekFrom};
 
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
 
-    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+    // Read at most 16KB from the end (enough for ~400 lines at 40 chars each)
+    const TAIL_SIZE: u64 = 16 * 1024;
+    let seek_pos = file_len.saturating_sub(TAIL_SIZE);
+    file.seek(SeekFrom::Start(seek_pos))?;
 
+    let mut buffer = String::new();
+    file.read_to_string(&mut buffer)?;
+
+    // If we seeked mid-file, skip the first (partial) line in-place
+    let content = if seek_pos > 0 {
+        buffer
+            .find('\n')
+            .map_or(buffer.as_str(), |idx| &buffer[idx + 1..])
+    } else {
+        &buffer
+    };
+
+    // Take only the last N lines
+    let lines: Vec<&str> = content.lines().collect();
     let start = lines.len().saturating_sub(n);
     Ok(lines[start..].join("\n"))
 }

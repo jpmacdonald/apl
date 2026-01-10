@@ -219,10 +219,7 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
                 elapsed_secs,
             }) => {
                 let operation = action.to_uppercase();
-                let msg = format!(
-                    "{} COMPLETE {}, elapsed {:.1}s",
-                    operation, count, elapsed_secs
-                );
+                let msg = format!("{operation} COMPLETE {count}, elapsed {elapsed_secs:.1}s");
                 table.print_footer(&mut buffer, &msg, Severity::Success);
 
                 // JSON RESULT for CI

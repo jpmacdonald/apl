@@ -289,16 +289,24 @@ pub fn extract_pkg(
         .spawn()
         .map_err(ExtractError::Io)?;
 
+    let cat_stdout = cat
+        .stdout
+        .ok_or_else(|| ExtractError::Archive("Failed to capture cat stdout".to_string()))?;
+
     let gunzip = std::process::Command::new("gunzip")
-        .stdin(cat.stdout.unwrap())
+        .stdin(cat_stdout)
         .stdout(std::process::Stdio::piped())
         .spawn()
         .map_err(ExtractError::Io)?;
 
+    let gunzip_stdout = gunzip
+        .stdout
+        .ok_or_else(|| ExtractError::Archive("Failed to capture gunzip stdout".to_string()))?;
+
     let cpio = std::process::Command::new("cpio")
         .arg("-i")
         .arg("--quiet")
-        .stdin(gunzip.stdout.unwrap())
+        .stdin(gunzip_stdout)
         .current_dir(dest_dir)
         .status()
         .map_err(ExtractError::Io)?;

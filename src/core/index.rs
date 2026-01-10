@@ -327,7 +327,7 @@ impl PackageIndex {
 
     /// Search packages by query (matches name or description)
     ///
-    /// Supports fuzzy matching via SkimMatcherV2 and tag filtering via 'tag:<name>'.
+    /// Supports fuzzy matching via SkimMatcherV2 and tag filtering via `tag:<name>`.
     /// Results are ranked by match score.
     pub fn search(&self, query: &str) -> Vec<&IndexEntry> {
         if query.is_empty() {
