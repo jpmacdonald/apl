@@ -324,10 +324,10 @@ sequenceDiagram
     Release->>Registry: Dispatch event (release)
     
     Registry->>Registry: Run `apl-pkg index`
-    Registry->>Registry: Generate index.bin
+    Registry->>Registry: Generate index
     Registry->>Registry: Generate latest.json
     
-    Registry->>CDN: Upload index.bin
+    Registry->>CDN: Upload index
     Registry->>CDN: Upload latest.json
     
     User->>CDN: GET /latest.json
