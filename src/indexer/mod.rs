@@ -49,7 +49,7 @@ pub async fn generate_index_from_registry(
     }
 
     // Phase 0: Load existing index (if not forcing full rebuild)
-    let index_path = registry_dir.join("../index.bin");
+    let index_path = registry_dir.join("../index");
     let mut index = if !force_full && index_path.exists() {
         match PackageIndex::load(&index_path) {
             Ok(existing) => {

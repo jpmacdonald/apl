@@ -7,7 +7,7 @@ use reqwest::Client;
 
 /// Update package index from CDN
 pub async fn update(url: &str, dry_run: bool) -> Result<()> {
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let output = apl::ui::Output::new();
 
     if dry_run {

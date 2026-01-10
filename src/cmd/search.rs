@@ -7,7 +7,7 @@ use apl::index::PackageIndex;
 /// Search packages in the local index (U.S. Graphics style output)
 pub fn search(query: &str) -> Result<()> {
     let start = std::time::Instant::now();
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     if !index_path.exists() {
         bail!("No index found. Run 'apl update' first.");
     }

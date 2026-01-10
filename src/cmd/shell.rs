@@ -72,7 +72,7 @@ pub async fn shell(frozen: bool, update: bool, command: Option<Vec<String>>) -> 
 
 /// Load the package index from APL home
 fn load_index() -> Result<PackageIndex> {
-    let index_path = apl::apl_home().join("index.bin");
+    let index_path = apl::apl_home().join("index");
     PackageIndex::load(&index_path).context("Failed to load index. Run 'apl update' first.")
 }
 

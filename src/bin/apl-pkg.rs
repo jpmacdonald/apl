@@ -32,7 +32,7 @@ enum Commands {
     },
     /// Lint and validate all package definitions
     Check,
-    /// Regenerate the index.bin
+    /// Regenerate the index
     Index {
         /// Optional specific package to index
         #[arg(short, long)]
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     let client = build_client(token.as_deref())?;
 
     let registry_dir = cli.registry;
-    let index_path = std::env::current_dir()?.join("index.bin");
+    let index_path = std::env::current_dir()?.join("index");
 
     match cli.command {
         Commands::Add { repos } => {
@@ -339,29 +339,32 @@ async fn cli_index(
         let signature = signing_key.sign(&index_data);
 
         let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
-        let sig_path = index_path.with_extension("bin.sig");
+        let sig_path = index_path.with_extension("sig");
         fs::write(&sig_path, sig_b64)?;
         println!("   Created signature: {}", sig_path.display());
     } else {
         println!("⚠️  APL_SIGNING_KEY not set. Index is UNSIGNED.");
     }
 
-    // Export latest 'apl' info for the Cloudflare Worker router
+    // Export manifest.json for install.sh and CDN
     if let Some(entry) = index.find("apl") {
         if let Some(latest) = entry.latest() {
-            let mut content = format!("version={}\n", latest.version);
+            let mut urls = serde_json::Map::new();
             for bin in &latest.binaries {
                 let key = match bin.arch {
-                    apl::types::Arch::Arm64 => "darwin_arm64",
-                    apl::types::Arch::X86_64 => "darwin_x86_64",
-                    apl::types::Arch::Universal => "darwin_universal",
+                    apl::types::Arch::Arm64 => "darwin-arm64",
+                    apl::types::Arch::X86_64 => "darwin-x64",
+                    apl::types::Arch::Universal => "darwin-universal",
                 };
-                content.push_str(&format!("{key}={}\n", bin.url));
+                urls.insert(key.to_string(), serde_json::Value::String(bin.url.clone()));
             }
-
-            let info_path = index_path.with_file_name("latest.txt");
-            fs::write(&info_path, content)?;
-            println!("   Generated manifest: {}", info_path.display());
+            let manifest = serde_json::json!({
+                "version": latest.version,
+                "apl": urls,
+            });
+            let manifest_path = index_path.with_file_name("manifest.json");
+            fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
+            println!("   Generated manifest: {}", manifest_path.display());
         }
     }
 

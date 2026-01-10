@@ -486,7 +486,7 @@ mod tests {
     #[test]
     fn test_file_persistence() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("index.bin");
+        let path = dir.path().join("index");
 
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;

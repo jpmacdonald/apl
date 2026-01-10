@@ -13,11 +13,9 @@ if [ "$OS" != "darwin" ]; then
     exit 1
 fi
 
-echo "🚀 Installing apl (A Package Layer)..."
+echo "🚀 Installing apl..."
 
-mkdir -p "$BIN_DIR"
-mkdir -p "$APL_HOME/cache"
-mkdir -p "$APL_HOME/tmp"
+mkdir -p "$BIN_DIR" "$APL_HOME/cache" "$APL_HOME/tmp"
 
 # Binary Resolution
 if [ -f "./target/release/apl" ]; then
@@ -28,31 +26,32 @@ elif [ -f "./target/debug/apl" ]; then
     cp "./target/debug/apl" "$BIN_DIR/apl"
 else
     # Remote Production Download
-    echo "  → Downloading latest release from apl.pub..."
+    echo "  → Fetching manifest from apl.pub..."
     
-    # Simple arch mapping
-    if [ "$ARCH" = "arm64" ]; then REMOTE_ARCH="arm64"; else REMOTE_ARCH="x86_64"; fi
+    # Map architecture
+    case "$ARCH" in
+        arm64|aarch64) PLATFORM="darwin-arm64" ;;
+        x86_64)        PLATFORM="darwin-x64" ;;
+        *)             echo "✗ Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
     
-    # Fetch manifest
-    MANIFEST_URL="https://apl.pub/latest"
-    MANIFEST=$(curl -sL "$MANIFEST_URL")
+    # Fetch manifest.json
+    MANIFEST=$(curl -sL "https://apl.pub/manifest.json")
     
-    # Parse URL for platform (e.g., darwin_arm64)
-    PLATFORM="darwin_$(uname -m)"
-    DOWNLOAD_URL=$(echo "$MANIFEST" | grep "^$PLATFORM=" | cut -d= -f2)
+    # Parse with python3 (available on all supported macOS versions)
+    DOWNLOAD_URL=$(echo "$MANIFEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['apl']['$PLATFORM'])")
 
     if [ -z "$DOWNLOAD_URL" ]; then
         echo "✗ No binary found for platform: $PLATFORM"
+        echo "   Manifest: $MANIFEST"
         exit 1
     fi
     
+    echo "  → Downloading apl for $PLATFORM..."
     TMP_FILE="$APL_HOME/tmp/apl_install.tar.gz"
     curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
     
-    tar -xzf "$TMP_FILE" -C "$APL_HOME/tmp" 2>/dev/null || {
-        echo "✗ Failed to extract binary. Worker might still be updating."
-        exit 1
-    }
+    tar -xzf "$TMP_FILE" -C "$APL_HOME/tmp"
     mv "$APL_HOME/tmp/apl" "$BIN_DIR/apl"
     rm "$TMP_FILE"
 fi
@@ -62,7 +61,7 @@ chmod +x "$BIN_DIR/apl"
 echo "✓ apl installed to $BIN_DIR/apl"
 echo ""
 
-# PATH Automation - ensure ~/.apl/bin comes FIRST in PATH
+# PATH Automation
 PATH_EXPORT='export PATH="$HOME/.apl/bin:$PATH"'
 
 DETECTED_PROFILE=""
@@ -74,10 +73,10 @@ esac
 
 if [ -n "$DETECTED_PROFILE" ]; then
     if grep -q ".apl/bin" "$DETECTED_PROFILE" 2>/dev/null; then
-        echo "✓ ~/.apl/bin is already in your PATH ($DETECTED_PROFILE)"
+        echo "✓ ~/.apl/bin is already in your PATH"
     else
         echo "" >> "$DETECTED_PROFILE"
-        echo "# apl - A Package Layer" >> "$DETECTED_PROFILE"
+        echo "# apl" >> "$DETECTED_PROFILE"
         echo "$PATH_EXPORT" >> "$DETECTED_PROFILE"
         echo "✓ Added ~/.apl/bin to PATH in $DETECTED_PROFILE"
         echo "  Run 'source $DETECTED_PROFILE' or restart your terminal"

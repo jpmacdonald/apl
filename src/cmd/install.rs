@@ -9,7 +9,7 @@ pub async fn install(packages: &[String], dry_run: bool, _verbose: bool) -> Resu
 
     // Initialize dependencies formerly done inside install_packages
     let db = DbHandle::spawn().context("Failed to open database")?;
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let index = apl::core::index::PackageIndex::load(&index_path).ok();
 
     let client = reqwest::Client::builder()

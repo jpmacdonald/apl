@@ -17,7 +17,7 @@ pub fn info(package_str: &str) -> Result<()> {
     let installed = db.get_package(package.as_str())?;
 
     // Check index for more info
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let index_entry = if index_path.exists() {
         PackageIndex::load(&index_path)
             .ok()

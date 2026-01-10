@@ -13,7 +13,7 @@ pub fn status() -> Result<()> {
     let pkg_version = env!("APL_VERSION");
 
     // 2. Index info
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let index_meta = std::fs::metadata(&index_path).ok();
     let index_date = index_meta
         .and_then(|m| m.modified().ok())

@@ -14,7 +14,7 @@ pub async fn run(pkg_name: &str, args: &[String], _dry_run: bool) -> Result<()> 
 
     // 1. Resolve and download
     let output = Output::new();
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let index = apl::core::index::PackageIndex::load(&index_path).ok();
 
     let pkg_name_new = PackageName::from(pkg_name);

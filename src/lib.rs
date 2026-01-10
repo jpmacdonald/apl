@@ -22,7 +22,7 @@
 //! ├── bin/        # Symlinks to active binaries
 //! ├── store/      # Package artifacts by name/version
 //! ├── cache/      # Downloaded archives (by hash)
-//! ├── index.bin   # Binary package index
+//! ├── index   # Binary package index
 //! └── state.db    # SQLite database
 //! ```
 

@@ -7,7 +7,7 @@ use apl::index::PackageIndex;
 
 /// Upgrade installed packages
 pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> Result<()> {
-    let index_path = apl_home().join("index.bin");
+    let index_path = apl_home().join("index");
     let output = apl::ui::Output::new();
 
     // Load index

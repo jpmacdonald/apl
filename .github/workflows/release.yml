@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            suffix: darwin-arm64
+          - target: x86_64-apple-darwin
+            suffix: darwin-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin apl
+          cargo build --release --target ${{ matrix.target }} --bin apl-pkg
+
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf ../../../apl-${{ matrix.suffix }}.tar.gz apl
+          tar -czf ../../../apl-pkg-${{ matrix.suffix }}.tar.gz apl-pkg
+
+      - name: Upload
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            apl-${{ matrix.suffix }}.tar.gz
+            apl-pkg-${{ matrix.suffix }}.tar.gz
+
+  manifest:
+    name: Generate Manifest
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate manifest.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > manifest.json << EOF
+          {
+            "version": "${VERSION}",
+            "binaries": {
+              "apl": {
+                "darwin-arm64": "https://github.com/jpmacdonald/apl/releases/download/${GITHUB_REF_NAME}/apl-darwin-arm64.tar.gz",
+                "darwin-x64": "https://github.com/jpmacdonald/apl/releases/download/${GITHUB_REF_NAME}/apl-darwin-x64.tar.gz"
+              },
+              "apl-pkg": {
+                "darwin-arm64": "https://github.com/jpmacdonald/apl/releases/download/${GITHUB_REF_NAME}/apl-pkg-darwin-arm64.tar.gz",
+                "darwin-x64": "https://github.com/jpmacdonald/apl/releases/download/${GITHUB_REF_NAME}/apl-pkg-darwin-x64.tar.gz"
+              }
+            },
+            "released": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Upload manifest
+        uses: softprops/action-gh-release@v1
+        with:
+          files: manifest.json
