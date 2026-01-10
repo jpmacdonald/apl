@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use apl::indexer::forges::github::{self, build_client};
 use apl::package::Package;
 use clap::{Parser, Subcommand};
@@ -336,31 +336,39 @@ async fn cli_index(
 
     index.save_compressed(index_path)?;
 
-    // Sign the index if key is present
+    // Sign the index if key is present and not empty
     if let Ok(secret_b64) = std::env::var("APL_SIGNING_KEY") {
-        use base64::Engine;
-        use ed25519_dalek::{Signer, SigningKey};
+        if !secret_b64.trim().is_empty() {
+            use base64::Engine;
+            use ed25519_dalek::{Signer, SigningKey};
 
-        println!("🔒 Signing index...");
-        let secret_bytes = base64::engine::general_purpose::STANDARD
-            .decode(secret_b64.trim())
-            .expect("Invalid Base64 signing key");
+            println!("🔒 Signing index...");
+            let secret_bytes = base64::engine::general_purpose::STANDARD
+                .decode(secret_b64.trim())
+                .context("Invalid Base64 signing key - check APL_SIGNING_KEY format")?;
 
-        let signing_key = SigningKey::from_bytes(
-            secret_bytes
-                .as_slice()
-                .try_into()
-                .expect("Key must be 32 bytes"),
-        );
+            if secret_bytes.len() != 32 {
+                anyhow::bail!(
+                    "APL_SIGNING_KEY must be a 32-byte Ed25519 private key (got {} bytes)",
+                    secret_bytes.len()
+                );
+            }
 
-        // Read back the exact file we just wrote to ensure signature matches disk content
-        let index_data = fs::read(index_path)?;
-        let signature = signing_key.sign(&index_data);
+            let mut key_arr = [0u8; 32];
+            key_arr.copy_from_slice(&secret_bytes);
+            let signing_key = SigningKey::from_bytes(&key_arr);
 
-        let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
-        let sig_path = index_path.with_extension("sig");
-        fs::write(&sig_path, sig_b64)?;
-        println!("   Created signature: {}", sig_path.display());
+            // Read back the exact file we just wrote to ensure signature matches disk content
+            let index_data = fs::read(index_path)?;
+            let signature = signing_key.sign(&index_data);
+
+            let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
+            let sig_path = index_path.with_extension("sig");
+            fs::write(&sig_path, sig_b64)?;
+            println!("   Created signature: {}", sig_path.display());
+        } else {
+            println!("⚠️  APL_SIGNING_KEY is empty. Index is UNSIGNED.");
+        }
     } else {
         println!("⚠️  APL_SIGNING_KEY not set. Index is UNSIGNED.");
     }
@@ -542,10 +550,15 @@ async fn cli_verify(client: &reqwest::Client, package_path: &Path) -> Result<()>
 
     // Install using the flow system
     let unresolved = apl::ops::flow::UnresolvedPackage::new(pkg_name.clone(), None);
-    let resolved = unresolved.resolve(None).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let resolved = unresolved
+        .resolve(None)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let reporter = apl::ui::NullReporter;
-    let prepared = resolved.prepare(client, &reporter).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let prepared = resolved
+        .prepare(client, &reporter)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // Copy binaries to temp bin
     for bin_name in &bin_list {

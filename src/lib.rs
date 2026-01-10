@@ -120,4 +120,4 @@ pub const USER_AGENT: &str = concat!("apl/", env!("APL_VERSION"));
 
 /// Root of Trust: Ed25519 Public Key for Index Verification (Base64)
 /// Corresponds to the private key in CI credentials.
-pub const APL_PUBLIC_KEY: &str = "PZg/9tWO/ti5jgHSoRkEygPoSpU1ZNEVGTIY//4gthE=";
+pub const APL_PUBLIC_KEY: &str = "ltcv47HgxDoAAXi+BVJ9FL3i93jkGa+pAs9leVKqUu4=";
