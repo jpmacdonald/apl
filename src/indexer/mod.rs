@@ -47,7 +47,8 @@ pub async fn generate_index_from_registry(
     // Initialize artifact store (optional, only if configured)
     let artifact_store: Option<Arc<ArtifactStore>> = get_artifact_store().await;
     if artifact_store.is_some() {
-        println!("   ☁️  Artifact Store enabled (will mirror to R2)");
+    if artifact_store.is_some() {
+        println!("   Artifact Store enabled (will mirror to R2)");
     }
 
     // Phase 0: Load existing index (if not forcing full rebuild)
@@ -56,19 +57,20 @@ pub async fn generate_index_from_registry(
         match PackageIndex::load(&index_path) {
             Ok(existing) => {
                 println!(
-                    "   📦 Loaded existing index ({} packages)",
+                    "   Loaded existing index ({} packages)",
                     existing.packages.len()
                 );
                 existing
             }
             Err(e) => {
-                eprintln!("   ⚠ Failed to load existing index: {e}. Rebuilding from scratch.");
+                eprintln!("   Failed to load existing index: {e}. Rebuilding from scratch.");
                 PackageIndex::new()
             }
         }
     } else {
         if force_full {
-            println!("   🔄 Force full rebuild requested.");
+        if force_full {
+            println!("   Force full rebuild requested.");
         }
         PackageIndex::new()
     };
@@ -321,7 +323,6 @@ pub async fn generate_index_from_registry(
 
         if !fetch_errors.is_empty() {
             println!(
-                "   ⚠ {} batch(es) failed: {}",
                 fetch_errors.len(),
                 fetch_errors.join("; ")
             );
@@ -349,7 +350,8 @@ pub async fn generate_index_from_registry(
                     master_release_cache.insert(source_key, releases);
                 }
                 Err(e) => {
-                    println!("   ⚠ Failed to fetch port {}: {}", port_name, e);
+                Err(e) => {
+                    println!("   Failed to fetch port {}: {}", port_name, e);
                 }
             }
         }
@@ -678,7 +680,7 @@ pub async fn package_to_index_ver(
             .find(|v| v.version == display_version)
         {
             if !existing_ver.binaries.is_empty() {
-                // tracing::debug!("      ♻️  Reusing cached binaries for {}", display_version);
+                // tracing::debug!("      Reusing cached binaries for {}", display_version);
                 return Ok(VersionInfo {
                     version: display_version.to_string(),
                     binaries: existing_ver.binaries.clone(),
@@ -789,7 +791,7 @@ pub async fn package_to_index_ver(
             // Mirror asset to CAS if store is enabled
             if let Some(store) = get_artifact_store().await {
                 if let Err(e) = mirror_asset(ctx.client, &asset.download_url, &hash, &store).await {
-                    tracing::warn!("      ⚠️  Failed to mirror {}: {}", asset.name, e);
+                    tracing::warn!("      Failed to mirror {}: {}", asset.name, e);
                 }
             }
         }
