@@ -1,6 +1,6 @@
-[package]
 name = "apl"
-version = "0.0.0-dev"
+version = "0.4.6"
+author = "Jim Macdonald <jim@jamesmacdonald.com>"
 edition = "2024"
 description = "apl - A Package Layer for macOS"
 license = "MIT"
