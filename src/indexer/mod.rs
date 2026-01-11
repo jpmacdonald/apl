@@ -588,15 +588,26 @@ pub async fn generate_index_from_registry(
             }
 
             // Always print per-package progress
+            // Aligned UI Output: [S/T] pkg_name  (status)
             let status_msg = if !errors.is_empty() && success_count == 0 {
                 let human_err = humanize_error(&errors[0].to_string());
-                format!("0/{} versions ({})", total_versions, human_err)
+                match human_err.contains("Skipped:") {
+                    true => format!("({})", human_err),
+                    false => format!("(Skipped: {})", human_err),
+                }
             } else if !errors.is_empty() {
-                format!("{}/{} versions", success_count, total_versions)
+                format!("(partial)")
             } else {
-                format!("{} versions", success_count)
+                String::new()
             };
-            println!("    {:<25} {}", pkg_name, status_msg);
+
+            println!(
+                "   [{}/{}] {:<25} {}",
+                success_count,
+                total_versions,
+                pkg_name,
+                status_msg
+            );
 
             if errors.is_empty() {
                 fully_indexed += 1;
