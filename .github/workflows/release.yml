@@ -76,4 +76,4 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
           repository: jpmacdonald/apl-core
-          event-type: release
+          event-type: Release
