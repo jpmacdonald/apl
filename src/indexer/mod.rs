@@ -215,18 +215,66 @@ pub async fn generate_index_from_registry(
         dirty_repos = github_repos.clone();
     }
 
-    // Phase 2: Metadata Fetching
+    // Phase 2: Metadata Fetching (parallelized)
+    use futures::stream::{self as fstream, StreamExt as FStreamExt};
+
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
-    reporter.live_phase("Phase 2: Fetching metadata...");
-    let _total_dirty = dirty_repos.len() as u64;
+    let total_dirty = dirty_repos.len();
+    println!(
+        "Phase 2: Fetching metadata for {} repositories...",
+        total_dirty
+    );
 
     if !dirty_repos.is_empty() {
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
-        for chunk in dirty_repos.chunks(4) {
-            match forges::github::graphql::fetch_batch_releases(&client, &token, chunk).await {
+        let token = std::sync::Arc::new(token);
+
+        // Create chunks and process them concurrently
+        let chunks: Vec<Vec<crate::types::RepoKey>> =
+            dirty_repos.chunks(4).map(|c| c.to_vec()).collect();
+
+        let total_chunks = chunks.len();
+        let processed_chunks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+        let results: Vec<
+            Result<
+                HashMap<crate::types::RepoKey, Vec<forges::github::GithubRelease>>,
+                anyhow::Error,
+            >,
+        > = fstream::iter(chunks.into_iter().enumerate())
+            .map(|(_chunk_idx, chunk)| {
+                let client = client.clone();
+                let token = token.clone();
+                let processed = processed_chunks.clone();
+                async move {
+                    let result =
+                        forges::github::graphql::fetch_batch_releases(&client, &token, &chunk)
+                            .await;
+                    let done = processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    // Print progress for each completed batch
+                    let repos_str: Vec<_> = chunk
+                        .iter()
+                        .map(|k| format!("{}/{}", k.owner, k.repo))
+                        .collect();
+                    println!(
+                        "   [{}/{}] Fetched: {}",
+                        done,
+                        total_chunks,
+                        repos_str.join(", ")
+                    );
+                    result
+                }
+            })
+            .buffer_unordered(12) // Run up to 12 batches concurrently
+            .collect()
+            .await;
+
+        // Process results
+        let mut fetch_errors = Vec::new();
+        for result in results {
+            match result {
                 Ok(batch_results) => {
                     for (key, releases) in batch_results {
-                        // Conversion logic...
                         let generic_releases: Vec<ReleaseInfo> = releases
                             .into_iter()
                             .map(|r| ReleaseInfo {
@@ -253,13 +301,23 @@ pub async fn generate_index_from_registry(
                     }
                 }
                 Err(e) => {
-                    reporter.live_phase_update(&format!("FAILED: {e}"), false);
-                    return Err(anyhow::anyhow!("Metadata fetch failed: {e}"));
+                    fetch_errors.push(e.to_string());
                 }
             }
         }
+
+        if !fetch_errors.is_empty() {
+            println!(
+                "   ⚠ {} batch(es) failed: {}",
+                fetch_errors.len(),
+                fetch_errors.join("; ")
+            );
+        }
     }
-    reporter.live_phase_update(&format!("{} UPDATED", master_release_cache.len()), true);
+    println!(
+        "Phase 2: Complete - {} repositories updated",
+        master_release_cache.len()
+    );
 
     // Build dirty keys set
     let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
@@ -309,7 +367,7 @@ pub async fn generate_index_from_registry(
     let mut partial = 0;
     let mut failed = 0;
 
-    use futures::stream::{self, StreamExt};
+    use futures::stream;
 
     for layer in layers {
         let mut layer_templates = Vec::new();

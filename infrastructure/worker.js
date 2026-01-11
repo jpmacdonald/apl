@@ -1,32 +1,51 @@
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    const key = url.pathname.slice(1); // Remove leading slash
+    async fetch(request, env) {
+        const url = new URL(request.url);
+        const path = url.pathname;
 
-    // Backward compatibility: Map manifest.json to latest.json
-    let objectKey = key;
-    if (key === 'manifest.json' || key === 'latest' || key === 'latest.json') {
-      objectKey = 'latest.json';
+        if (path === "/install") {
+            return fetch("https://raw.githubusercontent.com/jpmacdonald/apl/main/install.sh");
+        }
+
+        // Handle latest.json (used by install.sh)
+        if (path === "/latest.json") {
+            const obj = await env.APL_BUCKET.get("latest.json");
+            if (!obj) return new Response("Not found", { status: 404 });
+            return new Response(obj.body, {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                }
+            });
+        }
+
+        // Handle both /index and /index.sig
+        if (path === "/index" || path === "/index.sig") {
+            const key = path.slice(1);
+            const response = await env.APL_BUCKET.get(key);
+            if (!response) return new Response(`${key} not found`, { status: 404 });
+            return new Response(response.body, {
+                headers: {
+                    "Content-Type": path.endsWith(".sig") ? "application/pgp-signature" : "application/octet-stream",
+                    "Access-Control-Allow-Origin": "*"
+                },
+            });
+        }
+
+        if (path.startsWith("/cas/") || path.startsWith("/deltas/")) {
+            const key = path.slice(1);
+            const response = await env.APL_BUCKET.get(key);
+            if (!response) return new Response("Artifact not found", { status: 404 });
+            return new Response(response.body, {
+                headers: {
+                    "Content-Type": "application/octet-stream",
+                    "Cache-Control": "public, max-age=31536000, immutable"
+                },
+            });
+        }
+
+        return new Response("Welcome to APL. Visit https://github.com/jpmacdonald/apl for docs.", {
+            headers: { "Content-Type": "text/plain" },
+        });
     }
-
-    // Allow index, index.sig, and latest.json
-    if (!['index', 'index.sig', 'latest.json'].includes(objectKey)) {
-      return new Response('Not Found', { status: 404 });
-    }
-
-    const object = await env.APL_BUCKET.get(objectKey);
-
-    if (object === null) {
-      return new Response('Object Not Found', { status: 404 });
-    }
-
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=60'); // Short cache for manifest/index
-
-    return new Response(object.body, {
-      headers,
-    });
-  },
-};
+}
