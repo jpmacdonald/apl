@@ -89,7 +89,7 @@ pub async fn generate_index_from_registry(
     println!();
 
     // Phases for Mission Control
-    reporter.live_phase("Phase 1: Discovering sources...");
+    println!("Phase 1: Discovering sources...");
 
     // Phase 1: Discovery
     let toml_files: Vec<_> = walk_registry_toml_files(registry_dir)?.collect();
@@ -147,7 +147,7 @@ pub async fn generate_index_from_registry(
 
         templates.push((template_path, template));
     }
-    reporter.live_phase_update(&format!("{} FOUND", github_repos.len()), true);
+    println!("Phase 1: Complete - {} sources found", github_repos.len());
 
     // Pass 2: Delta Check
     // We can use a spinner here if fast, or skip visual if super fast.
@@ -357,7 +357,7 @@ pub async fn generate_index_from_registry(
         .collect();
 
     // Phase 3: Processing
-    reporter.live_phase("Phase 3: Processing packages...");
+    println!("Phase 3: Processing packages...");
 
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
@@ -458,6 +458,9 @@ pub async fn generate_index_from_registry(
                         );
                     }
 
+                    // Limit to last 5 versions for performance
+                    let versions: Vec<_> = versions.into_iter().take(5).collect();
+
                     let versions_stream = stream::iter(versions)
                         .map(|(full_tag, extracted, normalized)| {
                             let client_ref = client.clone();
@@ -480,7 +483,7 @@ pub async fn generate_index_from_registry(
                                 (dv, res)
                             }
                         })
-                        .buffer_unordered(4);
+                        .buffer_unordered(8);
 
                     let version_results: Vec<(String, Result<VersionInfo>)> =
                         versions_stream.collect().await;
@@ -523,22 +526,16 @@ pub async fn generate_index_from_registry(
                 );
             }
 
-            // Verbose logging?
-            if verbose {
-                let name_col = format!("    {pkg_name:<25}"); // Indented
-                let status_msg = if !errors.is_empty() && success_count == 0 {
-                    let human_err = humanize_error(&errors[0].to_string());
-                    format!("{total_versions} releases (ALL FAILED: {human_err})").red()
-                } else if !errors.is_empty() {
-                    let human_err = humanize_error(&errors[0].to_string());
-                    format!("{total_versions} releases ({success_count} usable, err: {human_err})")
-                        .yellow()
-                } else {
-                    format!("{total_versions} releases").dark_grey()
-                };
-
-                println!("{name_col} {status_msg}");
-            }
+            // Always print per-package progress
+            let status_msg = if !errors.is_empty() && success_count == 0 {
+                let human_err = humanize_error(&errors[0].to_string());
+                format!("0/{} versions ({})", total_versions, human_err)
+            } else if !errors.is_empty() {
+                format!("{}/{} versions", success_count, total_versions)
+            } else {
+                format!("{} versions", success_count)
+            };
+            println!("    {:<25} {}", pkg_name, status_msg);
 
             if errors.is_empty() {
                 fully_indexed += 1;
@@ -550,7 +547,10 @@ pub async fn generate_index_from_registry(
         }
     }
 
-    reporter.live_phase_update(&format!("{fully_indexed} COMPLETE"), true);
+    println!(
+        "Phase 3: Complete - {} packages fully indexed",
+        fully_indexed
+    );
 
     hash_cache.lock().await.save()?;
 
