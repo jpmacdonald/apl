@@ -1,0 +1,19 @@
+# apl-core/registry/ruby.toml
+# This is a "Pointer" to the apl-ports build farm.
+
+[package]
+name = "ruby"
+description = "The Ruby Programming Language (Pre-built)"
+homepage = "https://www.ruby-lang.org/en/"
+license = "Ruby"
+
+# Feed B: Direct from our Ports R2 Bucket
+[discovery]
+ports = "ruby"
+
+[assets]
+# We trust our build farm to produce universal or arch-specific binaries correctly.
+# The indexer will read the /ports/ruby/index.json to find them.
+
+[install]
+bin = ["ruby", "gem", "irb", "rake", "bundle"]

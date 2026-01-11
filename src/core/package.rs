@@ -283,6 +283,9 @@ pub enum DiscoveryConfig {
         #[serde(default)]
         include_prereleases: bool,
     },
+    Ports {
+        name: String, // e.g. "ruby"
+    },
     Manual {
         manual: Vec<String>, // List of versions
     },

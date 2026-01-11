@@ -41,7 +41,6 @@ struct ReleaseNode {
     is_prerelease: bool,
     #[serde(rename = "releaseAssets")]
     release_assets: AssetConnection,
-    description: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,7 +93,6 @@ pub async fn fetch_batch_releases(
                         tagName
                         isDraft
                         isPrerelease
-                        description
                         releaseAssets(first: 30) {{
                             nodes {{
                                 name
@@ -194,7 +192,7 @@ pub async fn fetch_batch_releases(
                                         tag_name: node.tag_name.clone(),
                                         draft: node.is_draft,
                                         prerelease: node.is_prerelease,
-                                        body: node.description.clone(),
+                                        body: None, // Optimized out to save memory
                                         assets,
                                     });
                                 }

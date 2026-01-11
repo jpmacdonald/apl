@@ -100,6 +100,7 @@ pub async fn generate_index_from_registry(
     let other_sources: Vec<Box<dyn ListingSource>> = Vec::new();
     let _other_sources = other_sources;
     let mut github_repos: Vec<crate::types::RepoKey> = Vec::new();
+    let mut ports_repos: Vec<String> = Vec::new(); // package names to Look up in ports
 
     // Map package_name -> RepoKey (for dirty checking)
     let mut pkg_repo_map: HashMap<String, crate::types::RepoKey> = HashMap::new();
@@ -143,11 +144,23 @@ pub async fn generate_index_from_registry(
                 pkg_tag_pattern_map.insert(template.package.name.to_string(), tag_pattern.clone());
                 pkg_source_map.insert(template.package.name.to_string(), source_key);
             }
+        } else if let DiscoveryConfig::Ports { name } = &template.discovery {
+            let source_key = format!("ports:{}", name);
+            if !pkg_source_map.values().any(|k| k == &source_key) {
+                ports_repos.push(name.clone());
+            }
+            pkg_tag_pattern_map
+                .insert(template.package.name.to_string(), "{{version}}".to_string());
+            pkg_source_map.insert(template.package.name.to_string(), source_key);
         }
 
         templates.push((template_path, template));
     }
-    println!("Phase 1: Complete - {} sources found", github_repos.len());
+    println!(
+        "Phase 1: Complete - {} github sources, {} ports found",
+        github_repos.len(),
+        ports_repos.len()
+    );
 
     // Pass 2: Delta Check
     // We can use a spinner here if fast, or skip visual if super fast.
@@ -319,11 +332,36 @@ pub async fn generate_index_from_registry(
         master_release_cache.len()
     );
 
+    // Phase 2b: Fetch Ports Metadata (Serial for now, low volume)
+    if !ports_repos.is_empty() {
+        let bucket_url =
+            std::env::var("APL_R2_BUCKET_URL").unwrap_or_else(|_| "https://apl.pub".to_string());
+        println!(
+            "Phase 2b: Fetching metadata for {} ports from {}...",
+            ports_repos.len(),
+            bucket_url
+        );
+
+        for port_name in ports_repos {
+            match forges::ports::fetch_releases(&client, &port_name, &bucket_url).await {
+                Ok(releases) => {
+                    let source_key = format!("ports:{}", port_name);
+                    master_release_cache.insert(source_key, releases);
+                }
+                Err(e) => {
+                    println!("   ⚠ Failed to fetch port {}: {}", port_name, e);
+                }
+            }
+        }
+    }
+
     // Build dirty keys set
     let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
         .iter()
         .map(|key| format!("github:{}/{}", key.owner, key.repo))
         .collect();
+    // Ports are always considered "dirty"/fast-check for now since we don't have etags yet
+    // Or we just rely on force_full. For this implementation, we'll assume ports are cheap to re-check.
 
     // Pass 3.5: Build Graph
     let mut stub_index = PackageIndex::new();
@@ -438,6 +476,29 @@ pub async fn generate_index_from_registry(
                                 {
                                     versions.push((release.tag_name, extracted, normalized));
                                 }
+                            }
+                            (versions, Some(Arc::new(map)))
+                        }
+                        DiscoveryConfig::Ports { name: _ } => {
+                            let releases = if let Some(key) = pkg_source_map_clone.get(&pkg_name) {
+                                master_release_cache_clone
+                                    .get(key)
+                                    .cloned()
+                                    .unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+
+                            let mut versions = Vec::new();
+                            let mut map = HashMap::new();
+                            for release in releases {
+                                map.insert(release.tag_name.clone(), release.clone());
+                                // Ports implicitly use semver/simple tags
+                                versions.push((
+                                    release.tag_name.clone(),
+                                    release.tag_name.clone(),
+                                    release.tag_name.clone(),
+                                ));
                             }
                             (versions, Some(Arc::new(map)))
                         }
