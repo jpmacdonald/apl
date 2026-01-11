@@ -231,6 +231,7 @@ impl std::str::FromStr for Package {
 pub struct PackageTemplate {
     pub package: PackageInfoTemplate,
     pub discovery: DiscoveryConfig,
+    #[serde(default)]
     pub assets: AssetConfig,
     #[serde(default)]
     pub source: Option<SourceTemplate>,
@@ -284,6 +285,7 @@ pub enum DiscoveryConfig {
         include_prereleases: bool,
     },
     Ports {
+        #[serde(rename = "ports")]
         name: String, // e.g. "ruby"
     },
     Manual {
@@ -308,6 +310,9 @@ fn default_tag_pattern() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AssetSelector {
+    /// Auto-detect using typed Pattern Matching (recommended)
+    /// Auto-detect using typed Pattern Matching (recommended)
+    Auto { auto: bool },
     /// Match files ending with this string (e.g. "x86_64-apple-darwin.tar.gz")
     Suffix { suffix: String },
     /// Match files matching this regex
@@ -319,12 +324,8 @@ pub enum AssetSelector {
 }
 
 /// How to construct asset URLs
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AssetConfig {
-    /// Support for tools with a single multi-arch binary (e.g. shell scripts)
-    #[serde(default)]
-    pub universal: bool,
-
     /// Explicit selectors for each architecture.
     /// Flattened so they appear directly under `[assets]` in TOML.
     #[serde(flatten)]
@@ -416,7 +417,6 @@ homepage = "https://example.com"
 manual = ["1.0.0"]
 
 [assets]
-universal = true
 skip_checksums = true
 universal-macos = { suffix = "bin" }
 

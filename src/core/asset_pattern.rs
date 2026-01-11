@@ -8,6 +8,8 @@ pub enum OsVariant {
     Darwin,
     MacOS,
     Osx,
+    Linux,
+    Windows,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +48,10 @@ impl AssetPattern {
             Some(OsVariant::Darwin)
         } else if f.contains("osx") {
             Some(OsVariant::Osx)
+        } else if f.contains("linux") {
+             Some(OsVariant::Linux)
+        } else if f.contains("windows") || f.contains("win") {
+             Some(OsVariant::Windows)
         } else {
             None
         };
@@ -82,17 +88,56 @@ impl AssetPattern {
         Self { os, arch, ext }
     }
 
+    /// Construct a pattern from a target triple string (e.g. "arm64-macos").
+    pub fn from_target(target: &str) -> Self {
+        let t = target.to_lowercase();
+        
+        let os = if t.contains("macos") || t.contains("darwin") {
+            Some(OsVariant::MacOS)
+        } else if t.contains("linux") {
+            Some(OsVariant::Linux)
+        } else if t.contains("windows") {
+            Some(OsVariant::Windows)
+        } else {
+            None
+        };
+
+        let arch = if t.contains("arm64") || t.contains("aarch64") {
+            Some(ArchVariant::Arm64)
+        } else if t.contains("x86_64") || t.contains("amd64") {
+            Some(ArchVariant::X86_64)
+        } else {
+            None
+        };
+
+        Self { os, arch, ext: None }
+    }
+
     /// Check if this pattern is semantically equivalent to another.
     /// Used to match expected asset pattern against actual GitHub assets.
     pub fn matches(&self, other: &AssetPattern) -> bool {
         // OS check (Equivalent: MacOS/Darwin/Osx)
         let os_match = match (self.os, other.os) {
-            (Some(_), Some(_)) => true, // Any macOS/Darwin variant matches another
+            (Some(o1), Some(o2)) => matches!(
+                (o1, o2),
+                (OsVariant::MacOS, OsVariant::MacOS)
+                    | (OsVariant::MacOS, OsVariant::Darwin)
+                    | (OsVariant::MacOS, OsVariant::Osx)
+                    | (OsVariant::Darwin, OsVariant::MacOS)
+                    | (OsVariant::Darwin, OsVariant::Darwin)
+                    | (OsVariant::Darwin, OsVariant::Osx)
+                    | (OsVariant::Osx, OsVariant::MacOS)
+                    | (OsVariant::Osx, OsVariant::Darwin)
+                    | (OsVariant::Osx, OsVariant::Osx)
+                    | (OsVariant::Linux, OsVariant::Linux)
+                    | (OsVariant::Windows, OsVariant::Windows)
+            ),
             (None, None) => true,
             _ => false,
         };
 
         // Arch check (Equivalent: Arm64/Aarch64, X86_64/Amd64)
+        // If candidate (other) has no architecture, but matches OS, we treat it as Universal/Rosetta-compatible.
         let arch_match = match (self.arch, other.arch) {
             (Some(a1), Some(a2)) => matches!(
                 (a1, a2),
@@ -105,26 +150,26 @@ impl AssetPattern {
                     | (ArchVariant::Amd64, ArchVariant::X86_64)
                     | (ArchVariant::Amd64, ArchVariant::Amd64)
             ),
+            (Some(_), None) => true, // Treat missing arch in candidate as Universal match
             (None, None) => true,
             _ => false,
         };
 
         // Extension check (Fuzzy matching for common archive formats)
+        // If self.ext is None, we accept any extension from the candidate.
         let ext_match = match (self.ext, other.ext) {
             (Some(e1), Some(e2)) => {
                 if e1 == e2 {
                     true
                 } else {
                     // Accept zip vs tar.gz fallback if specifically requested or common
-                    // For now, let's keep it strict or allow common swaps?
-                    // User mentioned ".zip vs .tar.gz" in older releases.
                     matches!(
                         (e1, e2),
                         (ExtVariant::Zip, ExtVariant::TarGz) | (ExtVariant::TarGz, ExtVariant::Zip)
                     )
                 }
             }
-            (None, None) => true,
+            (None, _) => true,
             _ => false,
         };
 

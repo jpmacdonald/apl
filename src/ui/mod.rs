@@ -51,8 +51,8 @@
 //!
 //! // Prepare for parallel downloads
 //! output.prepare_pipeline(&[
-//!     (PackageName::new("ripgrep"), Some(Version::from("14.1.0"))),
-//!     (PackageName::new("fd"), Some(Version::from("10.2.0"))),
+//!     (PackageName::new("ripgrep"), Some(Version::from("14.1.0")), 1024),
+//!     (PackageName::new("fd"), Some(Version::from("10.2.0")), 2048),
 //! ]);
 //!
 //! // Update progress

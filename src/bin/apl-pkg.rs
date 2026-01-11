@@ -474,7 +474,6 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
             include_prereleases: false,
         },
         assets: AssetConfig {
-            universal: false,
             select,
             skip_checksums: false,
             checksum_url: None,

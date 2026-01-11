@@ -250,21 +250,23 @@ pub fn auto_parse_version(tag: &str) -> Option<String> {
     None
 }
 
-pub fn guess_github_repo(url: &str) -> Option<String> {
-    if url.contains("github.com") {
-        let parts: Vec<&str> = url.split('/').collect();
-        if parts.len() >= 5 {
-            return Some(format!("{}/{}", parts[3], parts[4]));
-        }
-    }
-    None
-}
+
+
+use crate::core::asset_pattern::AssetPattern;
 
 pub fn find_asset_by_selector<'a>(
     assets: &'a [AssetInfo],
     selector: &AssetSelector,
+    target_key: &str,
 ) -> Option<&'a AssetInfo> {
     assets.iter().find(|asset| match selector {
+        AssetSelector::Auto { .. } => {
+            // Generate expected pattern from target key (e.g. "arm64-macos")
+            let expected = AssetPattern::from_target(target_key);
+            // Parse actual pattern from asset filename
+            let actual = AssetPattern::from_filename(&asset.name);
+            expected.matches(&actual)
+        }
         AssetSelector::Suffix { suffix } => asset.name.ends_with(suffix),
         AssetSelector::Regex { regex } => {
             if let Ok(re) = regex::Regex::new(regex) {

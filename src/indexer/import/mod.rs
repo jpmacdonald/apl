@@ -50,7 +50,6 @@ pub fn analyze_upstream_url(url: &str) -> Result<(DiscoveryConfig, AssetConfig)>
             );
 
             let assets = AssetConfig {
-                universal: false,
                 select,
                 skip_checksums: false,
                 checksum_url: None,
@@ -113,7 +112,7 @@ mod tests {
         let url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0.tar.gz";
         let (_, assets) = analyze_upstream_url(url).unwrap();
 
-        assert!(!assets.universal);
+
         assert!(assets.select.contains_key("arm64-macos"));
         assert!(assets.select.contains_key("x86_64-macos"));
     }

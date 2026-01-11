@@ -12,7 +12,6 @@ use crate::core::index::{HashType, IndexBinary, PackageIndex, VersionInfo};
 use crate::package::{DiscoveryConfig, PackageTemplate};
 use crate::types::PackageName;
 use anyhow::Result;
-// use crossterm::style::Stylize;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::fs;
@@ -745,9 +744,25 @@ pub async fn package_to_index_ver(
 
     let mut binaries = Vec::new();
 
-    // Strategy 1: Explicit selectors for each arch
-    for (arch_name, selector) in &template.assets.select {
-        if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
+    // Asset Selection
+    // Default to Auto selection for standard macOS architectures if no explicit selectors are provided.
+    let selectors: Vec<(String, crate::package::AssetSelector)> = if template.assets.select.is_empty() {
+        vec![
+            (
+                "arm64-macos".to_string(),
+                crate::package::AssetSelector::Auto { auto: true },
+            ),
+            (
+                "x86_64-macos".to_string(),
+                crate::package::AssetSelector::Auto { auto: true },
+            ),
+        ]
+    } else {
+        template.assets.select.clone().into_iter().collect()
+    };
+
+    for (arch_name, selector) in &selectors {
+        if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector, arch_name) {
             // Resolve hash
             let hash_res = resolve_hash(
                 ctx.client,
@@ -787,42 +802,7 @@ pub async fn package_to_index_ver(
         }
     }
 
-    // Strategy 2: Universal binary
-    if template.assets.universal {
-        // For universal, we need a way to find it.
-        // We'll use the "universal-macos" key or fallback to a heuristic if missing.
-        let selector = template.assets.select.get("universal-macos").or(None);
 
-        if let Some(selector) = selector {
-            if let Some(asset) = discovery::find_asset_by_selector(&release_info.assets, selector) {
-                let hash = resolve_hash(
-                    ctx.client,
-                    template,
-                    &asset.download_url,
-                    full_tag,
-                    ctx.hash_cache.clone(),
-                    ctx.releases_map.clone(),
-                )
-                .await?;
-
-                binaries.push(IndexBinary {
-                    arch: crate::types::Arch::Universal,
-                    url: asset.download_url.clone(),
-                    hash: crate::types::Sha256Hash::new(hash.clone()),
-                    hash_type: HashType::Sha256,
-                });
-
-                // Mirror asset to CAS if store is enabled
-                if let Some(store) = get_artifact_store().await {
-                    if let Err(e) =
-                        mirror_asset(ctx.client, &asset.download_url, &hash, &store).await
-                    {
-                        tracing::warn!("      ⚠️  Failed to mirror {}: {}", asset.name, e);
-                    }
-                }
-            }
-        }
-    }
 
     if binaries.is_empty() {
         anyhow::bail!("No supported binaries found for version {display_version}");
@@ -1229,7 +1209,6 @@ mod indexer_tests {
                 include_prereleases: false,
             },
             assets: AssetConfig {
-                universal: false,
                 select: {
                     let mut map = HashMap::new();
                     map.insert(
@@ -1320,7 +1299,6 @@ mod indexer_tests {
                 manual: vec!["1.0.0".to_string()],
             },
             assets: AssetConfig {
-                universal: true,
                 select,
                 skip_checksums: true,
                 checksum_url: None,
