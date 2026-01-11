@@ -1,3 +1,4 @@
+[package]
 name = "apl"
 version = "0.0.0-dev" # Managed dynamically by git tags during release. Do not bump manually.
 author = "Jim Macdonald <jim@jamesmacdonald.com>"
