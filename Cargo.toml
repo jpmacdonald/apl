@@ -1,13 +1,11 @@
 [package]
 name = "apl"
 version = "0.0.0-dev" # Managed dynamically by git tags during release. Do not bump manually.
-author = "Jim Macdonald <jim@jamesmacdonald.com>"
-edition = "2024"
+edition = "2026"
 description = "apl - A Package Layer for macOS"
 license = "MIT"
 repository = "https://github.com/jpmacdonald/apl"
 
-[dependencies]
 # Hashing
 sha2 = "0.10"
 blake3 = "1"
