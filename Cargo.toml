@@ -1,5 +1,5 @@
 name = "apl"
-version = "0.4.6"
+version = "0.0.0-dev" # Managed dynamically by git tags during release. Do not bump manually.
 author = "Jim Macdonald <jim@jamesmacdonald.com>"
 edition = "2024"
 description = "apl - A Package Layer for macOS"
