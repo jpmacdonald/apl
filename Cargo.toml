@@ -6,6 +6,7 @@ description = "apl - A Package Layer for macOS"
 license = "MIT"
 repository = "https://github.com/jpmacdonald/apl"
 
+[dependencies]
 # Hashing
 sha2 = "0.10"
 blake3 = "1"
