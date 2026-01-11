@@ -12,7 +12,7 @@ use crate::core::index::{HashType, IndexBinary, PackageIndex, VersionInfo};
 use crate::package::{DiscoveryConfig, PackageTemplate};
 use crate::types::PackageName;
 use anyhow::Result;
-use crossterm::style::Stylize;
+// use crossterm::style::Stylize;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::fs;
@@ -33,8 +33,8 @@ pub async fn generate_index_from_registry(
     registry_dir: &Path,
     package_filter: Option<&str>,
     force_full: bool,
-    verbose: bool,
-    reporter: Arc<dyn crate::ui::Reporter>,
+    _verbose: bool,
+    _reporter: Arc<dyn crate::ui::Reporter>,
 ) -> Result<PackageIndex> {
     // Configure client with timeout (overshadowing the argument)
     let client = reqwest::Client::builder()
@@ -46,7 +46,6 @@ pub async fn generate_index_from_registry(
 
     // Initialize artifact store (optional, only if configured)
     let artifact_store: Option<Arc<ArtifactStore>> = get_artifact_store().await;
-    if artifact_store.is_some() {
     if artifact_store.is_some() {
         println!("   Artifact Store enabled (will mirror to R2)");
     }
@@ -68,7 +67,6 @@ pub async fn generate_index_from_registry(
             }
         }
     } else {
-        if force_full {
         if force_full {
             println!("   Force full rebuild requested.");
         }
@@ -147,7 +145,7 @@ pub async fn generate_index_from_registry(
                 pkg_source_map.insert(template.package.name.to_string(), source_key);
             }
         } else if let DiscoveryConfig::Ports { name } = &template.discovery {
-            let source_key = format!("ports:{}", name);
+            let source_key = format!("ports:{name}");
             if !pkg_source_map.values().any(|k| k == &source_key) {
                 ports_repos.push(name.clone());
             }
@@ -235,10 +233,7 @@ pub async fn generate_index_from_registry(
 
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
     let total_dirty = dirty_repos.len();
-    println!(
-        "Phase 2: Fetching metadata for {} repositories...",
-        total_dirty
-    );
+    println!("Phase 2: Fetching metadata for {total_dirty} repositories...");
 
     if !dirty_repos.is_empty() {
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
@@ -323,8 +318,9 @@ pub async fn generate_index_from_registry(
 
         if !fetch_errors.is_empty() {
             println!(
-                fetch_errors.len(),
-                fetch_errors.join("; ")
+                "   {len} batch(es) failed: {errs}",
+                len = fetch_errors.len(),
+                errs = fetch_errors.join("; ")
             );
         }
     }
@@ -346,12 +342,11 @@ pub async fn generate_index_from_registry(
         for port_name in ports_repos {
             match forges::ports::fetch_releases(&client, &port_name, &bucket_url).await {
                 Ok(releases) => {
-                    let source_key = format!("ports:{}", port_name);
+                    let source_key = format!("ports:{port_name}");
                     master_release_cache.insert(source_key, releases);
                 }
                 Err(e) => {
-                Err(e) => {
-                    println!("   Failed to fetch port {}: {}", port_name, e);
+                    println!("   Failed to fetch port {port_name}: {e}");
                 }
             }
         }
@@ -594,21 +589,17 @@ pub async fn generate_index_from_registry(
             let status_msg = if !errors.is_empty() && success_count == 0 {
                 let human_err = humanize_error(&errors[0].to_string());
                 match human_err.contains("Skipped:") {
-                    true => format!("({})", human_err),
-                    false => format!("(Skipped: {})", human_err),
+                    true => format!("({human_err})"),
+                    false => format!("(Skipped: {human_err})"),
                 }
             } else if !errors.is_empty() {
-                format!("(partial)")
+                "(partial)".to_string()
             } else {
                 String::new()
             };
 
             println!(
-                "   [{}/{}] {:<25} {}",
-                success_count,
-                total_versions,
-                pkg_name,
-                status_msg
+                "   [{success_count}/{total_versions}] {pkg_name:<25} {status_msg}"
             );
 
             if errors.is_empty() {
@@ -622,8 +613,7 @@ pub async fn generate_index_from_registry(
     }
 
     println!(
-        "Phase 3: Complete - {} packages fully indexed",
-        fully_indexed
+        "Phase 3: Complete - {fully_indexed} packages fully indexed"
     );
 
     hash_cache.lock().await.save()?;
