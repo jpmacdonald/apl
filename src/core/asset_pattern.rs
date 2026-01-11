@@ -42,7 +42,7 @@ impl AssetPattern {
     pub fn from_filename(filename: &str) -> Self {
         let f = filename.to_lowercase();
 
-        let os = if f.contains("macos") || f.contains("apple") {
+        let os = if f.contains("macos") || f.contains("apple") || f.contains("-mac") || f.contains("_mac") || f.ends_with("mac") {
             Some(OsVariant::MacOS)
         } else if f.contains("darwin") {
             Some(OsVariant::Darwin)
@@ -56,14 +56,10 @@ impl AssetPattern {
             None
         };
 
-        let arch = if f.contains("arm64") {
+        let arch = if f.contains("arm64") || f.contains("aarch64") {
             Some(ArchVariant::Arm64)
-        } else if f.contains("aarch64") {
-            Some(ArchVariant::Aarch64)
-        } else if f.contains("x86_64") {
+        } else if f.contains("x86_64") || f.contains("amd64") || f.contains("x64") {
             Some(ArchVariant::X86_64)
-        } else if f.contains("amd64") || f.contains("x64") {
-            Some(ArchVariant::Amd64)
         } else {
             None
         };
@@ -76,6 +72,8 @@ impl AssetPattern {
             Some(ExtVariant::TarZst)
         } else if f.ends_with(".zip") {
             Some(ExtVariant::Zip)
+        } else if f.ends_with(".tbz") || f.ends_with(".tbz2") || f.ends_with(".tar.bz2") {
+            Some(ExtVariant::TarGz) // Treat bzip as common archive, we support extraction
         } else {
             // Check if it looks like a raw binary
             if !f.contains('.') {
@@ -190,7 +188,7 @@ mod tests {
 
         let p2 = AssetPattern::from_filename("syncthing-darwin-aarch64-v0.14.48.tar.gz");
         assert_eq!(p2.os, Some(OsVariant::Darwin));
-        assert_eq!(p2.arch, Some(ArchVariant::Aarch64));
+        assert_eq!(p2.arch, Some(ArchVariant::Arm64));
         assert_eq!(p2.ext, Some(ExtVariant::TarGz));
     }
 
@@ -198,8 +196,11 @@ mod tests {
     fn test_pattern_matching() {
         let expected = AssetPattern::from_filename("package-macos-arm64.zip");
         let actual = AssetPattern::from_filename("package-darwin-aarch64.tar.gz");
-
         assert!(expected.matches(&actual));
+
+        let mac_suffix = AssetPattern::from_filename("amber-x86_64-mac.zip");
+        let target = AssetPattern::from_target("x86_64-macos");
+        assert!(target.matches(&mac_suffix));
 
         let wrong_arch = AssetPattern::from_filename("package-macos-x86_64.zip");
         assert!(!expected.matches(&wrong_arch));

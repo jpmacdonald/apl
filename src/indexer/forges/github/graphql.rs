@@ -93,7 +93,7 @@ pub async fn fetch_batch_releases(
                         tagName
                         isDraft
                         isPrerelease
-                        releaseAssets(first: 30) {{
+                        releaseAssets(first: 100) {{
                             nodes {{
                                 name
                                 downloadUrl

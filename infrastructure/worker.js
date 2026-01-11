@@ -32,14 +32,15 @@ export default {
             });
         }
 
-        if (path.startsWith("/cas/") || path.startsWith("/deltas/")) {
+        if (path.startsWith("/ports/") || path.startsWith("/cas/") || path.startsWith("/deltas/")) {
             const key = path.slice(1);
             const response = await env.APL_BUCKET.get(key);
             if (!response) return new Response("Artifact not found", { status: 404 });
             return new Response(response.body, {
                 headers: {
-                    "Content-Type": "application/octet-stream",
-                    "Cache-Control": "public, max-age=31536000, immutable"
+                    "Content-Type": path.endsWith(".json") ? "application/json" : "application/octet-stream",
+                    "Cache-Control": path.startsWith("/ports/") ? "public, max-age=60" : "public, max-age=31536000, immutable",
+                    "Access-Control-Allow-Origin": "*"
                 },
             });
         }
