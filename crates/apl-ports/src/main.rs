@@ -1,14 +1,17 @@
 use anyhow::{Context, Result};
-use apl_types::{PortManifest, PortConfig};
+use apl_types::{PortConfig, PortManifest};
 use clap::Parser;
 use glob::glob;
-use opendal::{Operator, services::S3};
+use opendal::{services::S3, Operator};
 use std::path::PathBuf;
 use tokio::fs;
 
 // Define strategies module (will be implemented next)
 mod strategies;
-use strategies::{HashiCorpStrategy, GitHubStrategy, GolangStrategy, NodeStrategy, AwsStrategy, PythonStrategy, RubyStrategy};
+use strategies::{
+    AwsStrategy, GitHubStrategy, GolangStrategy, HashiCorpStrategy, NodeStrategy, PythonStrategy,
+    RubyStrategy,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -20,7 +23,7 @@ struct Args {
     /// Filter to run a specific port
     #[arg(short, long)]
     filter: Option<String>,
-    
+
     /// Dry run mode (don't upload to R2)
     #[arg(long, default_value_t = false)]
     dry_run: bool,
@@ -29,19 +32,19 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    
+
     // Initialize R2 Operator
     let builder = S3::default()
         .bucket("apl-store") // Env var overrides: APL_ARTIFACT_STORE_BUCKET
         .endpoint("https://b32f5efef56e1b61c8ef5a2c77f07fbb.r2.cloudflarestorage.com")
         .region("auto");
-    
+
     let op = Operator::new(builder)?.finish();
 
     // Find all port.toml files
     let pattern = args.ports_dir.join("**").join("port.toml");
     let pattern_str = pattern.to_str().context("Invalid path pattern")?;
-    
+
     for entry in glob(pattern_str)? {
         let path = entry?;
         let parent_dir = path.parent().unwrap();
@@ -61,12 +64,10 @@ async fn main() -> Result<()> {
 
         // Instantiate Strategy
         let strategy: Box<dyn apl_ports::Strategy> = match &manifest.package.config {
-            PortConfig::HashiCorp { product } => {
-                Box::new(HashiCorpStrategy::new(product.clone()))
-            },
+            PortConfig::HashiCorp { product } => Box::new(HashiCorpStrategy::new(product.clone())),
             PortConfig::GitHub { owner, repo } => {
                 Box::new(GitHubStrategy::new(owner.clone(), repo.clone()))
-            },
+            }
             PortConfig::Golang => Box::new(GolangStrategy),
             PortConfig::Node => Box::new(NodeStrategy),
             PortConfig::Aws => Box::new(AwsStrategy),
@@ -81,21 +82,27 @@ async fn main() -> Result<()> {
         // Execute
         let artifacts = strategy.fetch_artifacts().await?;
         println!("  Found {} artifacts. Validating...", artifacts.len());
-        
+
         // Validation with nice error reporting
         for (i, artifact) in artifacts.iter().enumerate() {
             if let Err(_e) = artifact.validate() {
-               eprintln!("  [ERROR] Artifact {}/{} ({}) is invalid: {}", 
-                   i+1, artifacts.len(), artifact.version, _e);
-               // We could panic/exit here, or filter them out.
-               // For strictness, let's filter but warn loudly? 
-               // Or fail the whole port? User said "catch things... GUARANTEE validity".
-               // So if one is invalid, the index is corrupt?
-               // Let's filter invalid ones for resilience but warn.
+                eprintln!(
+                    "  [ERROR] Artifact {}/{} ({}) is invalid: {}",
+                    i + 1,
+                    artifacts.len(),
+                    artifact.version,
+                    _e
+                );
+                // We could panic/exit here, or filter them out.
+                // For strictness, let's filter but warn loudly?
+                // Or fail the whole port? User said "catch things... GUARANTEE validity".
+                // So if one is invalid, the index is corrupt?
+                // Let's filter invalid ones for resilience but warn.
             }
         }
-        
-        let valid_artifacts: Vec<_> = artifacts.into_iter()
+
+        let valid_artifacts: Vec<_> = artifacts
+            .into_iter()
             .filter(|a| {
                 if a.validate().is_err() {
                     // Already logged above
@@ -105,21 +112,77 @@ async fn main() -> Result<()> {
                 }
             })
             .collect();
-            
-        println!("  {} valid artifacts ready for index.", valid_artifacts.len());
 
+        println!(
+            "  {} valid artifacts ready for index.",
+            valid_artifacts.len()
+        );
+
+        // Incremental Update Logic
+        let r2_path = format!("ports/{port_name}/index.json");
+
+        // 1. Fetch existing index
+        let existing_artifacts = match fetch_existing_index(&op, &r2_path).await {
+            Ok(arts) => {
+                println!(
+                    "  [Incremental] Loaded {} existing artifacts from R2",
+                    arts.len()
+                );
+                arts
+            }
+            Err(_) => {
+                println!("  [Incremental] No existing index found (or error), starting fresh.");
+                Vec::new()
+            }
+        };
+
+        // 2. Merge & Deduplicate
+        // Key: (Version, Arch, SHA256) -> Artifact
+        // We prefer the NEW artifact if there's a collision, as it was just validated.
+        let mut merged_map = std::collections::HashMap::new();
+
+        // Load old first
+        for art in existing_artifacts {
+            let key = (art.version.clone(), art.arch.clone(), art.sha256.clone());
+            merged_map.insert(key, art);
+        }
+
+        // Overlay new
+        for art in valid_artifacts {
+            let key = (art.version.clone(), art.arch.clone(), art.sha256.clone());
+            merged_map.insert(key, art);
+        }
+
+        let mut final_artifacts: Vec<_> = merged_map.into_values().collect();
+
+        // Sort for deterministic output (Semantic versioning sort would be best, but simple string sort is okay for raw index)
+        final_artifacts.sort_by(|a, b| b.version.cmp(&a.version));
+
+        println!(
+            "  [Incremental] Final index contains {} artifacts.",
+            final_artifacts.len()
+        );
+
+        // 3. Upload
+        let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
 
         if args.dry_run {
-            println!("  [Dry Run] Would upload ports/{port_name}/index.json");
+            println!(
+                "  [Dry Run] Would upload ports/{port_name}/index.json (Size: {} bytes)",
+                index_json.len()
+            );
             continue;
         }
 
-        // Upload to R2
-        let index_json = serde_json::to_vec_pretty(&valid_artifacts)?;
-        let r2_path = format!("ports/{port_name}/index.json");
         op.write(&r2_path, index_json).await?;
         println!("  Uploaded to {r2_path}");
     }
 
     Ok(())
+}
+
+async fn fetch_existing_index(op: &Operator, path: &str) -> Result<Vec<apl_types::Artifact>> {
+    let data = op.read(path).await?.to_vec();
+    let artifacts: Vec<apl_types::Artifact> = serde_json::from_slice(&data)?;
+    Ok(artifacts)
 }
