@@ -168,6 +168,14 @@ When a package sets `build = true` (e.g., Ruby, OpenSSL), APL becomes a build sy
 5. **Artifact Storage**: The result is bundled (`tar.zst`), hashed (SHA256), and uploaded to the R2-backed **Artifact Store**.
 6. **Index Entry**: The package is added to the index pointing to the R2 URL (`apl.pub/cas/<hash>`).
 
+#### Strategy C: Ports Adapter (Metadata Proxy)
+For binaries hosted on arbitrary websites (e.g. Terraform on HashiCorp, Python.org), we use **Ports** as a standardized adapter layer:
+1.  **The Port**: An external script scrapes the vendor's website and publishes a normalized `index.json` to `apl.pub/ports/<name>/`.
+2.  **The Registry**: The TOML file simply points to `discovery = { ports = "terraform" }`.
+3.  **The Indexer**: Consumes the JSON from the Port as if it were a clean API, downloading and verifying assets defined therein.
+
+This decouples the core `apl-pkg` tool from the complexity of scraping thousands of different website layouts.
+
 This allows APL to distribute binaries for tools that don't provide them officially, while maintaining a pure, reproducible chain.
 
 ### Binary Index

@@ -1,7 +1,6 @@
 use crate::indexer::forges::traits::{AssetInfo, ReleaseInfo};
 use crate::types::Sha256Digest;
 use anyhow::Result;
-use serde::Deserialize;
 use std::collections::HashMap;
 
 /// Metadata for a port release, stored in R2 at `ports/<name>/<version>/<arch>.json`
@@ -9,14 +8,10 @@ use std::collections::HashMap;
 ///
 /// For the prototype, we assume we can list the bucket prefix `ports/<name>/`
 /// and find JSON files that describe the release.
-#[derive(Debug, Clone, Deserialize)]
-pub struct PortMetadata {
-    pub name: String,
-    pub version: String,
-    pub arch: String,
-    pub url: String, // URL to the blob in /blobs/sha256/...
-    pub sha256: String,
-}
+use apl_types::Artifact;
+
+// Removed local PortMetadata struct definition as we now use apl_types::Artifact
+
 
 pub async fn fetch_releases(
     client: &reqwest::Client,
@@ -38,11 +33,11 @@ pub async fn fetch_releases(
     }
     let resp = resp.error_for_status()?;
 
-    let entries: Vec<PortMetadata> = resp.json().await?;
+    let entries: Vec<Artifact> = resp.json().await?;
     println!("   [INFO] Found {} remote port entries for {}", entries.len(), package_name);
 
     // Group by version
-    let mut by_version: HashMap<String, Vec<PortMetadata>> = HashMap::new();
+    let mut by_version: HashMap<String, Vec<Artifact>> = HashMap::new();
     for entry in entries {
         by_version
             .entry(entry.version.clone())

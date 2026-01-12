@@ -1,0 +1,3 @@
+[package]
+name = "ruby"
+strategy = "ruby"

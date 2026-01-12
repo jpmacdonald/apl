@@ -1,0 +1,58 @@
+version = 1
+generated_at = "1767156008"
+
+[[packages]]
+name = "bottom"
+version = "0.10.2"
+blake3 = "101532fa85f1da4bb3849b220782003f23fb28e321691e0adf623de569b3b201"
+url = "https://github.com/ClementTsang/bottom/releases/download/0.10.2/bottom_aarch64-apple-darwin.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "fzf"
+version = "0.60.2"
+blake3 = "7131f1f4eec87de29a2c4b9d8aa5e02e630a59a9a20d311226001aa4372d577a"
+url = "https://github.com/junegunn/fzf/releases/download/v0.60.2/fzf-0.60.2-darwin_arm64.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "hyperfine"
+version = "1.19.0"
+blake3 = "af92c9c3868e0ffcfd4375650958f00155f32acf1fe6205522b9d1f8a20c8c3c"
+url = "https://github.com/sharkdp/hyperfine/releases/download/v1.19.0/hyperfine-v1.19.0-aarch64-apple-darwin.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "just"
+version = "1.40.0"
+blake3 = "79a25decfef0b889b23b725c010d808b085941234edc9fbaedf064433a16af55"
+url = "https://github.com/casey/just/releases/download/1.40.0/just-1.40.0-aarch64-apple-darwin.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "neovim"
+version = "0.10.4"
+blake3 = "7591bc3f2a9591a96d47bcf2cf054e3178e4ef4cd3aeace00137843aed1f0e7d"
+url = "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-macos-arm64.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "ripgrep"
+version = "14.1.1"
+blake3 = "8d9942032585ea8ee805937634238d9aee7b210069f4703c88fbe568e26fb78a"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+arch = "arm64"
+
+[[packages]]
+name = "vlc"
+version = "3.0.21"
+blake3 = "81884ac7c1a8c4594616c5d8d8cc76d55486750163dc0ab1120545c7603a67d8"
+url = "https://download.videolan.org/pub/videolan/vlc/3.0.21/macosx/vlc-3.0.21-arm64.dmg"
+arch = "arm64"
+
+[[packages]]
+name = "zed"
+version = "0.217.3"
+blake3 = "30c69b9adc851a11b8a3857dfae7e0cd50ef2bc4968d5e8f56af064519235810"
+url = "https://github.com/zed-industries/zed/releases/download/v0.217.3/Zed-aarch64.dmg"
+arch = "arm64"

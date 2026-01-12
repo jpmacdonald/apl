@@ -1,0 +1,3 @@
+[package]
+name = "aws"
+strategy = "aws"

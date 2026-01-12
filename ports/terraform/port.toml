@@ -1,0 +1,5 @@
+[package]
+name = "terraform"
+strategy = "hashicorp"
+product = "terraform"
+version_constraint = ">= 1.0.0"
