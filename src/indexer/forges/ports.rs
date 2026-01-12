@@ -39,6 +39,7 @@ pub async fn fetch_releases(
     let resp = resp.error_for_status()?;
 
     let entries: Vec<PortMetadata> = resp.json().await?;
+    println!("   [INFO] Found {} remote port entries for {}", entries.len(), package_name);
 
     // Group by version
     let mut by_version: HashMap<String, Vec<PortMetadata>> = HashMap::new();
