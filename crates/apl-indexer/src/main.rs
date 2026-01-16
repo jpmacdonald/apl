@@ -203,6 +203,7 @@ async fn main() -> Result<()> {
         Commands::Check => {
             println!("Validating registry integrity...");
             let mut errors = 0;
+            let mut warnings = 0;
 
             let toml_files: Vec<_> =
                 apl_core::indexer::walk_registry_toml_files(&registry_dir)?.collect();
@@ -222,6 +223,8 @@ async fn main() -> Result<()> {
 
             // Pass 2: Validate
             for (path, template) in templates {
+                let pkg_name = &template.package.name;
+
                 // Check dependencies
                 for dep_str in template
                     .dependencies
@@ -233,8 +236,8 @@ async fn main() -> Result<()> {
                     let dep = apl_schema::types::PackageName::new(dep_str);
                     if !known_packages.contains(&dep) {
                         eprintln!(
-                            "   {}: Missing dependency '{}' (path: {})",
-                            template.package.name,
+                            "   [ERR] {}: Missing dependency '{}' (path: {})",
+                            pkg_name,
                             dep_str,
                             path.display()
                         );
@@ -242,12 +245,32 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // Check version (if legacy-like validation is needed, but templates manage versions differently)
+                // Check Metadata
+                if template.package.description.trim().is_empty() {
+                    println!("   [WARN] {}: Missing description", pkg_name);
+                    warnings += 1;
+                }
+                if template.package.license.trim().is_empty() {
+                    println!("   [WARN] {}: Missing license", pkg_name);
+                    warnings += 1;
+                }
+
+                // Check Checksum Policy
+                if template.assets.skip_checksums {
+                    println!("   [WARN] {}: Skips checksum verification", pkg_name);
+                    warnings += 1;
+                }
             }
-            if errors == 0 {
-                println!("   All packages valid.");
-            } else {
+
+            println!("\nSummary:");
+            println!("  Packages: {}", known_packages.len());
+            println!("  Errors:   {}", errors);
+            println!("  Warnings: {}", warnings);
+
+            if errors > 0 {
                 anyhow::bail!("Registry check failed with {errors} errors.");
+            } else {
+                println!("Registry integrity verified.");
             }
         }
         Commands::Index {
