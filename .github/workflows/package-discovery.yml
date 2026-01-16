@@ -1,0 +1,32 @@
+name: Package Discovery
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+  workflow_dispatch:
+
+jobs:
+  identify-missing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout apl
+        uses: actions/checkout@v4
+        with:
+          path: apl
+
+      - name: Checkout registry
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/apl-packages
+          path: apl-packages
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Identify Missing Packages
+        run: |
+          cd apl
+          # The script expects ../apl-packages/packages
+          python3 scripts/identify_missing_popular.py >> $GITHUB_STEP_SUMMARY
