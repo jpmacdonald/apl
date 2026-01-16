@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 
+use futures::stream::{self, StreamExt};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -95,60 +96,73 @@ impl Strategy for HashiCorpStrategy {
             .json::<HashiCorpIndex>()
             .await?;
 
+        let resp_len = resp.versions.len();
         let mut artifacts = Vec::new();
-        let mut skipped = 0;
+        // let mut skipped = 0;
 
-        // APL currently supports:
-        let allowed_platforms = [
-            ("darwin", "amd64", "x86_64-apple-darwin"),
-            ("darwin", "arm64", "aarch64-apple-darwin"),
-        ];
+        // Filter and collect tasks
+        let pending_versions: Vec<_> = resp
+            .versions
+            .into_iter()
+            .filter(|(version, _)| !version.contains('-') && !known_versions.contains(version))
+            .collect();
 
-        for (version, data) in resp.versions {
-            if version.contains('-') {
-                continue;
-            } // Skip unstable
+        let skipped_count = resp_len - pending_versions.len();
 
-            // Skip already-indexed versions
-            if known_versions.contains(&version) {
-                skipped += 1;
-                continue;
-            }
+        // Process in parallel (concurrency: 10)
+        let mut stream = stream::iter(pending_versions)
+            .map(|(version, data)| {
+                let client = self.client.clone();
+                let product = self.product.clone();
+                async move {
+                    // Fetch SHA256SUMS
+                    let sha_url = format!(
+                        "https://releases.hashicorp.com/{}/{}/{}_{}_SHA256SUMS",
+                        product, version, product, version
+                    );
 
-            // Fetch SHA256SUMS for this version
-            // https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_SHA256SUMS
-            let sha_url = format!(
-                "https://releases.hashicorp.com/{}/{}/{}_{}_SHA256SUMS",
-                self.product, version, self.product, version
-            );
+                    let shas = fetch_shasums(&client, &sha_url).await.unwrap_or_default();
 
-            let shas = fetch_shasums(&self.client, &sha_url)
-                .await
-                .unwrap_or_default();
+                    let mut version_artifacts = Vec::new();
+                    // APL currently supports:
+                    let allowed_platforms = [
+                        ("darwin", "amd64", "x86_64-apple-darwin"),
+                        ("darwin", "arm64", "aarch64-apple-darwin"),
+                    ];
 
-            for build in data.builds {
-                for (os, arch, apl_arch) in allowed_platforms {
-                    if build.os == os && build.arch == arch {
-                        // shas key is filename, e.g. terraform_1.5.0_darwin_amd64.zip
-                        let checksum = shas.get(&build.filename).cloned().unwrap_or_default();
-
-                        if !checksum.is_empty() {
-                            artifacts.push(Artifact {
-                                name: self.product.clone(),
-                                version: version.clone(),
-                                arch: apl_arch.to_string(),
-                                url: build.url.clone(),
-                                sha256: checksum,
-                            });
+                    for build in data.builds {
+                        for (os, arch, apl_arch) in allowed_platforms {
+                            if build.os == os && build.arch == arch {
+                                if let Some(checksum) = shas.get(&build.filename) {
+                                    if !checksum.is_empty() {
+                                        version_artifacts.push(Artifact {
+                                            name: product.clone(),
+                                            version: version.clone(),
+                                            arch: apl_arch.to_string(),
+                                            url: build.url.clone(),
+                                            sha256: checksum.clone(),
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
+                    version_artifacts
                 }
-            }
+            })
+            .buffer_unordered(10);
+
+        while let Some(mut batch) = stream.next().await {
+            artifacts.append(&mut batch);
         }
 
-        if skipped > 0 {
-            println!("  [Incremental] Skipped {skipped} known versions");
+        if skipped_count > 0 {
+            // We can't easily track exact skipped count due to filter logic,
+            // but we can infer it or just be generic.
+            // Let's just say "Skipped known versions" if we have logic to track it
+            println!("  [Incremental] Skipped known/unstable versions");
         }
+
         Ok(artifacts)
     }
 }
@@ -233,55 +247,70 @@ impl Strategy for NodeStrategy {
         let releases = reqwest::get(url).await?.json::<Vec<NodeRelease>>().await?;
 
         let mut artifacts = Vec::new();
-        let mut skipped = 0;
-        let mut processed = 0;
+        // let mut skipped = 0;
+        // let mut processed = 0;
 
-        for release in releases {
-            let version = release.version.trim_start_matches('v').to_string();
+        let total_count = releases.len();
 
-            // Skip already-indexed versions
-            if known_versions.contains(&version) {
-                skipped += 1;
-                continue;
-            }
+        // Filter pending
+        let pending_releases: Vec<_> = releases
+            .into_iter()
+            .filter(|r| {
+                let v = r.version.trim_start_matches('v');
+                !known_versions.contains(v)
+            })
+            .take(20) // Limit processed
+            .collect();
 
-            // Limit new versions to process (avoid hammering upstream on first run)
-            processed += 1;
-            if processed > 20 {
-                break;
-            }
+        let skipped_count = total_count - pending_releases.len();
 
-            // Fetch SHASUMS256.txt for this version
-            let sha_url = format!("https://nodejs.org/dist/{}/SHASUMS256.txt", release.version);
-            // Optimally we'd do this concurrently or lazily, but sequential is fine for factory.
-            let shas = fetch_shasums(&Client::new(), &sha_url)
-                .await
-                .unwrap_or_default();
-
-            for file in &release.files {
-                // files list contains strings like "osx-arm64-tar", "osx-x64-tar"
-                let (apl_arch, suffix) = match file.as_str() {
-                    "osx-arm64-tar" => ("aarch64-apple-darwin", "darwin-arm64.tar.gz"),
-                    "osx-x64-tar" => ("x86_64-apple-darwin", "darwin-x64.tar.gz"),
-                    _ => continue,
-                };
-
-                let filename = format!("node-{}-{}", release.version, suffix);
-                let checksum = shas.get(&filename).cloned().unwrap_or_default();
-
-                if !checksum.is_empty() {
-                    artifacts.push(Artifact {
-                        name: "node".to_string(),
-                        version: version.clone(),
-                        arch: apl_arch.to_string(),
-                        url: format!("https://nodejs.org/dist/{}/{}", release.version, filename),
-                        sha256: checksum,
-                    });
-                }
-            }
+        if pending_releases.is_empty() {
+            println!("  [Incremental] All versions already indexed");
+            return Ok(vec![]);
         }
-        if skipped > 0 {
-            println!("  [Incremental] Skipped {skipped} known versions");
+
+        // Parallel fetch
+        let mut stream = stream::iter(pending_releases)
+            .map(|release| async move {
+                let version = release.version.trim_start_matches('v').to_string();
+                let sha_url = format!("https://nodejs.org/dist/{}/SHASUMS256.txt", release.version);
+                let shas = fetch_shasums(&Client::new(), &sha_url)
+                    .await
+                    .unwrap_or_default();
+
+                let mut batch = Vec::new();
+                for file in &release.files {
+                    let (apl_arch, suffix) = match file.as_str() {
+                        "osx-arm64-tar" => ("aarch64-apple-darwin", "darwin-arm64.tar.gz"),
+                        "osx-x64-tar" => ("x86_64-apple-darwin", "darwin-x64.tar.gz"),
+                        _ => continue,
+                    };
+
+                    let filename = format!("node-{}-{}", release.version, suffix);
+                    if let Some(checksum) = shas.get(&filename) {
+                        if !checksum.is_empty() {
+                            batch.push(Artifact {
+                                name: "node".to_string(),
+                                version: version.clone(),
+                                arch: apl_arch.to_string(),
+                                url: format!(
+                                    "https://nodejs.org/dist/{}/{}",
+                                    release.version, filename
+                                ),
+                                sha256: checksum.clone(),
+                            });
+                        }
+                    }
+                }
+                batch
+            })
+            .buffer_unordered(10);
+
+        while let Some(mut batch) = stream.next().await {
+            artifacts.append(&mut batch);
+        }
+        if skipped_count > 0 {
+            println!("  [Incremental] Skipped {skipped_count} known versions");
         }
         println!("  Found {} Node.js artifacts", artifacts.len());
         Ok(artifacts)
@@ -347,25 +376,34 @@ impl Strategy for AwsStrategy {
             return Ok(vec![]);
         }
 
-        for version in &new_versions {
-            let url = format!("https://awscli.amazonaws.com/AWSCLIV2-{version}.pkg");
-            // We must fetch SHA256 manually
-            let sha256 = download_and_hash(&Client::new(), &url)
-                .await
-                .unwrap_or_else(|e| {
-                    eprintln!("    [WARN] Failed to hash {url}: {e}");
-                    "".to_string() // Validation will fail this later, or we skip?
-                });
+        // Parallel hash
+        let mut stream = stream::iter(new_versions)
+            .map(|version| async move {
+                let url = format!("https://awscli.amazonaws.com/AWSCLIV2-{version}.pkg");
+                let sha = download_and_hash(&Client::new(), &url)
+                    .await
+                    .unwrap_or_else(|e| {
+                        eprintln!("    [WARN] Failed to hash {url}: {e}");
+                        "".to_string()
+                    });
 
-            // Only push if we got a valid SHA (download succeeded)
-            if !sha256.is_empty() {
-                artifacts.push(Artifact {
-                    name: "aws".to_string(),
-                    version: version.clone(),
-                    arch: "universal-apple-darwin".to_string(),
-                    url,
-                    sha256,
-                });
+                if !sha.is_empty() {
+                    Some(Artifact {
+                        name: "aws".to_string(),
+                        version,
+                        arch: "universal-apple-darwin".to_string(),
+                        url,
+                        sha256: sha,
+                    })
+                } else {
+                    None
+                }
+            })
+            .buffer_unordered(5); // Limit concurrency for large downloads
+
+        while let Some(art_opt) = stream.next().await {
+            if let Some(art) = art_opt {
+                artifacts.push(art);
             }
         }
         println!("  Found {} AWS artifacts", artifacts.len());
@@ -399,23 +437,31 @@ impl Strategy for PythonStrategy {
         }
 
         let mut artifacts = Vec::new();
-        for version in &new_versions {
-            // Source tarball
-            let url = format!("https://www.python.org/ftp/python/{version}/Python-{version}.tgz");
+        let mut stream = stream::iter(new_versions)
+            .map(|version| async move {
+                let url =
+                    format!("https://www.python.org/ftp/python/{version}/Python-{version}.tgz");
+                let sha = download_and_hash(&Client::new(), &url)
+                    .await
+                    .unwrap_or_default();
 
-            // Fetch SHA
-            let sha256 = download_and_hash(&Client::new(), &url)
-                .await
-                .unwrap_or_default();
+                if !sha.is_empty() {
+                    Some(Artifact {
+                        name: "python".to_string(),
+                        version,
+                        arch: "universal-apple-darwin".to_string(),
+                        url,
+                        sha256: sha,
+                    })
+                } else {
+                    None
+                }
+            })
+            .buffer_unordered(5);
 
-            if !sha256.is_empty() {
-                artifacts.push(Artifact {
-                    name: "python".to_string(),
-                    version: version.clone(),
-                    arch: "universal-apple-darwin".to_string(), // Source is universal
-                    url,
-                    sha256,
-                });
+        while let Some(art_opt) = stream.next().await {
+            if let Some(art) = art_opt {
+                artifacts.push(art);
             }
         }
         println!("  Found {} Python artifacts", artifacts.len());
