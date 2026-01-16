@@ -152,6 +152,9 @@ pub enum Commands {
         /// CDN URL for index
         #[arg(long, env = "APL_INDEX_URL", default_value = "https://apl.pub/index")]
         url: String,
+        /// Upgrade all installed packages after updating index
+        #[arg(long)]
+        all: bool,
     },
     /// Upgrade installed packages to latest versions
     Upgrade {

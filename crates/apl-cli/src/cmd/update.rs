@@ -1,18 +1,21 @@
 //! Update command
 
-use apl_core::paths::apl_home;
 use anyhow::{Context, Result, bail};
+use apl_core::paths::apl_home;
 use apl_schema::index::PackageIndex;
 use reqwest::Client;
 
 /// Update package index from CDN
-pub async fn update(url: &str, dry_run: bool) -> Result<()> {
+pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
     let index_path = apl_home().join("index");
     let output = crate::ui::Output::new();
 
     if dry_run {
         output.info(&format!("Would download index from: {url}"));
         output.info(&format!("Would save to: {}", index_path.display()));
+        if upgrade_all {
+            output.info("Would proceed to upgrade all packages.");
+        }
         return Ok(());
     }
 
@@ -105,6 +108,11 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         if current.updated_at == index.updated_at {
             // "Index already up to date" is enough feedback
             output.success("Index already up to date");
+
+            if upgrade_all {
+                println!();
+                return crate::cmd::upgrade::upgrade(&[], false, dry_run).await;
+            }
             return Ok(());
         }
     }
@@ -114,7 +122,12 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
     // Save RAW (decompressed) data to disk for fast MMAP loading
     std::fs::write(&index_path, &decompressed)?;
 
-    // 2. Show updates table
+    // 2. Show updates table OR Proceed to Upgrade
+    if upgrade_all {
+        println!();
+        return crate::cmd::upgrade::upgrade(&[], false, dry_run).await;
+    }
+
     let db = crate::db::StateDb::open()?;
     let packages = db.list_packages()?;
     let mut update_list = Vec::new();
@@ -131,7 +144,6 @@ pub async fn update(url: &str, dry_run: bool) -> Result<()> {
         }
     }
 
-    // Show available updates (upgrade command actually installs them)
     // Show available updates (upgrade command actually installs them)
     if !update_list.is_empty() {
         let theme = crate::ui::Theme::default();

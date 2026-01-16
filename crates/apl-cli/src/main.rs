@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
         Commands::Hash { files } => cmd::hash::hash(&files),
         Commands::Search { query } => cmd::search::search(&query),
         Commands::Clean => cmd::clean::clean(dry_run),
-        Commands::Update { url } => cmd::update::update(&url, dry_run).await,
+        Commands::Update { url, all } => cmd::update::update(&url, all, dry_run).await,
         Commands::Upgrade { packages, yes } => cmd::upgrade::upgrade(&packages, yes, dry_run).await,
 
         Commands::Status => cmd::status::status(),
