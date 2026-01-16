@@ -1,5 +1,5 @@
 [package]
-name = "apl-indexer"
+name = "apl-pkg"
 version = "0.1.0"
 edition = "2024"
 description = "APL index generator and registry maintenance tool"

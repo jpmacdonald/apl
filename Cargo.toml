@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "crates/apl-cli",
-    "crates/apl-schema",
     "crates/apl-core",
-    "crates/apl-indexer",
+    "crates/apl-cli",
+    "crates/apl-pkg",
+    "crates/apl-schema",
+    "crates/apl-builder",
 ]
 resolver = "2"
 

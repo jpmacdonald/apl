@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2024"
 description = "Core library for APL - shared indexer, resolver, and IO logic"
 
-[[bin]]
-name = "apl-builder"
-path = "src/main.rs"
 
 [dependencies]
 apl-schema = { workspace = true }

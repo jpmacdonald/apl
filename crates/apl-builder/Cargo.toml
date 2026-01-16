@@ -1,0 +1,30 @@
+[package]
+name = "apl-builder"
+version = "0.1.0"
+edition = "2024"
+description = "Algorithmic Harvester for APL Ports"
+
+[[bin]]
+name = "apl-builder"
+path = "src/main.rs"
+
+[dependencies]
+apl-schema = { workspace = true }
+apl-core = { workspace = true, features = ["upload", "parsing", "network"] }
+
+# Async
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# IO
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+clap = { workspace = true }
+opendal = { workspace = true }
+reqwest = { workspace = true }
+regex = { workspace = true }
+openssl = { version = "0.10", features = ["vendored"] }
+glob = { workspace = true }
+toml = { workspace = true }
