@@ -1,41 +1,66 @@
 # APL: Advanced Package Layer
 
-APL is a next-generation package manager for macOS, focusing on hermetic builds, strict versioning, and unified architecture.
+A modern package manager for macOS, built in Rust with a focus on hermetic installations, strict versioning, and cryptographic verification.
 
-## Unified Workspace
+## Quick Install
 
-This repository is a Cargo Workspace containing the entire ecosystem:
+```bash
+curl -fsSL https://apl.pub/install.sh | sh
+```
 
-### 1. The Client (`crates/apl`)
-The consumer CLI (`apl`) installed on user machines.
-- **Role**: Discovers, verifies, and installs packages.
-- **Feeds**: 
-    - **Feed A (GitHub)**: Upstream releases via GitHub API.
-    - **Feed B (Ports)**: Hermetic artifacts from our R2 Registry.
+## Features
 
-### 2. The Engine (`crates/apl-ports`)
-The producer binary that powers Feed B.
-- **Role**: Scrapes vendor sites (AWS, Python, Ruby, etc.), validates artifacts (SHA256), and indexes them.
-- **Output**: `index.json` files uploaded to R2 (`ports/<name>/index.json`).
-- **Pipeline**: Runs daily via `.github/workflows/update-ports.yml`.
+- **Hermetic Installations** - Packages are installed in isolation, preventing conflicts
+- **Dual Architecture** - Native support for both Apple Silicon (ARM64) and Intel (x86_64)
+- **Signed Index** - Ed25519 signature verification for the package registry
+- **Fast Updates** - ZSTD-compressed binary index for efficient synchronization
 
-### 3. Shared Types (`crates/apl-types`)
-Type definitions shared between Engine and Client to guarantee contract validity.
-- **Artifact**: Strict schema with validation (`validate()`).
-- **PortConfig**: Declarative port definitions.
+## Workspace Structure
 
-## Ports Registry (`ports/`)
-Declarative definitions for ports managed by the Engine.
-- `ports/terraform/port.toml`
-- `ports/node/port.toml`
-- ...
+| Crate | Binary | Description |
+|-------|--------|-------------|
+| `apl-schema` | - | Core types, versioning, and index serialization |
+| `apl-core` | `apl-builder` | Core library: indexer, resolver, and discovery engine |
+| `apl-cli` | `apl` | User-facing CLI and state management |
+| `apl-indexer` | `apl-pkg` | Index generation and registry maintenance |
+
+## Commands
+
+```bash
+apl install <package>     # Install a package
+apl remove <package>      # Remove a package  
+apl search <query>        # Search available packages
+apl list                  # List installed packages
+apl status                # Check for updates
+apl upgrade               # Upgrade outdated packages
+apl update                # Refresh package index
+```
 
 ## Development
 
 ```bash
-# Run the Client
-cargo run -p apl -- install node
+# Build all crates
+cargo build --workspace
 
-# Run the Engine (Dry Run)
-cargo run -p apl-ports -- --dry-run
+# Run the CLI
+cargo run -p apl-cli -- search jq
+
+# Run tests
+cargo test --workspace
+
+# Run lints
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+## Related Repositories
+
+- **[apl-packages](../apl-packages)** - Package definitions (TOML files for GitHub-sourced packages)
+- **[apl-ports](../apl-ports)** - Port definitions (for vendor-specific sources like HashiCorp, AWS, etc.)
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for details on the crate structure and data flow.
+
+## License
+
+MIT

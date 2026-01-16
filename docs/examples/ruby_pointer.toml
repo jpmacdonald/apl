@@ -1,4 +1,4 @@
-# apl-core/registry/ruby.toml
+# apl-packages/registry/ruby.toml
 # This is a "Pointer" to the apl-ports build farm.
 
 [package]

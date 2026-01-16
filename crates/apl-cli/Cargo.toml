@@ -1,0 +1,83 @@
+[package]
+name = "apl-cli"
+version = "0.0.0-dev"
+edition = "2024"
+description = "apl - A Package Layer for macOS"
+license = "MIT"
+repository = "https://github.com/jpmacdonald/apl"
+
+[[bin]]
+name = "apl"
+path = "src/main.rs"
+
+[dependencies]
+apl-schema = { workspace = true }
+apl-core = { workspace = true }
+
+# Hashing
+sha2 = { workspace = true }
+blake3 = { workspace = true }
+hex = { workspace = true }
+
+# Database
+rusqlite = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# CLI
+clap = { workspace = true, features = ["env"] }
+clap_complete = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+toml = { workspace = true }
+postcard = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Utilities
+dirs = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+reqwest = { workspace = true }
+crossterm = { workspace = true }
+futures = { workspace = true }
+async-compression = { workspace = true }
+tempfile = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+zstd = { workspace = true }
+chrono = { workspace = true }
+semver = { workspace = true }
+pubgrub = { workspace = true }
+fastcdc = { workspace = true }
+zip = { workspace = true }
+bytes = { workspace = true }
+walkdir = { workspace = true }
+memmap2 = { workspace = true }
+tokio-util = { workspace = true }
+tokio-tar = { workspace = true }
+tokio-stream = { workspace = true }
+libc = { workspace = true }
+num_cpus = { workspace = true }
+fs_extra = { workspace = true }
+which = { workspace = true }
+regex = { workspace = true }
+toml_edit = { workspace = true }
+wait-timeout = { workspace = true }
+async-trait = { workspace = true }
+fuzzy-matcher = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-config = { workspace = true }
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+comfy-table = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+mockito = { workspace = true }

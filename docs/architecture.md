@@ -12,39 +12,40 @@ APL is built around three principles:
 
 ---
 
-## High-Level Architecture
+## Crate Structure
 
 ```
-┌─────────────────────────────────────┐
-│         CLI Layer (main.rs)         │
-│         Command Handlers            │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────┴──────────────────────┐
-│      Operations (ops/)              │
-│   install, remove, switch, flow     │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────┴──────────────────────┐
-│       Core Modules (core/)          │
-│   index, package, resolver,         │
-│   relinker, builder, sysroot        │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────┴──────────────────────┐
-│      I/O Layer (io/)                │
-│   download, extract, dmg            │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────┴──────────────────────┘
-│    Storage Layer (store/)           │
-│   SQLite state, cache, CAS store    │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     apl-cli (bin: apl)                      │
+│              User-facing CLI, UI, State Management          │
+└───────────────────────┬─────────────────────────────────────┘
+                        │ depends on
+          ┌─────────────┴─────────────┐
+          ▼                           ▼
+┌───────────────────┐       ┌───────────────────────────────┐
+│    apl-core       │       │       apl-indexer             │
+│  (bin: apl-builder)│       │       (bin: apl-pkg)          │
+│ Indexer, Resolver │       │ Index Generation, Signing     │
+└─────────┬─────────┘       └───────────────┬───────────────┘
+          │                                 │
+          └─────────────┬───────────────────┘
+                        ▼
+          ┌─────────────────────────────┐
+          │        apl-schema           │
+          │  Types, Index, Versioning   │
+          └─────────────────────────────┘
 ```
+
+| Crate | Binary | Description |
+|-------|--------|-------------|
+| `apl-schema` | - | Core types (`PackageName`, `Arch`, `Sha256Hash`), index format, version utilities |
+| `apl-core` | `apl-builder` | Core library: indexer, resolver, discovery engine, I/O (download/extract), builder |
+| `apl-cli` | `apl` | CLI handlers, UI actor, database state, installation flow |
+| `apl-indexer` | `apl-pkg` | Index generation, template management, Ed25519 signing |
 
 ---
 
-## Module Overview
+## Module Overview (apl-cli)
 
 ### Core (`src/core/`)
 
@@ -314,13 +315,13 @@ history (
 
 ## Release Pipeline Architecture
 
-To ensure the install script always sees the latest release immediately, we use a unified signal flow between the binary repository (`apl`) and the registry repository (`apl-core`).
+To ensure the install script always sees the latest release immediately, we use a unified signal flow between the binary repository (`apl`) and the registry repository (`apl-packages`).
 
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
     participant Release as apl/release.yml
-    participant Registry as apl-core/update-index.yml
+    participant Registry as apl-packages/update-registry.yml
     participant CDN as apl.pub (R2)
     participant User as install.sh
 

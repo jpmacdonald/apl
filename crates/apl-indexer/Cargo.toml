@@ -1,0 +1,26 @@
+[package]
+name = "apl-indexer"
+version = "0.1.0"
+edition = "2024"
+description = "APL index generator and registry maintenance tool"
+
+[[bin]]
+name = "apl-pkg"
+path = "src/main.rs"
+
+[dependencies]
+apl-core = { workspace = true, features = ["upload", "parsing", "network"] }
+apl-schema = { workspace = true }
+# NOTE: apl-cli dependency removed - Reporter trait now lives in apl-core
+
+tempfile = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
+reqwest = { workspace = true }
+rand = { workspace = true }
+toml = { workspace = true }

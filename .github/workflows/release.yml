@@ -75,5 +75,5 @@ jobs:
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.PAT_TOKEN }}
-          repository: jpmacdonald/apl-core
-          event-type: Release
+          repository: jpmacdonald/apl-packages
+          event-type: release
