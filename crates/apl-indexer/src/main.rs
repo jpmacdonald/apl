@@ -247,25 +247,25 @@ async fn main() -> Result<()> {
 
                 // Check Metadata
                 if template.package.description.trim().is_empty() {
-                    println!("   [WARN] {}: Missing description", pkg_name);
+                    println!("   [WARN] {pkg_name}: Missing description");
                     warnings += 1;
                 }
                 if template.package.license.trim().is_empty() {
-                    println!("   [WARN] {}: Missing license", pkg_name);
+                    println!("   [WARN] {pkg_name}: Missing license");
                     warnings += 1;
                 }
 
                 // Check Checksum Policy
                 if template.assets.skip_checksums {
-                    println!("   [WARN] {}: Skips checksum verification", pkg_name);
+                    println!("   [WARN] {pkg_name}: Skips checksum verification");
                     warnings += 1;
                 }
             }
 
             println!("\nSummary:");
             println!("  Packages: {}", known_packages.len());
-            println!("  Errors:   {}", errors);
-            println!("  Warnings: {}", warnings);
+            println!("  Errors:   {errors}");
+            println!("  Warnings: {warnings}");
 
             if errors > 0 {
                 anyhow::bail!("Registry check failed with {errors} errors.");

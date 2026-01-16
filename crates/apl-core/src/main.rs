@@ -127,10 +127,7 @@ async fn main() -> Result<()> {
 
         // 1b. Load Cache
         let mut cache: apl_core::strategies::StrategyCache =
-            match fetch_cache(&op, &cache_path).await {
-                Ok(c) => c,
-                Err(_) => std::collections::HashMap::new(),
-            };
+            fetch_cache(&op, &cache_path).await.unwrap_or_default();
 
         // 2. Build known versions set
         let known_versions: std::collections::HashSet<String> = existing_artifacts
