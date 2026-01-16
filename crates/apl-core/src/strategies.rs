@@ -6,12 +6,15 @@ use serde::Deserialize;
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[async_trait]
 pub trait Strategy: Send + Sync {
     /// Fetch artifacts based on the configuration strategy.
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>>;
+    ///
+    /// `known_versions` contains versions already in the index - strategies should
+    /// skip these to avoid redundant work. This enables incremental indexing.
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>>;
 }
 
 /// Helper to stream-download and compute SHA256 (expensive but accurate)
@@ -82,7 +85,7 @@ struct BuildData {
 
 #[async_trait]
 impl Strategy for HashiCorpStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         let url = format!("https://releases.hashicorp.com/{}/index.json", self.product);
         let resp = self
             .client
@@ -93,24 +96,24 @@ impl Strategy for HashiCorpStrategy {
             .await?;
 
         let mut artifacts = Vec::new();
-
-        // TODO: Filter logic could be moved to shared util
-        // For now, replicate python logic: fetch SHA256SUMS separately or trust index?
-        // HashiCorp index.json doesn't have SHAs directly in builds, need to key off filename match?
-        // Actually, builds array usually lacks SHA256 in the index.json from the API endpoint used earlier.
-        // Let's implement minimal fetch for now and refine.
+        let mut skipped = 0;
 
         // APL currently supports:
         let allowed_platforms = [
             ("darwin", "amd64", "x86_64-apple-darwin"),
             ("darwin", "arm64", "aarch64-apple-darwin"),
-            // linux...
         ];
 
         for (version, data) in resp.versions {
             if version.contains('-') {
                 continue;
             } // Skip unstable
+
+            // Skip already-indexed versions
+            if known_versions.contains(&version) {
+                skipped += 1;
+                continue;
+            }
 
             // Fetch SHA256SUMS for this version
             // https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_SHA256SUMS
@@ -143,6 +146,9 @@ impl Strategy for HashiCorpStrategy {
             }
         }
 
+        if skipped > 0 {
+            println!("  [Incremental] Skipped {skipped} known versions");
+        }
         Ok(artifacts)
     }
 }
@@ -169,14 +175,21 @@ struct GoFile {
 
 #[async_trait]
 impl Strategy for GolangStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         let url = "https://go.dev/dl/?mode=json&include=all"; // fetch all versions
         let releases = reqwest::get(url).await?.json::<Vec<GoRelease>>().await?;
 
         let mut artifacts = Vec::new();
+        let mut skipped = 0;
 
         for release in releases {
             let version = release.version.trim_start_matches("go").to_string();
+
+            // Skip already-indexed versions
+            if known_versions.contains(&version) {
+                skipped += 1;
+                continue;
+            }
             // APL supported architectures
             for file in release.files {
                 let (apl_arch, valid) = match (file.os.as_str(), file.arch.as_str()) {
@@ -196,6 +209,9 @@ impl Strategy for GolangStrategy {
                 }
             }
         }
+        if skipped > 0 {
+            println!("  [Incremental] Skipped {skipped} known versions");
+        }
         println!("  Found {} Go artifacts", artifacts.len());
         Ok(artifacts)
     }
@@ -212,18 +228,28 @@ struct NodeRelease {
 
 #[async_trait]
 impl Strategy for NodeStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
-        // Node.js is trickier: index.json gives versions, but we need SHA256.
-        // For MVP, we will implement fetching index.json and pointing to the URL.
-        // Checksums in a real impl should be fetched from SHASUMS256.txt per version.
-
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         let url = "https://nodejs.org/dist/index.json";
         let releases = reqwest::get(url).await?.json::<Vec<NodeRelease>>().await?;
 
         let mut artifacts = Vec::new();
-        for release in releases.iter().take(50) {
-            // Limit to 50 for MVP
+        let mut skipped = 0;
+        let mut processed = 0;
+
+        for release in releases {
             let version = release.version.trim_start_matches('v').to_string();
+
+            // Skip already-indexed versions
+            if known_versions.contains(&version) {
+                skipped += 1;
+                continue;
+            }
+
+            // Limit new versions to process (avoid hammering upstream on first run)
+            processed += 1;
+            if processed > 20 {
+                break;
+            }
 
             // Fetch SHASUMS256.txt for this version
             let sha_url = format!("https://nodejs.org/dist/{}/SHASUMS256.txt", release.version);
@@ -254,6 +280,9 @@ impl Strategy for NodeStrategy {
                 }
             }
         }
+        if skipped > 0 {
+            println!("  [Incremental] Skipped {skipped} known versions");
+        }
         println!("  Found {} Node.js artifacts", artifacts.len());
         Ok(artifacts)
     }
@@ -276,7 +305,7 @@ impl GitHubStrategy {
 
 #[async_trait]
 impl Strategy for GitHubStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(&self, _known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         // Placeholder
         Ok(vec![])
     }
@@ -286,33 +315,39 @@ pub struct AwsStrategy;
 
 #[async_trait]
 impl Strategy for AwsStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         // AWS CLI v2 Changelog parsing
         let url = "https://raw.githubusercontent.com/aws/aws-cli/v2/CHANGELOG.rst";
         let text = reqwest::get(url).await?.text().await?;
         let mut artifacts = Vec::new();
 
-        // Regex to find "2.15.30" patterns at start of lines or headers
-        // RST headers: 2.15.30
-        //              =======
         let re = Regex::new(r"(\d+\.\d+\.\d+)").unwrap();
 
-        // Simplification: Scan for versions, deduplicate
         let mut versions = Vec::new();
         for line in text.lines() {
             if let Some(cap) = re.captures(line) {
                 if line.trim() == &cap[1] {
-                    // likely a header line
                     versions.push(cap[1].to_string());
                 }
             }
         }
 
-        // Take top 5 unique
-        versions.sort_by(|a, b| b.cmp(a)); // desc
+        versions.sort_by(|a, b| b.cmp(a));
         versions.dedup();
 
-        for version in versions.iter().take(5) {
+        // Filter to only new versions
+        let new_versions: Vec<_> = versions
+            .into_iter()
+            .filter(|v| !known_versions.contains(v))
+            .take(5)
+            .collect();
+
+        if new_versions.is_empty() {
+            println!("  [Incremental] All versions already indexed");
+            return Ok(vec![]);
+        }
+
+        for version in &new_versions {
             let url = format!("https://awscli.amazonaws.com/AWSCLIV2-{version}.pkg");
             // We must fetch SHA256 manually
             let sha256 = download_and_hash(&Client::new(), &url)
@@ -342,23 +377,29 @@ pub struct PythonStrategy;
 
 #[async_trait]
 impl Strategy for PythonStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
-        // Parsing python.org/ftp/python/
-        // Simpler: Use GitHub tags for cpython? or stick to html parse.
-        // Stick to python.org for official source.
-        // MVP: Hardcode or simple regex on index page.
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         let url = "https://www.python.org/ftp/python/";
         let text = reqwest::get(url).await?.text().await?;
         let re = Regex::new(r#"href="(\d+\.\d+\.\d+)/""#).unwrap();
 
         let mut versions: Vec<String> = re.captures_iter(&text).map(|c| c[1].to_string()).collect();
-
-        versions.sort_by(|a, b| b.cmp(a)); // desc, but rudimentary string sort 3.9 > 3.10 is wrong. 
-        // TODO: Semver sort. For now relying on string sort generally OK for 3.x
+        versions.sort_by(|a, b| b.cmp(a));
         versions.dedup();
 
+        // Filter to only new versions
+        let new_versions: Vec<_> = versions
+            .into_iter()
+            .filter(|v| !known_versions.contains(v))
+            .take(5)
+            .collect();
+
+        if new_versions.is_empty() {
+            println!("  [Incremental] All versions already indexed");
+            return Ok(vec![]);
+        }
+
         let mut artifacts = Vec::new();
-        for version in versions.iter().take(5) {
+        for version in &new_versions {
             // Source tarball
             let url = format!("https://www.python.org/ftp/python/{version}/Python-{version}.tgz");
 
@@ -386,7 +427,7 @@ pub struct RubyStrategy;
 
 #[async_trait]
 impl Strategy for RubyStrategy {
-    async fn fetch_artifacts(&self) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
         // https://www.ruby-lang.org/en/downloads/
         let url = "https://www.ruby-lang.org/en/downloads/";
         let text = reqwest::get(url).await?.text().await?;
@@ -443,6 +484,11 @@ impl Strategy for RubyStrategy {
                 url,
                 sha256,
             };
+
+            // Skip already-indexed versions
+            if known_versions.contains(&version) {
+                continue;
+            }
 
             if artifact.validate().is_ok() {
                 artifacts.push(artifact);

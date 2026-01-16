@@ -107,45 +107,8 @@ async fn main() -> Result<()> {
             }
         };
 
-        // Execute
-        let artifacts = strategy.fetch_artifacts().await?;
-        println!("  Found {} artifacts. Validating...", artifacts.len());
-
-        // Validation with nice error reporting (limit noise)
-        let mut error_count = 0;
-        for (i, artifact) in artifacts.iter().enumerate() {
-            if let Err(e) = artifact.validate() {
-                error_count += 1;
-                if error_count <= 5 {
-                    eprintln!("  SKIP: {} v{} - {}", artifact.name, artifact.version, e);
-                } else if error_count == 6 {
-                    eprintln!("  ... (suppressing further validation errors)");
-                }
-            }
-        }
-
-        let valid_artifacts: Vec<_> = artifacts
-            .into_iter()
-            .filter(|a| a.validate().is_ok())
-            .collect();
-
-        if error_count > 0 {
-            println!(
-                "  {} valid, {} skipped (missing checksums)",
-                valid_artifacts.len(),
-                error_count
-            );
-        } else {
-            println!(
-                "  {} valid artifacts ready for index.",
-                valid_artifacts.len()
-            );
-        }
-
-        // Incremental Update Logic
+        // 1. Fetch existing index FIRST for incremental updates
         let r2_path = format!("ports/{port_name}/index.json");
-
-        // 1. Fetch existing index
         let existing_artifacts = match fetch_existing_index(&op, &r2_path).await {
             Ok(arts) => {
                 println!(
@@ -160,7 +123,48 @@ async fn main() -> Result<()> {
             }
         };
 
-        // 2. Merge & Deduplicate
+        // 2. Build known versions set
+        let known_versions: std::collections::HashSet<String> = existing_artifacts
+            .iter()
+            .map(|a| a.version.clone())
+            .collect();
+
+        // 3. Execute Strategy with known versions
+        let artifacts = strategy.fetch_artifacts(&known_versions).await?;
+        println!("  Found {} new artifacts. Validating...", artifacts.len());
+
+        // 4. Validate NEW artifacts
+        let mut error_count = 0;
+        for artifact in artifacts.iter() {
+            if let Err(e) = artifact.validate() {
+                error_count += 1;
+                if error_count <= 5 {
+                    eprintln!("  SKIP: {} v{} - {}", artifact.name, artifact.version, e);
+                } else if error_count == 6 {
+                    eprintln!("  ... (suppressing further validation errors)");
+                }
+            }
+        }
+
+        let valid_new_artifacts: Vec<_> = artifacts
+            .into_iter()
+            .filter(|a| a.validate().is_ok())
+            .collect();
+
+        if error_count > 0 {
+            println!(
+                "  {} valid new, {} skipped (missing checksums)",
+                valid_new_artifacts.len(),
+                error_count
+            );
+        } else {
+            println!(
+                "  {} valid new artifacts ready for index.",
+                valid_new_artifacts.len()
+            );
+        }
+
+        // 5. Merge & Deduplicate
         // Key: (Version, Arch, SHA256) -> Artifact
         // We prefer the NEW artifact if there's a collision, as it was just validated.
         let mut merged_map = std::collections::HashMap::new();
@@ -172,14 +176,14 @@ async fn main() -> Result<()> {
         }
 
         // Overlay new
-        for art in valid_artifacts {
+        for art in valid_new_artifacts {
             let key = (art.version.clone(), art.arch.clone(), art.sha256.clone());
             merged_map.insert(key, art);
         }
 
         let mut final_artifacts: Vec<_> = merged_map.into_values().collect();
 
-        // Sort for deterministic output (Semantic versioning sort would be best, but simple string sort is okay for raw index)
+        // Sort for deterministic output
         final_artifacts.sort_by(|a, b| b.version.cmp(&a.version));
 
         println!(
@@ -187,7 +191,7 @@ async fn main() -> Result<()> {
             final_artifacts.len()
         );
 
-        // 3. Upload
+        // 6. Upload
         let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
 
         // Write to local output dir
