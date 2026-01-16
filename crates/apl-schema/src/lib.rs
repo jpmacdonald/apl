@@ -17,4 +17,4 @@ pub const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// Root of Trust: Ed25519 Public Key for Index Verification (Base64)
 /// Corresponds to the private key in CI credentials.
-pub const APL_PUBLIC_KEY: &str = "ltcv47HgxDoAAXi+BVJ9FL3i93jkGa+pAs9leVKqUu4=";
+pub const APL_PUBLIC_KEY: &str = "rIWQxJ7m4uep6XGvu/SljulxUnHtm2BYfJDUOWxL4Z8=";
