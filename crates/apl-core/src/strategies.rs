@@ -2,12 +2,20 @@ use anyhow::Result;
 use apl_schema::Artifact;
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use futures::stream::{self, StreamExt};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct CacheEntry {
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+pub type StrategyCache = HashMap<String, CacheEntry>;
 
 #[async_trait]
 pub trait Strategy: Send + Sync {
@@ -15,7 +23,62 @@ pub trait Strategy: Send + Sync {
     ///
     /// `known_versions` contains versions already in the index - strategies should
     /// skip these to avoid redundant work. This enables incremental indexing.
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>>;
+    ///
+    /// `cache` contains ETag/Last-Modified data for upstream URLs.
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>>;
+}
+
+/// Helper to fetch text with HTTP caching (ETag/Last-Modified).
+/// Returns Ok(None) if 304 Not Modified.
+async fn fetch_text_with_cache(
+    client: &Client,
+    url: &str,
+    cache: &mut StrategyCache,
+) -> Result<Option<String>> {
+    let mut req = client.get(url);
+
+    if let Some(entry) = cache.get(url) {
+        if let Some(etag) = &entry.etag {
+            req = req.header("If-None-Match", etag);
+        }
+        if let Some(lm) = &entry.last_modified {
+            req = req.header("If-Modified-Since", lm);
+        }
+    }
+
+    let resp = req.send().await?.error_for_status()?;
+
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        println!("    [Cache] {url} not modified");
+        return Ok(None);
+    }
+
+    // Update cache
+    let etag = resp
+        .headers()
+        .get("etag")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let last_modified = resp
+        .headers()
+        .get("last-modified")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+
+    if etag.is_some() || last_modified.is_some() {
+        cache.insert(
+            url.to_string(),
+            CacheEntry {
+                etag,
+                last_modified,
+            },
+        );
+    }
+
+    let text = resp.text().await?;
+    Ok(Some(text))
 }
 
 /// Helper to stream-download and compute SHA256 (expensive but accurate)
@@ -86,15 +149,47 @@ struct BuildData {
 
 #[async_trait]
 impl Strategy for HashiCorpStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         let url = format!("https://releases.hashicorp.com/{}/index.json", self.product);
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await?
-            .json::<HashiCorpIndex>()
-            .await?;
+
+        // HashiCorp API supports ETags? Let's try or just assume it does.
+        // If not, it falls back to 200.
+        // For JSON, we use a similar helper or just inline it?
+        // Let's implement fetch_json_with_cache if needed, or just manual here for now.
+
+        let mut req = self.client.get(&url);
+        if let Some(entry) = cache.get(&url) {
+            if let Some(etag) = &entry.etag {
+                req = req.header("If-None-Match", etag);
+            }
+        }
+
+        let resp = req.send().await?.error_for_status()?;
+        if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+            println!("  [Cache] HashiCorp index not modified");
+            return Ok(vec![]);
+        }
+
+        // Update ETag
+        if let Some(etag) = resp
+            .headers()
+            .get("etag")
+            .and_then(|h| h.to_str().ok().map(|s| s.to_string()))
+        {
+            cache.insert(
+                url.clone(),
+                CacheEntry {
+                    etag: Some(etag),
+                    last_modified: None,
+                },
+            );
+        }
+
+        let resp: HashiCorpIndex = resp.json().await?;
 
         let resp_len = resp.versions.len();
         let mut artifacts = Vec::new();
@@ -117,8 +212,7 @@ impl Strategy for HashiCorpStrategy {
                 async move {
                     // Fetch SHA256SUMS
                     let sha_url = format!(
-                        "https://releases.hashicorp.com/{}/{}/{}_{}_SHA256SUMS",
-                        product, version, product, version
+                        "https://releases.hashicorp.com/{product}/{version}/{product}_{version}_SHA256SUMS"
                     );
 
                     let shas = fetch_shasums(&client, &sha_url).await.unwrap_or_default();
@@ -189,7 +283,11 @@ struct GoFile {
 
 #[async_trait]
 impl Strategy for GolangStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        _cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         let url = "https://go.dev/dl/?mode=json&include=all"; // fetch all versions
         let releases = reqwest::get(url).await?.json::<Vec<GoRelease>>().await?;
 
@@ -242,7 +340,11 @@ struct NodeRelease {
 
 #[async_trait]
 impl Strategy for NodeStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        _cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         let url = "https://nodejs.org/dist/index.json";
         let releases = reqwest::get(url).await?.json::<Vec<NodeRelease>>().await?;
 
@@ -334,7 +436,11 @@ impl GitHubStrategy {
 
 #[async_trait]
 impl Strategy for GitHubStrategy {
-    async fn fetch_artifacts(&self, _known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        _known_versions: &HashSet<String>,
+        _cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         // Placeholder
         Ok(vec![])
     }
@@ -344,10 +450,21 @@ pub struct AwsStrategy;
 
 #[async_trait]
 impl Strategy for AwsStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         // AWS CLI v2 Changelog parsing
         let url = "https://raw.githubusercontent.com/aws/aws-cli/v2/CHANGELOG.rst";
-        let text = reqwest::get(url).await?.text().await?;
+
+        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
+            Some(t) => t,
+            None => {
+                println!("  [Cache] AWS Changelog not modified");
+                return Ok(vec![]);
+            }
+        };
         let mut artifacts = Vec::new();
 
         let re = Regex::new(r"(\d+\.\d+\.\d+)").unwrap();
@@ -415,9 +532,19 @@ pub struct PythonStrategy;
 
 #[async_trait]
 impl Strategy for PythonStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         let url = "https://www.python.org/ftp/python/";
-        let text = reqwest::get(url).await?.text().await?;
+        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
+            Some(t) => t,
+            None => {
+                println!("  [Cache] Python index not modified");
+                return Ok(vec![]);
+            }
+        };
         let re = Regex::new(r#"href="(\d+\.\d+\.\d+)/""#).unwrap();
 
         let mut versions: Vec<String> = re.captures_iter(&text).map(|c| c[1].to_string()).collect();
@@ -473,10 +600,20 @@ pub struct RubyStrategy;
 
 #[async_trait]
 impl Strategy for RubyStrategy {
-    async fn fetch_artifacts(&self, known_versions: &HashSet<String>) -> Result<Vec<Artifact>> {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
         // https://www.ruby-lang.org/en/downloads/
         let url = "https://www.ruby-lang.org/en/downloads/";
-        let text = reqwest::get(url).await?.text().await?;
+        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
+            Some(t) => t,
+            None => {
+                println!("  [Cache] Ruby index not modified");
+                return Ok(vec![]);
+            }
+        };
 
         // Regex to capture "Ruby 3.3.0" ... "sha256: <hash>"
         // This is fragile HTML parsing but typical for ruby-lang.

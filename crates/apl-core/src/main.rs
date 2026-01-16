@@ -109,6 +109,8 @@ async fn main() -> Result<()> {
 
         // 1. Fetch existing index FIRST for incremental updates
         let r2_path = format!("ports/{port_name}/index.json");
+        let cache_path = format!("ports/{port_name}/cache.json");
+
         let existing_artifacts = match fetch_existing_index(&op, &r2_path).await {
             Ok(arts) => {
                 println!(
@@ -123,14 +125,23 @@ async fn main() -> Result<()> {
             }
         };
 
+        // 1b. Load Cache
+        let mut cache: apl_core::strategies::StrategyCache =
+            match fetch_cache(&op, &cache_path).await {
+                Ok(c) => c,
+                Err(_) => std::collections::HashMap::new(),
+            };
+
         // 2. Build known versions set
         let known_versions: std::collections::HashSet<String> = existing_artifacts
             .iter()
             .map(|a| a.version.clone())
             .collect();
 
-        // 3. Execute Strategy with known versions
-        let artifacts = strategy.fetch_artifacts(&known_versions).await?;
+        // 3. Execute Strategy with known versions AND cache
+        let artifacts = strategy
+            .fetch_artifacts(&known_versions, &mut cache)
+            .await?;
         println!("  Found {} new artifacts. Validating...", artifacts.len());
 
         // 4. Validate NEW artifacts
@@ -193,13 +204,18 @@ async fn main() -> Result<()> {
 
         // 6. Upload
         let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
+        let cache_json = serde_json::to_vec_pretty(&cache)?;
 
         // Write to local output dir
         let local_path = args.output_dir.join(port_name).join("index.json");
+        let local_cache_path = args.output_dir.join(port_name).join("cache.json");
+
         if let Some(parent) = local_path.parent() {
             fs::create_dir_all(parent).await?;
         }
         fs::write(&local_path, &index_json).await?;
+        fs::write(&local_cache_path, &cache_json).await?;
+
         println!("  Written to local: {}", local_path.display());
 
         if args.dry_run {
@@ -211,7 +227,8 @@ async fn main() -> Result<()> {
         }
 
         op.write(&r2_path, index_json).await?;
-        println!("  Uploaded to {r2_path}");
+        op.write(&cache_path, cache_json).await?;
+        println!("  Uploaded to {r2_path} and {cache_path}");
     }
 
     Ok(())
@@ -221,4 +238,10 @@ async fn fetch_existing_index(op: &Operator, path: &str) -> Result<Vec<Artifact>
     let data = op.read(path).await?;
     let artifacts: Vec<Artifact> = serde_json::from_slice(&data)?;
     Ok(artifacts)
+}
+
+async fn fetch_cache(op: &Operator, path: &str) -> Result<apl_core::strategies::StrategyCache> {
+    let data = op.read(path).await?;
+    let cache: apl_core::strategies::StrategyCache = serde_json::from_slice(&data)?;
+    Ok(cache)
 }
