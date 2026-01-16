@@ -111,40 +111,36 @@ async fn main() -> Result<()> {
         let artifacts = strategy.fetch_artifacts().await?;
         println!("  Found {} artifacts. Validating...", artifacts.len());
 
-        // Validation with nice error reporting
+        // Validation with nice error reporting (limit noise)
+        let mut error_count = 0;
         for (i, artifact) in artifacts.iter().enumerate() {
-            if let Err(_e) = artifact.validate() {
-                eprintln!(
-                    "  [ERROR] Artifact {}/{} ({}) is invalid: {}",
-                    i + 1,
-                    artifacts.len(),
-                    artifact.version,
-                    _e
-                );
-                // We could panic/exit here, or filter them out.
-                // For strictness, let's filter but warn loudly?
-                // Or fail the whole port? User said "catch things... GUARANTEE validity".
-                // So if one is invalid, the index is corrupt?
-                // Let's filter invalid ones for resilience but warn.
+            if let Err(e) = artifact.validate() {
+                error_count += 1;
+                if error_count <= 5 {
+                    eprintln!("  SKIP: {} v{} - {}", artifact.name, artifact.version, e);
+                } else if error_count == 6 {
+                    eprintln!("  ... (suppressing further validation errors)");
+                }
             }
         }
 
         let valid_artifacts: Vec<_> = artifacts
             .into_iter()
-            .filter(|a| {
-                if a.validate().is_err() {
-                    // Already logged above
-                    false
-                } else {
-                    true
-                }
-            })
+            .filter(|a| a.validate().is_ok())
             .collect();
 
-        println!(
-            "  {} valid artifacts ready for index.",
-            valid_artifacts.len()
-        );
+        if error_count > 0 {
+            println!(
+                "  {} valid, {} skipped (missing checksums)",
+                valid_artifacts.len(),
+                error_count
+            );
+        } else {
+            println!(
+                "  {} valid artifacts ready for index.",
+                valid_artifacts.len()
+            );
+        }
 
         // Incremental Update Logic
         let r2_path = format!("ports/{port_name}/index.json");
