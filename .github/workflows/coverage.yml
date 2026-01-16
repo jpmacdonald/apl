@@ -20,19 +20,19 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
       
-      - name: Generate coverage
+      - name: Generate Coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       
-      - name: Upload coverage report
+      - name: Upload Coverage Report
         uses: codecov/codecov-action@v3
         with:
           files: lcov.info
           fail_ci_if_error: false
       
-      - name: Generate HTML report
+      - name: Generate HTML Report
         run: cargo llvm-cov --all-features --workspace --html
       
-      - name: Upload HTML report as artifact
+      - name: Upload HTML Report as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
