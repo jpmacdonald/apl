@@ -789,9 +789,14 @@ pub async fn package_to_index_ver(
             });
 
             // Mirror asset to CAS if store is enabled
+            // Skip mirroring for URLs already on apl.pub (ports are already in R2)
             if let Some(store) = get_artifact_store().await {
-                if let Err(e) = mirror_asset(ctx.client, &asset.download_url, &hash, &store).await {
-                    tracing::warn!("      Failed to mirror {}: {}", asset.name, e);
+                if !asset.download_url.contains("apl.pub") {
+                    if let Err(e) =
+                        mirror_asset(ctx.client, &asset.download_url, &hash, &store).await
+                    {
+                        tracing::warn!("      Failed to mirror {}: {}", asset.name, e);
+                    }
                 }
             }
         }
