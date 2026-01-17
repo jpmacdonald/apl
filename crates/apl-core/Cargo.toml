@@ -63,11 +63,6 @@ rand = { workspace = true }
 aws-sdk-s3 = { workspace = true, optional = true }
 aws-config = { workspace = true, optional = true }
 
-# Builder Tool Deps
-opendal = { workspace = true }
-clap = { workspace = true }
-glob = { workspace = true }
-
 [features]
 default = ["parsing", "network"]
 parsing = ["dep:toml"]
