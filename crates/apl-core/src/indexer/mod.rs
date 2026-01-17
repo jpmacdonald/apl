@@ -758,22 +758,27 @@ pub async fn package_to_index_ver(
         if let Some(asset) =
             discovery::find_asset_by_selector(&release_info.assets, selector, arch_name)
         {
-            // Resolve hash
-            let hash_res = resolve_hash(
-                ctx.client,
-                template,
-                &asset.download_url,
-                full_tag,
-                ctx.hash_cache.clone(),
-                ctx.releases_map.clone(),
-            )
-            .await;
+            // Use pre-computed digest if available (e.g., ports from R2)
+            // Otherwise resolve hash from checksum files or download
+            let hash = if let Some(digest) = &asset.digest {
+                digest.as_str().to_string()
+            } else {
+                let hash_res = resolve_hash(
+                    ctx.client,
+                    template,
+                    &asset.download_url,
+                    full_tag,
+                    ctx.hash_cache.clone(),
+                    ctx.releases_map.clone(),
+                )
+                .await;
 
-            let hash = match hash_res {
-                Ok(h) => h,
-                Err(e) => {
-                    // Fail the whole version if we can't get a hash for a matched asset
-                    return Err(e);
+                match hash_res {
+                    Ok(h) => h,
+                    Err(e) => {
+                        // Fail the whole version if we can't get a hash for a matched asset
+                        return Err(e);
+                    }
                 }
             };
 
