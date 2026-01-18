@@ -839,7 +839,9 @@ pub async fn package_to_index_ver(
     }
 
     if binaries.is_empty() {
-        anyhow::bail!("No supported binaries found for version {display_version}");
+        tracing::warn!(
+            "      No supported binaries found for version {display_version}. Metadata will still be indexed."
+        );
     }
 
     // Inference for 'bin'
