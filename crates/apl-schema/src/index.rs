@@ -348,6 +348,10 @@ impl PackageIndex {
                 .collect();
         }
 
+        // Minimum score threshold to filter out false positives
+        // Calibrated: exact 3-char match scores ~45, so 50 requires strong match
+        const MIN_SCORE: i64 = 50;
+
         // 2. Perform fuzzy search
         let mut results: Vec<(i64, &IndexEntry)> = self
             .packages
@@ -368,7 +372,8 @@ impl PackageIndex {
                     }
                 }
 
-                best_score.map(|s| (s, e))
+                // Only include results above minimum threshold
+                best_score.filter(|s| *s >= MIN_SCORE).map(|s| (s, e))
             })
             .collect();
 
