@@ -295,7 +295,7 @@ pub async fn install_packages(
     let count = install_count.load(std::sync::atomic::Ordering::Relaxed);
     if count > 0 {
         ctx.reporter
-            .summary(count, "installed", start_time.elapsed().as_secs_f64());
+            .summary(count, "install", start_time.elapsed().as_secs_f64());
     } else if already_installed_count > 0 {
         ctx.reporter
             .summary_plain(already_installed_count, "already installed");

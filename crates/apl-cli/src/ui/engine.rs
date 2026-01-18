@@ -6,7 +6,7 @@
 
 use crossterm::{
     QueueableCommand,
-    cursor::{MoveDown, MoveToColumn, MoveUp},
+    cursor::{MoveDown, MoveToColumn, MoveUp, RestorePosition, SavePosition},
     terminal::{Clear, ClearType},
 };
 use std::io::{Result, Stdout, Write, stdout};
@@ -34,6 +34,9 @@ impl RelativeFrame {
         }
         // Move cursor back up to the top of our frame
         self.stdout.queue(MoveUp(self.total_rows))?;
+        self.stdout.queue(MoveToColumn(0))?;
+        // Save this anchor position
+        self.stdout.queue(SavePosition)?;
         self.stdout.flush()?;
         self.started = true;
         Ok(())
@@ -53,26 +56,24 @@ impl RelativeFrame {
             return Ok(());
         }
 
-        // 1. Move to the row
-        self.stdout.queue(MoveToColumn(0))?;
+        // 1. Restore to anchor (top-left of frame)
+        self.stdout.queue(RestorePosition)?;
+
+        // 2. Move to the specific row
         if row_idx > 0 {
             self.stdout.queue(MoveDown(row_idx))?;
         }
 
-        // 2. Clear the line
+        // 3. Clear the line
         self.stdout.queue(Clear(ClearType::CurrentLine))?;
 
-        // 3. Render the content
+        // 4. Render the content
         f(&mut self.stdout)?;
 
-        // 4. Move back to the top of the frame
-        self.stdout.queue(MoveToColumn(0))?;
-        if row_idx > 0 {
-            self.stdout.queue(MoveUp(row_idx))?;
-        }
+        // 5. Restore to anchor again to remain clean
+        self.stdout.queue(RestorePosition)?;
 
         // NOTE: We do NOT flush here anymore to allow batching.
-        // Caller must call .flush() explicitly.
         Ok(())
     }
 
@@ -87,7 +88,9 @@ impl RelativeFrame {
         if !self.started {
             return Ok(());
         }
-        // Move to the very bottom to leave space for the next command prompt
+        // Restore to anchor
+        self.stdout.queue(RestorePosition)?;
+        // Move down past the frame
         self.stdout.queue(MoveDown(self.total_rows))?;
         self.stdout.queue(MoveToColumn(0))?;
         self.stdout.flush()?;

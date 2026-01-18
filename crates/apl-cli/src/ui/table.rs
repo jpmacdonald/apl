@@ -186,17 +186,17 @@ impl TableRenderer {
                         theme.colors.secondary,
                     ),
                     PackageState::Downloading { .. } => (
-                        theme.colors.active,
+                        theme.colors.error, // Red icon (Milspec active)
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
                     PackageState::Installing => (
-                        theme.colors.active, // Red icon
+                        theme.colors.error, // Red icon
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
                     PackageState::Removing => (
-                        theme.colors.active, // Red icon
+                        theme.colors.error, // Red icon
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
