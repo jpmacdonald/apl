@@ -583,6 +583,21 @@ pub async fn generate_index_from_registry(
                 );
             }
 
+            // Ensure the package exists in the index even if no versions were successfully indexed.
+            // This is critical for dependency resolution of library packages that might not
+            // have binary assets yet.
+            if success_count == 0 {
+                index.upsert(apl_schema::index::IndexEntry {
+                    name: pkg_name.clone(),
+                    description: template.package.description.to_string(),
+                    homepage: template.package.homepage.clone(),
+                    type_: "cli".to_string(),
+                    bins: vec![],
+                    releases: vec![],
+                    tags: template.package.tags.clone(),
+                });
+            }
+
             // Always print per-package progress
             // Aligned UI Output: [S/T] pkg_name  (status)
             let status_msg = if !errors.is_empty() && success_count == 0 {
