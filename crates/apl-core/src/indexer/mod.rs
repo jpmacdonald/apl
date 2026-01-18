@@ -1132,10 +1132,9 @@ async fn hydrate_from_source(
 /// Downloads an asset from a URL and uploads it to the artifact store using chunking.
 async fn mirror_asset(client: &Client, url: &str, hash: &str, store: &ArtifactStore) -> Result<()> {
     // Skip if artifact already mirrored (optimization)
-    // Actually, ArtifactStore::upload_chunked already does exists() checks per chunk.
-    // But we can check for the manifest existence.
-    // We don't have a public exists_manifest, but we can just use ArtifactStore's exists check if we form the key.
-    // Let's just call upload_chunked and let it handle existence checks.
+    if store.exists_manifest(hash).await {
+        return Ok(());
+    }
 
     let resp = client.get(url).send().await?.error_for_status()?;
     let data = resp.bytes().await?;

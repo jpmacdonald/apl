@@ -100,6 +100,18 @@ impl ArtifactStore {
             .is_ok()
     }
 
+    /// Check if a manifest exists in the store.
+    pub async fn exists_manifest(&self, hash: &str) -> bool {
+        let key = format!("manifests/{hash}");
+        self.client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .is_ok()
+    }
+
     /// Retrieve an artifact from the store.
     pub async fn get(&self, hash: &str) -> Result<Vec<u8>> {
         let key = format!("cas/{hash}");
@@ -314,6 +326,10 @@ impl ArtifactStore {
 
     pub async fn upload_chunked(&self, _hash: &str, _data: &[u8]) -> Result<String> {
         anyhow::bail!("Artifact uploads are disabled in this build")
+    }
+
+    pub async fn exists_manifest(&self, _hash: &str) -> bool {
+        false
     }
 }
 
