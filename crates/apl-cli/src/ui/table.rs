@@ -179,7 +179,7 @@ impl TableRenderer {
 
             let _ = frame.write_row(idx as u16, |stdout| {
                 // Determine colors from theme
-                let (_icon_color, name_color, status_color) = match &pkg.state {
+                let (icon_color, name_color, status_color) = match &pkg.state {
                     PackageState::Pending => (
                         theme.colors.secondary,
                         theme.colors.package_name,
@@ -230,8 +230,6 @@ impl TableRenderer {
                     PackageState::Failed { reason } => format!("FAILED: {reason}"),
                 };
 
-                // (Size column removed for Mission Control style)
-
                 // Mission Control formatting: 2-space indent for top-level,
                 // +2 spaces and └─ for children.
                 let prefix = if pkg.depth > 0 {
@@ -240,19 +238,35 @@ impl TableRenderer {
                     "".to_string()
                 };
 
-                let name_full = format!("  {}{} {}", prefix, icon_str, pkg.name);
-                let name_part =
-                    format!("{: <width$}", name_full, width = theme.layout.phase_padding);
+                // Calculate visible length for padding (assuming 1-char icons/ascii)
+                // "  " (2) + prefix + icon + " " (1) + name
+                let visible_len = 2
+                    + prefix.chars().count()
+                    + icon_str.chars().count()
+                    + 1
+                    + pkg.name.chars().count();
+                let padding_len = if visible_len < theme.layout.phase_padding {
+                    theme.layout.phase_padding - visible_len
+                } else {
+                    0
+                };
+                let padding = " ".repeat(padding_len);
+
                 let version_part = format!(
                     "{: <width$}",
                     pkg.version,
                     width = theme.layout.version_width
                 );
 
-                // Build line
+                // Build line with distinct colors
+                // Note: The icon is now colored separately from the name!
                 let line = format!(
-                    "{} {} {}",
-                    name_part.with(name_color),
+                    "  {}{}{}{}{} {} {}",
+                    prefix,
+                    icon_str.with(icon_color),
+                    " ",
+                    pkg.name.with(name_color),
+                    padding,
                     version_part.with(theme.colors.version),
                     status_text.with(status_color)
                 );
