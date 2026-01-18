@@ -338,7 +338,7 @@ pub async fn generate_index_from_registry(
             bucket_url
         );
 
-        for port_name in ports_repos {
+        for port_name in &ports_repos {
             match forges::ports::fetch_releases(&client, &port_name, &bucket_url).await {
                 Ok(releases) => {
                     let source_key = format!("ports:{port_name}");
