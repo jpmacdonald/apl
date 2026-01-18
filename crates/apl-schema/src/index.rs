@@ -499,7 +499,6 @@ mod tests {
 
         let mut index = PackageIndex::new();
         index.updated_at = 1234567890;
-        index.updated_at = 1234567890;
         index.upsert_release(
             "ripgrep",
             "Fast grep",
