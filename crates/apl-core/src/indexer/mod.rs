@@ -97,6 +97,9 @@ pub async fn generate_index_from_registry(
     let _total_files = toml_files.len() as u64;
 
     // Pass 1: Collect templates
+    // Track all packages found in the registry for pruning stale entries
+    let mut valid_packages = std::collections::HashSet::new();
+
     let mut templates = Vec::new();
     let other_sources: Vec<Box<dyn ListingSource>> = Vec::new();
     let _other_sources = other_sources;
@@ -155,6 +158,7 @@ pub async fn generate_index_from_registry(
             pkg_source_map.insert(template.package.name.to_string(), source_key);
         }
 
+        valid_packages.insert(template.package.name.to_string());
         templates.push((template_path, template));
     }
     println!(
@@ -605,7 +609,19 @@ pub async fn generate_index_from_registry(
         }
     }
 
-    println!("Phase 3: Complete - {fully_indexed} packages fully indexed");
+    // Phase 4: Pruning stale packages
+    // Only prune if we didn't filter by a specific package (which would prune everything else)
+    if package_filter.is_none() {
+        let initial_count = index.packages.len();
+        index.packages.retain(|p| valid_packages.contains(&p.name));
+        let pruned = initial_count - index.packages.len();
+        if pruned > 0 {
+            println!("   Pruned {pruned} stale packages from index.");
+        }
+    }
+
+    // Set index timestamp (UTC)
+    index.updated_at = chrono::Utc::now().timestamp();
 
     hash_cache.lock().await.save()?;
 
