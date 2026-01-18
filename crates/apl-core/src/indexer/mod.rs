@@ -352,12 +352,14 @@ pub async fn generate_index_from_registry(
     }
 
     // Build dirty keys set
-    let dirty_source_keys: std::collections::HashSet<String> = dirty_repos
+    let mut dirty_source_keys: std::collections::HashSet<String> = dirty_repos
         .iter()
         .map(|key| format!("github:{}/{}", key.owner, key.repo))
         .collect();
     // Ports are always considered "dirty"/fast-check for now since we don't have etags yet
-    // Or we just rely on force_full. For this implementation, we'll assume ports are cheap to re-check.
+    for port_name in &ports_repos {
+        dirty_source_keys.insert(format!("ports:{port_name}"));
+    }
 
     // Pass 3.5: Build Graph
     let mut stub_index = PackageIndex::new();
