@@ -245,10 +245,11 @@ impl TableRenderer {
                         super::progress::format_progress_status(*current, *total)
                     }
                     PackageState::Removing => format!("{:<50}", "removing..."),
-                    PackageState::Done { detail } => format!("{:<50}", detail),
-                    PackageState::Warn { detail } => format!("{:<50}", detail),
+                    PackageState::Done { detail } => format!("{detail:<50}"),
+                    PackageState::Warn { detail } => format!("{detail:<50}"),
                     PackageState::Failed { reason } => {
-                        format!("{:<50}", format!("FAILED: {reason}"))
+                        let msg = format!("FAILED: {reason}");
+                        format!("{msg:<50}")
                     }
                 };
 
@@ -267,11 +268,7 @@ impl TableRenderer {
                     + icon_str.chars().count()
                     + 1
                     + pkg.name.chars().count();
-                let padding_len = if visible_len < theme.layout.phase_padding {
-                    theme.layout.phase_padding - visible_len
-                } else {
-                    0
-                };
+                let padding_len = theme.layout.phase_padding.saturating_sub(visible_len);
                 let padding = " ".repeat(padding_len);
 
                 let version_part = format!(

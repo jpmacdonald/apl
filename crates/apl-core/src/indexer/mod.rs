@@ -339,7 +339,7 @@ pub async fn generate_index_from_registry(
         );
 
         for port_name in &ports_repos {
-            match forges::ports::fetch_releases(&client, &port_name, &bucket_url).await {
+            match forges::ports::fetch_releases(&client, port_name, &bucket_url).await {
                 Ok(releases) => {
                     let source_key = format!("ports:{port_name}");
                     master_release_cache.insert(source_key, releases);
@@ -1316,13 +1316,13 @@ mod indexer_tests {
         )
         .await;
 
-        // SHOULD BAIL with "No supported binaries found" because the arm64 asset was skipped locally
-        assert!(result.is_err());
-        let err = result.err().unwrap().to_string();
-        assert!(err.contains("No supported binaries found for version 1.0.0"));
-        println!(
-            "Test success: Version skipped gracefully because asset was missing from local map."
-        );
+        // SHOULD NO LONGER BAIL. It should succeed but with empty binaries.
+        // This allows indexing metadata-only versions (e.g. for dependency resolution).
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert_eq!(info.version, "1.0.0");
+        assert!(info.binaries.is_empty());
+        println!("Test success: Version indexed successfully with empty binaries (Metadata-only).");
     }
 
     #[tokio::test]

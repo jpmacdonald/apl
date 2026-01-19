@@ -69,7 +69,7 @@ pub fn format_progress_status(current: u64, total: Option<u64>) -> String {
 
     let pct_str = if let Some(t) = total_valid {
         let pct = (current * 100 / t).min(100);
-        format!(" {:>3}% ", pct)
+        format!(" {pct:>3}% ")
     } else {
         "  ... ".to_string()
     };
@@ -81,8 +81,8 @@ pub fn format_progress_status(current: u64, total: Option<u64>) -> String {
     };
 
     // Pad everything to exactly 50 characters total to ensure zero-flicker overwrites
-    let combined = format!("{} {} {:<10}", bar, pct_str, size_str);
-    format!("{:<50}", combined)
+    let combined = format!("{bar} {pct_str} {size_str:<10}");
+    format!("{combined:<50}")
 }
 
 /// Format a 24-character progress bar using ▓ (filled) and ░ (empty).
@@ -103,14 +103,12 @@ mod tests {
 
     #[test]
     fn test_progress_animation() {
-        let mut progress = ProgressIndicator::default();
-        assert_eq!(progress.frame(), 0);
+        let mut progress = ProgressIndicator::new(Icons::default());
+        let initial_frame = progress.frame();
 
+        // tick() is now a no-op, it shouldn't change the frame
         progress.tick();
-        assert_eq!(progress.frame(), 1);
-
-        progress.tick();
-        assert_eq!(progress.frame(), 2);
+        assert_eq!(progress.frame(), initial_frame);
     }
 
     #[test]
@@ -120,16 +118,18 @@ mod tests {
         assert!(result.contains("▓"));
         assert!(result.contains("░"));
         assert!(result.contains("50%"));
-        assert!(result.contains("1.0 KB"));
+        assert!(result.contains("512 B")); // Shows current progress size
 
         // 100% progress
         let result = format_progress_status(1024, Some(1024));
         assert!(result.contains("100%"));
+        assert!(result.contains("1.0 KB"));
         assert!(!result.contains("░"));
 
         // 0% progress
         let result = format_progress_status(0, Some(1024));
         assert!(result.contains("0%"));
+        assert!(result.contains("0.0  B"));
         assert!(!result.contains("▓"));
     }
 

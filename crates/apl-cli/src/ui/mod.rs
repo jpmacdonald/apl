@@ -58,8 +58,8 @@
 //! // Update progress
 //! let name = PackageName::new("ripgrep");
 //! let version = Version::from("14.1.0");
-//! output.downloading(&name, &version, 1024, 4096);
-//! output.installing(&name, &version);
+//! output.downloading(&name, &version, 1024, Some(4096));
+//! output.installing(&name, &version, None, None);
 //! output.done(&name, &version, "installed", None);
 //!
 //! // Show summary
