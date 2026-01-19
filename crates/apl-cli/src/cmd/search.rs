@@ -1,7 +1,7 @@
 //! Search command
 
-use apl_core::paths::apl_home;
 use anyhow::{Context, Result, bail};
+use apl_core::paths::apl_home;
 use apl_schema::index::PackageIndex;
 
 /// Search packages in the local index (U.S. Graphics style output)
@@ -30,31 +30,18 @@ pub fn search(query: &str) -> Result<()> {
         return Ok(());
     }
 
+    let mut buffer = crate::ui::buffer::OutputBuffer::default();
     println!();
 
-    let mut table = comfy_table::Table::new();
-    table.load_preset(comfy_table::presets::NOTHING);
-    table.set_content_arrangement(comfy_table::ContentArrangement::Dynamic);
-    table.set_width(theme.layout.table_width as u16);
-
     for entry in &results {
-        let name = entry.name.to_string().with(theme.colors.package_name);
-        let version = entry
-            .latest()
-            .map(|v| v.version.as_str())
-            .unwrap_or("?")
-            .to_string()
-            .with(theme.colors.version);
-        let description = entry.description.as_str().with(theme.colors.secondary);
+        let name = entry.name.to_string();
+        let version = entry.latest().map(|v| v.version.as_str()).unwrap_or("?");
+        let description = &entry.description;
 
-        table.add_row(vec![
-            comfy_table::Cell::new(format!("  {name}")),
-            comfy_table::Cell::new(version),
-            comfy_table::Cell::new(description),
-        ]);
+        crate::ui::list::print_list_row(&mut buffer, &name, version, 0, description, " ");
     }
 
-    println!("{table}");
+    buffer.flush();
 
     // Footer: Mission Control standardized summary
     let elapsed = start.elapsed();
@@ -64,15 +51,6 @@ pub fn search(query: &str) -> Result<()> {
         results.len(),
         elapsed.as_secs_f64()
     );
-
-    // JSON RESULT for CI automation
-    let result_json = serde_json::json!({
-        "operation": "search",
-        "query": query,
-        "count": results.len(),
-        "elapsed": elapsed.as_secs_f64()
-    });
-    println!("\nRESULT {}", serde_json::to_string(&result_json)?);
 
     Ok(())
 }
