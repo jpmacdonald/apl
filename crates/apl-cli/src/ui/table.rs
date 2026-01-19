@@ -234,17 +234,24 @@ impl TableRenderer {
 
                 // Format status - all cases padded to fixed width to prevent flashing
                 let status_text = match &pkg.state {
-                    PackageState::Pending => format!("{:<50}", "pending"),
+                    PackageState::Pending => format!("{:<50}", "queued"),
                     PackageState::Downloading { current, total } => {
                         super::progress::format_progress_status(*current, *total)
                     }
-                    PackageState::Extracting { current, total } => {
-                        super::progress::format_progress_status(*current, *total)
+                    PackageState::Extracting { current, .. } => {
+                        // Custom word for extraction
+                        let size_str = if *current > 0 {
+                            format!(" ({})", super::theme::format_size(*current))
+                        } else {
+                            "".to_string()
+                        };
+                        let msg = format!("unpacking...{size_str}");
+                        format!("{msg:<50}")
                     }
-                    PackageState::Installing { current, total } => {
-                        super::progress::format_progress_status(*current, *total)
+                    PackageState::Installing { .. } => {
+                        format!("{:<50}", "linking...")
                     }
-                    PackageState::Removing => format!("{:<50}", "removing..."),
+                    PackageState::Removing => format!("{:<50}", "uninstalling..."),
                     PackageState::Done { detail } => format!("{detail:<50}"),
                     PackageState::Warn { detail } => format!("{detail:<50}"),
                     PackageState::Failed { reason } => {

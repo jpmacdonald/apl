@@ -58,23 +58,41 @@ pub fn link_binaries(
 
     for (src_rel, target_name) in bins_to_link {
         let src_path = pkg_store_path.join(&src_rel);
-        if !src_path.exists() {
+        if !src_path.exists() || src_path.is_dir() {
+            // If it's a directory but we expect a binary, try looking inside it
+            // (e.g. if strip_components failed due to name collision)
+            let nested = src_path.join(&src_rel);
+            if nested.exists() && nested.is_file() {
+                // Use the nested one instead
+                link_single_bin(&nested, &target_name)?;
+                files_to_record.push((
+                    bin_path().join(target_name).to_string_lossy().to_string(),
+                    "SYMLINK".to_string(),
+                ));
+            }
             continue;
         }
 
-        let target = bin_path().join(target_name);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        if target.exists() || target.is_symlink() {
-            std::fs::remove_file(&target).ok();
-        }
-
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&src_path, &target).map_err(InstallError::Io)?;
-
-        files_to_record.push((target.to_string_lossy().to_string(), "SYMLINK".to_string()));
+        link_single_bin(&src_path, &target_name)?;
+        files_to_record.push((
+            bin_path().join(target_name).to_string_lossy().to_string(),
+            "SYMLINK".to_string(),
+        ));
     }
 
     Ok(files_to_record)
+}
+
+fn link_single_bin(src_path: &Path, target_name: &str) -> Result<(), InstallError> {
+    let target = bin_path().join(target_name);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    if target.exists() || target.is_symlink() {
+        std::fs::remove_file(&target).ok();
+    }
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(src_path, &target).map_err(InstallError::Io)?;
+    Ok(())
 }

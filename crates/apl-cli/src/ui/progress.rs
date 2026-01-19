@@ -54,47 +54,33 @@ impl Default for ProgressIndicator {
     }
 }
 
-/// Format progress status with consistent layout and padding
+/// Format progress status with word-based Mission Control style (no bars)
 pub fn format_progress_status(current: u64, total: Option<u64>) -> String {
-    let bar_width = 24;
-
     // Treat None or Some(0) as indeterminate
     let total_valid = total.filter(|&t| t > 0);
 
-    let bar = if let Some(t) = total_valid {
-        format_progress_bar(current, t, bar_width)
+    let status_word = if current == 0 {
+        "queued"
+    } else if let Some(t) = total_valid {
+        if current >= t {
+            "installed"
+        } else {
+            "fetching..."
+        }
     } else {
-        format_progress_bar(0, 100, bar_width)
-    };
-
-    let pct_str = if let Some(t) = total_valid {
-        let pct = (current * 100 / t).min(100);
-        format!(" {pct:>3}% ")
-    } else {
-        "  ... ".to_string()
+        "verifying..."
     };
 
     let size_str = if current > 0 {
         super::theme::format_size(current)
     } else {
-        "0.0  B".to_string()
+        " ".to_string()
     };
 
-    // Pad everything to exactly 50 characters total to ensure zero-flicker overwrites
-    let combined = format!("{bar} {pct_str} {size_str:<10}");
+    // Pad everything to exactly 50 characters total
+    // Mission Control: "fetching...  1.2 MB"
+    let combined = format!("{status_word: <15} {size_str:>10}");
     format!("{combined:<50}")
-}
-
-/// Format a 24-character progress bar using ▓ (filled) and ░ (empty).
-/// This is the U.S. Graphics Company style: clean, minimal Unicode.
-pub fn format_progress_bar(current: u64, total: u64, width: usize) -> String {
-    let filled = if total > 0 {
-        ((current as f64 / total as f64) * width as f64).round() as usize
-    } else {
-        0
-    };
-    let empty = width.saturating_sub(filled);
-    format!("{}{}", "▓".repeat(filled), "░".repeat(empty))
 }
 
 #[cfg(test)]
@@ -113,41 +99,25 @@ mod tests {
 
     #[test]
     fn test_progress_status_format() {
-        // 50% progress on a 1024 byte download
+        // 50% progress download
         let result = format_progress_status(512, Some(1024));
-        assert!(result.contains("▓"));
-        assert!(result.contains("░"));
-        assert!(result.contains("50%"));
-        assert!(result.contains("512 B")); // Shows current progress size
+        assert!(result.contains("fetching..."));
+        assert!(result.contains("512 B"));
 
         // 100% progress
         let result = format_progress_status(1024, Some(1024));
-        assert!(result.contains("100%"));
+        assert!(result.contains("installed"));
         assert!(result.contains("1.0 KB"));
-        assert!(!result.contains("░"));
 
         // 0% progress
         let result = format_progress_status(0, Some(1024));
-        assert!(result.contains("0%"));
-        assert!(result.contains("0.0  B"));
-        assert!(!result.contains("▓"));
+        assert!(result.contains("queued"));
     }
 
     #[test]
-    fn test_progress_bar_format() {
-        // 50% should be half filled
-        let bar = super::format_progress_bar(50, 100, 10);
-        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 5);
-        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 5);
-
-        // 100% should be all filled
-        let bar = super::format_progress_bar(100, 100, 10);
-        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 10);
-        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 0);
-
-        // 0% should be all empty
-        let bar = super::format_progress_bar(0, 100, 10);
-        assert_eq!(bar.chars().filter(|c| *c == '▓').count(), 0);
-        assert_eq!(bar.chars().filter(|c| *c == '░').count(), 10);
+    fn test_progress_bar_format_removed() {
+        // We verify that the structure is still padded correctly
+        let result = format_progress_status(0, None);
+        assert_eq!(result.len(), 50);
     }
 }

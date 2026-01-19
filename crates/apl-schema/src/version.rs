@@ -18,6 +18,9 @@ pub struct PackageSpec {
 impl PackageSpec {
     /// Parse a package specifier like `jq` or `jq@1.7.1`
     pub fn parse(spec: &str) -> Result<Self> {
+        // Strip any trailing comments (e.g. jq#comment)
+        let spec = spec.split_once('#').map(|(s, _)| s).unwrap_or(spec).trim();
+
         if let Some((name, version)) = spec.split_once('@') {
             if name.is_empty() {
                 bail!("Invalid package specifier: missing package name");
@@ -57,8 +60,17 @@ impl PackageSpec {
 }
 
 /// Compare two semantic versions. Returns true if `latest` is newer than `current`.
-/// Handles simple numeric comparison (e.g. 1.2.3 > 1.2.2).
+/// Uses the `semver` crate for robust comparison, including pre-releases.
 pub fn is_newer(current: &str, latest: &str) -> bool {
+    // Try robust semver comparison first
+    if let (Ok(c), Ok(l)) = (
+        semver::Version::parse(current.trim_start_matches('v')),
+        semver::Version::parse(latest.trim_start_matches('v')),
+    ) {
+        return l > c;
+    }
+
+    // Fallback for non-semver versions (e.g. simple numbers or 4-digit versions)
     let parse =
         |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse::<u32>().ok()).collect() };
 
@@ -78,35 +90,23 @@ pub fn is_newer(current: &str, latest: &str) -> bool {
 
     // If numeric parts are identical, check for pre-release suffixes.
     // Logic: Stable (no suffix) > Pre-release (any suffix).
-    // e.g. 1.0.0 > 1.0.0-beta
-    //
-    // If 'latest' has no suffix and 'current' has a suffix, latest is newer (upgrade to stable).
-    // If 'current' has no suffix and 'latest' has a suffix, latest is OLDER (don't downgrade to beta).
-    //
-    // Note: This simple check doesn't compare "beta.1" vs "beta.2", but it solves the
-    // "stuck on beta" problem when stable is out.
     let has_suffix = |v: &str| v.contains('-') || v.chars().any(|c| c.is_alphabetic());
 
     let c_has_suffix = has_suffix(current);
     let l_has_suffix = has_suffix(latest);
 
     if c_has_suffix && !l_has_suffix {
-        // Current is beta, latest is stable -> Newer
-        return true;
+        return true; // Upgrade from pre-release to stable
     }
     if !c_has_suffix && l_has_suffix {
-        // Current is stable, latest is beta -> Older (ignore)
-        return false;
+        return false; // Don't downgrade from stable to pre-release
     }
 
-    // Fallback: If both have suffixes, use lexicographical comparison as a heuristic.
-    // e.g. "1.0.0-beta.2" > "1.0.0-beta.1"
-    // e.g. "1.0.0-rc.1" > "1.0.0-beta.1"
+    // Fallback: Lexicographical for identical numeric parts with different suffixes
     if c_has_suffix && l_has_suffix {
         return latest > current;
     }
 
-    // Fallback: Same version or unknown
     false
 }
 
@@ -208,6 +208,9 @@ mod tests {
     fn test_is_newer_prerelease_upgrade() {
         assert!(is_newer("1.0.0-beta", "1.0.0"));
         assert!(!is_newer("1.0.0", "1.0.0-beta"));
+        // Regression: 0.4.9-dev is newer than 0.4.8
+        assert!(!is_newer("0.4.9-dev", "0.4.8"));
+        assert!(is_newer("0.4.8", "0.4.9-dev"));
     }
 
     #[test]

@@ -372,6 +372,23 @@ impl PackageIndex {
                     }
                 }
 
+                // 3. Fallback for typos: if query starts with name or name starts with query (and long enough)
+                if best_score.unwrap_or(0) < MIN_SCORE {
+                    if (query.len() > 3 && e.name.starts_with(query))
+                        || (e.name.len() > 2 && query.starts_with(&e.name))
+                    {
+                        best_score = Some(best_score.unwrap_or(0).max(MIN_SCORE));
+                    }
+
+                    for b in &e.bins {
+                        if (query.len() > 3 && b.starts_with(query))
+                            || (b.len() > 2 && query.starts_with(b))
+                        {
+                            best_score = Some(best_score.unwrap_or(0).max(MIN_SCORE));
+                        }
+                    }
+                }
+
                 // Only include results above minimum threshold
                 best_score.filter(|s| *s >= MIN_SCORE).map(|s| (s, e))
             })

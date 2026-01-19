@@ -136,10 +136,8 @@ pub struct InstallSpec {
 }
 
 impl InstallSpec {
-    pub fn effective_bin(&self, pkg_name: &str) -> Vec<String> {
-        self.bin
-            .clone()
-            .unwrap_or_else(|| vec![pkg_name.to_string()])
+    pub fn effective_bin(&self, _pkg_name: &str) -> Vec<String> {
+        self.bin.clone().unwrap_or_default()
     }
 
     pub fn effective_strategy(&self) -> InstallStrategy {

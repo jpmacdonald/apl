@@ -14,8 +14,13 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
+    // 1. Pre-process arguments to filter out any '#' comments
+    // This allows copy-pasting commands with trailing comments.
+    let args: Vec<String> = std::env::args()
+        .take_while(|arg| !arg.starts_with('#'))
+        .collect();
+
     // Auto-detect `apl shell` context
-    let args: Vec<String> = std::env::args().collect();
     if args.len() == 1 {
         // No arguments provided. Check for apl.toml
         if let Ok(cwd) = std::env::current_dir() {
@@ -26,7 +31,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(args);
     let dry_run = cli.dry_run;
 
     match cli.command {

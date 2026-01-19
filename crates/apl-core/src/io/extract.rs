@@ -447,12 +447,34 @@ pub fn strip_components(dir: &Path) -> io::Result<()> {
         let top_level = entries[0].path();
         let sub_entries: Vec<_> = fs::read_dir(&top_level)?.filter_map(|e| e.ok()).collect();
 
+        // 1. Move everything to a temporary unique directory first
+        // This avoids collisions if a child has the same name as the top_level directory itself (e.g. age/age)
+        let temp_dir = dir.join(".apl-strip-tmp");
+        if temp_dir.exists() {
+            fs::remove_dir_all(&temp_dir)?;
+        }
+        fs::create_dir_all(&temp_dir)?;
+
         for entry in sub_entries {
+            let target = temp_dir.join(entry.file_name());
+            fs::rename(entry.path(), target)?;
+        }
+
+        // 2. Remove the now-empty top-level directory
+        fs::remove_dir(top_level)?;
+
+        // 3. Move everything from temp_dir to the root dir
+        let final_entries: Vec<_> = fs::read_dir(&temp_dir)?.filter_map(|e| e.ok()).collect();
+        for entry in final_entries {
             let target = dir.join(entry.file_name());
             fs::rename(entry.path(), target)?;
         }
 
-        fs::remove_dir(top_level)?;
+        // 4. Clean up temp_dir
+        fs::remove_dir(temp_dir)?;
+
+        // Robustness: recursive strip if needed (e.g. nested age/age/...)
+        let _ = strip_components(dir);
     }
 
     Ok(())
