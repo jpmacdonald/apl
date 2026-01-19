@@ -1,6 +1,6 @@
 //! Self-update command for APL
-use anyhow::{Context, Result};
 use crate::ui::Output;
+use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
 
@@ -110,12 +110,28 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     let download_path = tmp_dir.path().join(filename);
 
     let bytes = client.get(&download_url).send().await?.bytes().await?;
+    if bytes.starts_with(b"Artifact not found") {
+        return Err(anyhow::anyhow!(
+            "Server returned 'Artifact not found' despite 200 OK status. This indicates a missing asset on the CAS server."
+        ));
+    }
     std::fs::write(&download_path, &bytes).context("Failed to write downloaded asset")?;
 
     // Extract the archive
     let extract_dir = tmp_dir.path().join("extract");
-    let extracted_files = apl_core::io::extract::extract_auto(&download_path, &extract_dir)
-        .context("Failed to extract update archive")?;
+    let file_size = std::fs::metadata(&download_path).map(|m| m.len()).ok();
+    let pkg_name = apl_schema::types::PackageName::from("apl");
+    let version_wrapped = apl_schema::types::Version::from(latest_version.as_str());
+
+    let extracted_files = apl_core::io::extract::extract_auto(
+        &download_path,
+        &extract_dir,
+        &output,
+        &pkg_name,
+        &version_wrapped,
+        file_size,
+    )
+    .context("Failed to extract update archive")?;
 
     // Find the 'apl' binary in extracted files
     let apl_path = extracted_files

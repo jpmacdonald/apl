@@ -64,13 +64,16 @@ impl RelativeFrame {
             self.stdout.queue(MoveDown(row_idx))?;
         }
 
-        // 3. Clear the line
-        self.stdout.queue(Clear(ClearType::CurrentLine))?;
+        // 3. Move to column 0 (don't clear yet - prevents flash)
+        self.stdout.queue(MoveToColumn(0))?;
 
         // 4. Render the content
         f(&mut self.stdout)?;
 
-        // 5. Restore to anchor again to remain clean
+        // 5. Clear from cursor to end of line (cleans up leftover chars)
+        self.stdout.queue(Clear(ClearType::UntilNewLine))?;
+
+        // 6. Restore to anchor again to remain clean
         self.stdout.queue(RestorePosition)?;
 
         // NOTE: We do NOT flush here anymore to allow batching.

@@ -3,13 +3,15 @@
 //! Handles tar.zst, tar.gz, and other archive formats.
 
 use std::fs::{self, File};
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 use zip::ZipArchive;
 use zstd::stream::Decoder as ZstdDecoder;
 
+use crate::Reporter;
+use crate::types::{PackageName, Version};
 use apl_schema::ArtifactFormat;
 
 #[derive(Error, Debug)]
@@ -35,26 +37,75 @@ pub struct ExtractedFile {
     pub is_executable: bool,
 }
 
+struct ProgressReader<'a, R, Rep> {
+    inner: R,
+    reporter: &'a Rep,
+    name: &'a PackageName,
+    version: &'a Version,
+    current: u64,
+    total: Option<u64>,
+}
+
+impl<'a, R: Read, Rep: Reporter> Read for ProgressReader<'a, R, Rep> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.current += n as u64;
+        self.reporter
+            .extracting(self.name, self.version, self.current, self.total);
+        Ok(n)
+    }
+}
+
+impl<'a, R: Seek, Rep> Seek for ProgressReader<'a, R, Rep> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
 /// Extract a tar.zst archive to a destination directory
-pub fn extract_tar_zst(
+pub fn extract_tar_zst<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
+    reporter: &R,
+    name: &PackageName,
+    version: &Version,
+    total: Option<u64>,
 ) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
     let reader = BufReader::new(file);
-    let zstd_decoder = ZstdDecoder::new(reader)?;
+    let progress = ProgressReader {
+        inner: reader,
+        reporter,
+        name,
+        version,
+        current: 0,
+        total,
+    };
+    let zstd_decoder = ZstdDecoder::new(progress)?;
 
     extract_tar(zstd_decoder, dest_dir)
 }
 
 /// Extract a tar.gz archive to a destination directory
-pub fn extract_tar_gz(
+pub fn extract_tar_gz<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
+    reporter: &R,
+    name: &PackageName,
+    version: &Version,
+    total: Option<u64>,
 ) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
     let reader = BufReader::new(file);
-    let gz_decoder = flate2::read::GzDecoder::new(reader);
+    let progress = ProgressReader {
+        inner: reader,
+        reporter,
+        name,
+        version,
+        current: 0,
+        total,
+    };
+    let gz_decoder = flate2::read::GzDecoder::new(progress);
 
     extract_tar(gz_decoder, dest_dir)
 }
@@ -115,12 +166,25 @@ fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>
 }
 
 /// Extract a zip archive
-pub fn extract_zip(
+pub fn extract_zip<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
+    reporter: &R,
+    name: &PackageName,
+    version: &Version,
+    total: Option<u64>,
 ) -> Result<Vec<ExtractedFile>, ExtractError> {
     let file = File::open(archive_path)?;
-    let mut archive = ZipArchive::new(file).map_err(|e| ExtractError::Archive(e.to_string()))?;
+    let progress = ProgressReader {
+        inner: file,
+        reporter,
+        name,
+        version,
+        current: 0,
+        total,
+    };
+    let mut archive =
+        ZipArchive::new(progress).map_err(|e| ExtractError::Archive(e.to_string()))?;
 
     fs::create_dir_all(dest_dir)?;
     let mut extracted_files = Vec::new();
@@ -190,19 +254,36 @@ pub fn detect_format(path: &Path) -> ArtifactFormat {
 }
 
 /// Extract an archive, auto-detecting format
-pub fn extract_auto(
+pub fn extract_auto<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
+    reporter: &R,
+    name: &PackageName,
+    version: &Version,
+    total: Option<u64>,
 ) -> Result<Vec<ExtractedFile>, ExtractError> {
     match detect_format(archive_path) {
-        ArtifactFormat::TarZst => extract_tar_zst(archive_path, dest_dir),
-        ArtifactFormat::TarGz => extract_tar_gz(archive_path, dest_dir),
+        ArtifactFormat::TarZst => {
+            extract_tar_zst(archive_path, dest_dir, reporter, name, version, total)
+        }
+        ArtifactFormat::TarGz => {
+            extract_tar_gz(archive_path, dest_dir, reporter, name, version, total)
+        }
         ArtifactFormat::Tar => {
             let file = File::open(archive_path)?;
-            extract_tar(BufReader::new(file), dest_dir)
+            let reader = BufReader::new(file);
+            let progress = ProgressReader {
+                inner: reader,
+                reporter,
+                name,
+                version,
+                current: 0,
+                total,
+            };
+            extract_tar(progress, dest_dir)
         }
-        ArtifactFormat::Zip => extract_zip(archive_path, dest_dir),
-        ArtifactFormat::Pkg => extract_pkg(archive_path, dest_dir),
+        ArtifactFormat::Zip => extract_zip(archive_path, dest_dir, reporter, name, version, total),
+        ArtifactFormat::Pkg => extract_pkg(archive_path, dest_dir), // PKG requires xar command, hard to track progress this way
         ArtifactFormat::Binary | ArtifactFormat::Dmg => {
             // For raw binaries and DMGs, just copy the file
             fs::create_dir_all(dest_dir)?;
@@ -403,7 +484,15 @@ mod tests {
         fs::write(&src, b"binary content").unwrap();
 
         let dest = dir.path().join("extracted");
-        let files = extract_auto(&src, &dest).unwrap();
+        let files = extract_auto(
+            &src,
+            &dest,
+            &crate::reporter::NullReporter,
+            &crate::types::PackageName::from("test"),
+            &crate::types::Version::from("0.0.0"),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(files.len(), 1);
         assert!(files[0].absolute_path.exists());
@@ -442,7 +531,15 @@ mod tests {
         fs::write(&src, b"#!/bin/sh\necho hello").unwrap();
 
         let dest = dir.path().join("out");
-        let files = extract_auto(&src, &dest).unwrap();
+        let files = extract_auto(
+            &src,
+            &dest,
+            &crate::reporter::NullReporter,
+            &crate::types::PackageName::from("test"),
+            &crate::types::Version::from("0.0.0"),
+            None,
+        )
+        .unwrap();
 
         assert_eq!(files[0].relative_path.to_str(), Some("testbin"));
         assert!(files[0].absolute_path.starts_with(dest));

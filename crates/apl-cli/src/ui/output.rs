@@ -69,7 +69,13 @@ impl Output {
     }
 
     /// Reports progress for a file download.
-    pub fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
+    pub fn downloading(
+        &self,
+        name: &PackageName,
+        version: &Version,
+        current: u64,
+        total: Option<u64>,
+    ) {
         let _ = self.sender.send(UiEvent::Downloading {
             name: name.clone(),
             version: version.clone(),
@@ -79,10 +85,18 @@ impl Output {
     }
 
     /// Transitions a package display to the 'installing' state.
-    pub fn installing(&self, name: &PackageName, version: &Version) {
+    pub fn installing(
+        &self,
+        name: &PackageName,
+        version: &Version,
+        current: Option<u64>,
+        total: Option<u64>,
+    ) {
         let _ = self.sender.send(UiEvent::Installing {
             name: name.clone(),
             version: version.clone(),
+            current,
+            total,
         });
     }
 
@@ -203,12 +217,27 @@ impl super::reporter::Reporter for Output {
         self.section(title);
     }
 
-    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
         self.downloading(name, version, current, total);
     }
 
-    fn installing(&self, name: &PackageName, version: &Version) {
-        self.installing(name, version);
+    fn extracting(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
+        let _ = self.sender.send(UiEvent::Extracting {
+            name: name.clone(),
+            version: version.clone(),
+            current,
+            total,
+        });
+    }
+
+    fn installing(
+        &self,
+        name: &PackageName,
+        version: &Version,
+        current: Option<u64>,
+        total: Option<u64>,
+    ) {
+        self.installing(name, version, current, total);
     }
 
     fn removing(&self, name: &PackageName, version: &Version) {

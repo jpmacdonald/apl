@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow};
-use apl_schema::index::PackageIndex;
-use apl_core::manifest::{Lockfile, Manifest};
 use crate::ui::Output;
+use anyhow::{Context, Result, anyhow};
+use apl_core::manifest::{Lockfile, Manifest};
+use apl_schema::index::PackageIndex;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -241,14 +241,14 @@ async fn ensure_installed(
             continue;
         }
 
-        output.installing(&pkg.name, &pkg.version);
+        output.installing(&pkg.name, &pkg.version, None, None);
 
         let unresolved =
             crate::ops::flow::UnresolvedPackage::new(pkg.name.clone(), Some(pkg.version.clone()));
         let resolved = unresolved.resolve(Some(index))?;
         let prepared = resolved.prepare(client, output).await?;
 
-        crate::ops::install::install_to_store_only(prepared)?;
+        crate::ops::install::install_to_store_only(prepared, std::sync::Arc::new(output.clone()))?;
 
         output.done(&pkg.name, &pkg.version, "ready", None);
     }

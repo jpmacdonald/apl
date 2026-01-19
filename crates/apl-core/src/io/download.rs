@@ -105,7 +105,7 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
         .unwrap_or(false);
 
     // Initialize progress state
-    reporter.downloading(pkg_name, version, 0, total_size);
+    reporter.downloading(pkg_name, version, 0, Some(total_size));
 
     // Detect if this is a manifest-based chunked download
     if url.contains("/manifests/") {
@@ -143,7 +143,7 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
         file.write_all(&chunk).await?;
         hasher.write_all(&chunk)?;
         downloaded += chunk.len() as u64;
-        reporter.downloading(pkg_name, version, downloaded, total_size);
+        reporter.downloading(pkg_name, version, downloaded, Some(total_size));
     }
 
     file.flush().await?;
@@ -184,7 +184,7 @@ async fn download_from_manifest<R: Reporter + Clone + 'static>(
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
     let total_size = manifest.size;
-    reporter.downloading(pkg_name, version, 0, total_size);
+    reporter.downloading(pkg_name, version, 0, Some(total_size));
 
     // 2. Prepare for chunk downloads
     let base_url = url.split("/manifests/").next().unwrap_or_default();
@@ -222,7 +222,7 @@ async fn download_from_manifest<R: Reporter + Clone + 'static>(
 
             let mut d = downloaded.lock().await;
             *d += len;
-            reporter.downloading(&pkg_name, &version, *d, total_size);
+            reporter.downloading(&pkg_name, &version, *d, Some(total_size));
 
             Ok::<(), DownloadError>(())
         }));
@@ -411,7 +411,7 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
                 if let (Some(rep), Some(name), Some(ver)) = (&reporter, &pkg_name, &version) {
                     let mut d = downloaded.lock().await;
                     *d += len;
-                    rep.downloading(name, ver, *d, total_size);
+                    rep.downloading(name, ver, *d, Some(total_size));
                 }
             }
             drop(tx);
@@ -492,7 +492,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     let total_size = head_resp.content_length().unwrap_or(0);
     // Note: We ignore accept_ranges for pipelined extraction as it prefers sequential stream.
 
-    reporter.downloading(pkg_name, version, 0, total_size);
+    reporter.downloading(pkg_name, version, 0, Some(total_size));
 
     let response = client
         .get(url)
@@ -554,7 +554,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
         hasher.write_all(&chunk)?;
 
         downloaded += chunk.len() as u64;
-        reporter.downloading(pkg_name, version, downloaded, total_size);
+        reporter.downloading(pkg_name, version, downloaded, Some(total_size));
 
         if tx.send(Ok(chunk)).await.is_err() {
             return Err(
@@ -606,8 +606,12 @@ async fn run_simple_download<R: Reporter>(
         file.write_all(&chunk).await?;
         hasher.write_all(&chunk)?;
         downloaded += chunk.len() as u64;
-        opts.reporter
-            .downloading(opts.pkg_name, opts.version, downloaded, opts.total_size);
+        opts.reporter.downloading(
+            opts.pkg_name,
+            opts.version,
+            downloaded,
+            Some(opts.total_size),
+        );
     }
     file.flush().await?;
 

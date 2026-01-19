@@ -46,10 +46,22 @@ pub enum UiEvent {
         name: PackageName,
         version: Version,
         current: u64,
-        total: u64,
+        total: Option<u64>,
+    },
+    /// Update package state to extracting
+    Extracting {
+        name: PackageName,
+        version: Version,
+        current: u64,
+        total: Option<u64>,
     },
     /// Update package state to installing
-    Installing { name: PackageName, version: Version },
+    Installing {
+        name: PackageName,
+        version: Version,
+        current: Option<u64>,
+        total: Option<u64>,
+    },
     /// Update package state to removing
     Removing { name: PackageName, version: Version },
     /// Mark package as successfully done
@@ -129,127 +141,163 @@ fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
 
     loop {
         // Use timeout to drive animations (100ms = 10 FPS)
-        match receiver.recv_timeout(Duration::from_millis(100)) {
-            Ok(UiEvent::PreparePipeline { items }) => {
-                // Implementation Note: Pre-allocation
-                // We reserve screen space for all items immediately.
-                // This prevents the table from "jumping" around as new tasks start.
-                table.prepare_pipeline(&mut buffer, &items);
-            }
-            Ok(UiEvent::PrintHeader { title }) => {
-                println!();
-                println!("{}", title.bold());
-                buffer.flush();
-            }
-            Ok(UiEvent::LivePhase { title }) => {
-                use std::io::Write;
-                let padded = format!("{: <width$}", title, width = theme.layout.phase_padding);
-                print!("{}", padded.dark_grey());
-                let _ = std::io::stdout().flush();
-            }
-            Ok(UiEvent::LivePhaseUpdate { status, success }) => {
-                if success {
-                    println!("{}", status.green().bold());
-                } else {
-                    println!("{}", status.red().bold());
-                }
-            }
-            Ok(UiEvent::Downloading {
-                name,
-                version,
-                current,
-                total,
-            }) => {
-                table.update_package(
-                    &name,
-                    Some(&version),
-                    PackageState::Downloading { current, total },
-                    Some(total),
-                );
-                table.render_all(&mut buffer);
-            }
-            Ok(UiEvent::Installing { name, version }) => {
-                table.update_package(&name, Some(&version), PackageState::Installing, None);
-                table.render_all(&mut buffer);
-            }
-            Ok(UiEvent::Removing { name, version }) => {
-                table.update_package(&name, Some(&version), PackageState::Removing, None);
-                table.render_all(&mut buffer);
-            }
-            Ok(UiEvent::Done {
-                name,
-                version,
-                detail,
-                size,
-            }) => {
-                table.update_package(&name, Some(&version), PackageState::Done { detail }, size);
-                table.render_all(&mut buffer);
-            }
-            Ok(UiEvent::Failed {
-                name,
-                version,
-                reason,
-            }) => {
-                table.update_package(&name, Some(&version), PackageState::Failed { reason }, None);
-                table.render_all(&mut buffer);
-            }
-            Ok(UiEvent::Info(msg)) => {
-                // Info might be printed while table is active?
-                // Ideally Info should also respect table boundaries or just print above?
-                // For now, let's just make sure it uses the right icon.
-                // If table is active, we probably shouldn't break the frame for simple info unless it's a footer?
-                // But normally Info is used BEFORE pipeline or AFTER.
-                // If used DURING pipeline, it will break frame.
-                println!("  {} {}", theme.icons.info, msg);
-                buffer.flush();
-            }
-            Ok(UiEvent::Success(msg)) => {
-                table.print_footer(&mut buffer, &msg, Severity::Success);
-            }
-            Ok(UiEvent::Warning(msg)) => {
-                table.print_footer(&mut buffer, &msg, Severity::Warning);
-            }
-            Ok(UiEvent::Error(msg)) => {
-                // Use table footer to ensure clean output even if table was active
-                table.print_footer(&mut buffer, &msg, Severity::Error);
-            }
-            Ok(UiEvent::Summary {
-                count,
-                action,
-                elapsed_secs,
-            }) => {
-                let operation = action.to_uppercase();
-                let msg = format!("{operation} COMPLETE {count}, elapsed {elapsed_secs:.1}s");
-                table.print_footer(&mut buffer, &msg, Severity::Success);
-
-                // JSON RESULT for CI
-                let result_json = serde_json::json!({
-                    "operation": action,
-                    "status": "success",
-                    "count": count,
-                    "elapsed": elapsed_secs
-                });
-                println!(
-                    "\nRESULT {}",
-                    serde_json::to_string(&result_json).unwrap_or_default()
-                );
-            }
-            Ok(UiEvent::Sync(tx)) => {
-                // All previous events are processed because of sequential mpsc
-                let _ = tx.send(());
-            }
-            Ok(UiEvent::Shutdown) => {
-                break;
-            }
+        let event = match receiver.recv_timeout(Duration::from_millis(100)) {
+            Ok(e) => e,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Animate active rows
                 table.render_active(&mut buffer);
+                continue;
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                break;
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+
+        // Process the first event
+        let mut shutdown = process_event(event, &mut table, &mut buffer, &theme);
+
+        // Drain any other immediately available events to batch updates
+        while let Ok(next_event) = receiver.try_recv() {
+            if process_event(next_event, &mut table, &mut buffer, &theme) {
+                shutdown = true;
             }
         }
+
+        // Render once after batch update
+        table.render_all(&mut buffer);
+
+        if shutdown {
+            break;
+        }
     }
+}
+
+/// Process a single event and update state. Returns true if shutdown received.
+fn process_event(
+    event: UiEvent,
+    table: &mut TableRenderer,
+    buffer: &mut OutputBuffer,
+    theme: &Theme,
+) -> bool {
+    match event {
+        UiEvent::PreparePipeline { items } => {
+            table.prepare_pipeline(buffer, &items);
+        }
+        UiEvent::PrintHeader { title } => {
+            println!();
+            println!("{}", title.bold());
+            buffer.flush();
+        }
+        UiEvent::LivePhase { title } => {
+            use std::io::Write;
+            let padded = format!("{: <width$}", title, width = theme.layout.phase_padding);
+            print!("{}", padded.dark_grey());
+            let _ = std::io::stdout().flush();
+        }
+        UiEvent::LivePhaseUpdate { status, success } => {
+            if success {
+                println!("{}", status.green().bold());
+            } else {
+                println!("{}", status.red().bold());
+            }
+        }
+        UiEvent::Downloading {
+            name,
+            version,
+            current,
+            total,
+        } => {
+            let total = total
+                .filter(|&t| t > 0)
+                .or_else(|| table.get_package_size(&name));
+            table.update_package(
+                &name,
+                Some(&version),
+                PackageState::Downloading { current, total },
+                total,
+            );
+        }
+        UiEvent::Extracting {
+            name,
+            version,
+            current,
+            total,
+        } => {
+            let total = total
+                .filter(|&t| t > 0)
+                .or_else(|| table.get_package_size(&name));
+            table.update_package(
+                &name,
+                Some(&version),
+                PackageState::Extracting { current, total },
+                total,
+            );
+        }
+        UiEvent::Installing {
+            name,
+            version,
+            current,
+            total,
+        } => {
+            let total = total
+                .filter(|&t| t > 0)
+                .or_else(|| table.get_package_size(&name));
+            let state = if let Some(t) = total {
+                PackageState::Installing {
+                    current: current.filter(|&c| c > 0).unwrap_or(t),
+                    total: Some(t),
+                }
+            } else {
+                PackageState::Installing {
+                    current: current.unwrap_or(0),
+                    total: None,
+                }
+            };
+            table.update_package(&name, Some(&version), state, total);
+        }
+        UiEvent::Removing { name, version } => {
+            table.update_package(&name, Some(&version), PackageState::Removing, None);
+        }
+        UiEvent::Done {
+            name,
+            version,
+            detail,
+            size,
+        } => {
+            table.update_package(&name, Some(&version), PackageState::Done { detail }, size);
+        }
+        UiEvent::Failed {
+            name,
+            version,
+            reason,
+        } => {
+            table.update_package(&name, Some(&version), PackageState::Failed { reason }, None);
+        }
+        UiEvent::Info(msg) => {
+            println!("  {} {}", theme.icons.info, msg);
+            buffer.flush();
+        }
+        UiEvent::Success(msg) => {
+            table.print_footer(buffer, &msg, Severity::Success);
+        }
+        UiEvent::Warning(msg) => {
+            table.print_footer(buffer, &msg, Severity::Warning);
+        }
+        UiEvent::Error(msg) => {
+            table.print_footer(buffer, &msg, Severity::Error);
+        }
+        UiEvent::Summary {
+            count,
+            action,
+            elapsed_secs,
+        } => {
+            let operation = action.to_uppercase();
+            let msg = format!("{operation} COMPLETE {count}, elapsed {elapsed_secs:.1}s");
+            table.print_plain(buffer, &msg);
+        }
+        UiEvent::Sync(tx) => {
+            let _ = tx.send(());
+        }
+        UiEvent::Shutdown => return true,
+    }
+    false
 }
 
 #[cfg(test)]
@@ -265,7 +313,7 @@ mod tests {
             name: PackageName::new("pkg"),
             version: Version::from("1.0.0"),
             current: 100,
-            total: 200,
+            total: Some(200),
         };
         assert!(matches!(event2, UiEvent::Downloading { .. }));
     }

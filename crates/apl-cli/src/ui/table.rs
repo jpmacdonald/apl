@@ -6,7 +6,7 @@
 
 use super::buffer::OutputBuffer;
 use super::engine::RelativeFrame;
-use super::progress::{ProgressIndicator, format_download_progress};
+use super::progress::ProgressIndicator;
 use super::theme::Theme;
 use apl_schema::types::{PackageName, Version};
 use crossterm::style::Stylize;
@@ -18,9 +18,11 @@ pub enum PackageState {
     /// Queued/waiting
     Pending,
     /// Currently downloading
-    Downloading { current: u64, total: u64 },
+    Downloading { current: u64, total: Option<u64> },
     /// Currently installing/extracting
-    Installing,
+    Installing { current: u64, total: Option<u64> },
+    /// Extracting with progress
+    Extracting { current: u64, total: Option<u64> },
     /// Currently removing
     Removing,
     /// Successfully completed
@@ -120,9 +122,20 @@ impl TableRenderer {
                 pkg.version = v.to_string();
             }
             if let Some(s) = size {
-                pkg.size = s;
+                if s > 0 {
+                    pkg.size = s;
+                }
             }
         }
+    }
+
+    /// Get the last known total size for a package
+    pub fn get_package_size(&self, name: &PackageName) -> Option<u64> {
+        self.packages
+            .iter()
+            .find(|p| p.name == *name)
+            .map(|p| p.size)
+            .filter(|&s| s > 0)
     }
 
     /// Render all active (animating) packages
@@ -135,7 +148,8 @@ impl TableRenderer {
             if matches!(
                 pkg.state,
                 PackageState::Downloading { .. }
-                    | PackageState::Installing
+                    | PackageState::Installing { .. }
+                    | PackageState::Extracting { .. }
                     | PackageState::Removing
             ) {
                 rows_to_render.push(i);
@@ -170,7 +184,8 @@ impl TableRenderer {
             let icon_str = match &pkg.state {
                 PackageState::Pending => theme.icons.pending,
                 PackageState::Downloading { .. }
-                | PackageState::Installing
+                | PackageState::Installing { .. }
+                | PackageState::Extracting { .. }
                 | PackageState::Removing => self.progress.current_icon(),
                 PackageState::Done { .. } => theme.icons.success,
                 PackageState::Warn { .. } => theme.icons.warning,
@@ -190,7 +205,7 @@ impl TableRenderer {
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
-                    PackageState::Installing => (
+                    PackageState::Installing { .. } | PackageState::Extracting { .. } => (
                         theme.colors.error, // Red icon
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
@@ -217,17 +232,24 @@ impl TableRenderer {
                     ),
                 };
 
-                // Format status
+                // Format status - all cases padded to fixed width to prevent flashing
                 let status_text = match &pkg.state {
-                    PackageState::Pending => "pending".to_string(),
+                    PackageState::Pending => format!("{:<50}", "pending"),
                     PackageState::Downloading { current, total } => {
-                        format_download_progress(*current, *total)
+                        super::progress::format_progress_status(*current, *total)
                     }
-                    PackageState::Installing => "installing...".to_string(),
-                    PackageState::Removing => "removing...".to_string(),
-                    PackageState::Done { detail } => detail.clone(),
-                    PackageState::Warn { detail } => detail.clone(),
-                    PackageState::Failed { reason } => format!("FAILED: {reason}"),
+                    PackageState::Extracting { current, total } => {
+                        super::progress::format_progress_status(*current, *total)
+                    }
+                    PackageState::Installing { current, total } => {
+                        super::progress::format_progress_status(*current, *total)
+                    }
+                    PackageState::Removing => format!("{:<50}", "removing..."),
+                    PackageState::Done { detail } => format!("{:<50}", detail),
+                    PackageState::Warn { detail } => format!("{:<50}", detail),
+                    PackageState::Failed { reason } => {
+                        format!("{:<50}", format!("FAILED: {reason}"))
+                    }
                 };
 
                 // Mission Control formatting: 2-space indent for top-level,
@@ -279,6 +301,9 @@ impl TableRenderer {
 
     /// Print footer message with explicit severity (no separator)
     pub fn print_footer(&mut self, buffer: &mut OutputBuffer, message: &str, severity: Severity) {
+        // Render one last time to show final state (e.g. Done instead of Pending)
+        self.render_all(buffer);
+
         if let Some(mut frame) = self.frame.take() {
             let _ = frame.finish();
         }
@@ -296,6 +321,20 @@ impl TableRenderer {
             }
             Severity::Error => println!("{} {}", self.theme.icons.error.red(), message.red()),
         }
+    }
+
+    /// Print footer message without icon (plain)
+    pub fn print_plain(&mut self, buffer: &mut OutputBuffer, message: &str) {
+        // Render one last time to show final state
+        self.render_all(buffer);
+
+        if let Some(mut frame) = self.frame.take() {
+            let _ = frame.finish();
+        }
+        buffer.show_cursor();
+
+        println!();
+        println!("{}", message.green());
     }
 }
 

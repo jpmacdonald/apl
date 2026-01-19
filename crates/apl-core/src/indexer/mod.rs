@@ -1050,7 +1050,14 @@ async fn hydrate_from_source(
     download_and_hash(client, &source_url, &source_archive).await?;
 
     // 4. Extract
-    crate::io::extract::extract_auto(&source_archive, &extract_dir)?;
+    crate::io::extract::extract_auto(
+        &source_archive,
+        &extract_dir,
+        &crate::reporter::NullReporter,
+        &crate::types::PackageName::from("source"),
+        &crate::types::Version::from("0.0.0"),
+        None,
+    )?;
     crate::io::extract::strip_components(&extract_dir)?;
 
     // 5. Resolve and download dependencies
@@ -1097,7 +1104,14 @@ async fn hydrate_from_source(
 
                     // Extract it to a dedicated directory for mounting
                     let dep_extract_dir = tmp_dir.path().join("deps").join(dep_name);
-                    crate::io::extract::extract_auto(&dep_archive, &dep_extract_dir)?;
+                    crate::io::extract::extract_auto(
+                        &dep_archive,
+                        &dep_extract_dir,
+                        &crate::reporter::NullReporter,
+                        &crate::types::PackageName::from(dep_name.as_str()),
+                        &crate::types::Version::from(latest.version.as_str()),
+                        None,
+                    )?;
 
                     build_deps.push((dep_name.clone(), dep_extract_dir));
                     dep_tmps.push(dep_tmp);

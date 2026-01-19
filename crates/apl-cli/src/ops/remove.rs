@@ -116,18 +116,14 @@ pub async fn remove_packages<R: Reporter + Clone + 'static>(
         reporter.done(
             &name,
             &version,
-            if dry_run {
-                "(dry run)"
-            } else {
-                "unlinked from bin"
-            },
+            if dry_run { "(dry run)" } else { "removed" },
             None,
         );
         remove_count += 1;
     }
 
     if remove_count > 0 {
-        reporter.summary(remove_count, "removed", start_time.elapsed().as_secs_f64());
+        reporter.summary(remove_count, "remove", start_time.elapsed().as_secs_f64());
     }
 
     Ok(())

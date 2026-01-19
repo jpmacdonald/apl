@@ -215,7 +215,7 @@ pub async fn install_packages(
                 already_installed_count += 1;
             }
             InstallTask::Switch(name, version) => {
-                ctx.reporter.installing(name, version);
+                ctx.reporter.installing(name, version, None, None);
                 if !dry_run {
                     crate::ops::switch::switch_version(name, version, dry_run, &ctx.reporter)
                         .map_err(|e| InstallError::Other(e.to_string()))?;
@@ -264,10 +264,11 @@ pub async fn install_packages(
                 let pkg_name = prepared.resolved.name.clone();
                 let pkg_version = prepared.resolved.version.clone();
 
-                ctx.reporter.installing(&pkg_name, &pkg_version);
+                ctx.reporter.installing(&pkg_name, &pkg_version, None, None);
 
                 let installer = get_installer(&prepared);
-                let info = installer.install(prepared).await?;
+                let reporter_arc: Arc<dyn Reporter> = Arc::new(ctx.reporter.clone());
+                let info = installer.install(prepared, reporter_arc).await?;
 
                 let result = commit_installation(&ctx.db, &info).await;
 
@@ -326,7 +327,11 @@ struct InstallInfo {
 
 #[async_trait::async_trait]
 trait Installer {
-    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError>;
+    async fn install(
+        &self,
+        pkg: PreparedPackage,
+        reporter: Arc<dyn Reporter>,
+    ) -> Result<InstallInfo, InstallError>;
 }
 
 struct BinInstaller;
@@ -336,10 +341,14 @@ struct ScriptInstaller;
 
 #[async_trait::async_trait]
 impl Installer for BinInstaller {
-    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+    async fn install(
+        &self,
+        pkg: PreparedPackage,
+        reporter: Arc<dyn Reporter>,
+    ) -> Result<InstallInfo, InstallError> {
         let sha256_copy = pkg.resolved.artifact.hash().to_string();
         let (package_def, pkg_store_path, size_bytes) =
-            tokio::task::spawn_blocking(move || install_to_store_only(pkg))
+            tokio::task::spawn_blocking(move || install_to_store_only(pkg, reporter))
                 .await
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
@@ -357,7 +366,11 @@ impl Installer for BinInstaller {
 
 #[async_trait::async_trait]
 impl Installer for AppInstaller {
-    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+    async fn install(
+        &self,
+        pkg: PreparedPackage,
+        _reporter: Arc<dyn Reporter>,
+    ) -> Result<InstallInfo, InstallError> {
         match tokio::task::spawn_blocking(move || perform_app_install(pkg)).await {
             Ok(res) => res,
             Err(e) => Err(InstallError::Other(format!("Task panic: {e}"))),
@@ -367,7 +380,11 @@ impl Installer for AppInstaller {
 
 #[async_trait::async_trait]
 impl Installer for PkgInstaller {
-    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+    async fn install(
+        &self,
+        pkg: PreparedPackage,
+        _reporter: Arc<dyn Reporter>,
+    ) -> Result<InstallInfo, InstallError> {
         match tokio::task::spawn_blocking(move || perform_app_install(pkg)).await {
             Ok(res) => res,
             Err(e) => Err(InstallError::Other(format!("Task panic: {e}"))),
@@ -377,10 +394,14 @@ impl Installer for PkgInstaller {
 
 #[async_trait::async_trait]
 impl Installer for ScriptInstaller {
-    async fn install(&self, pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
+    async fn install(
+        &self,
+        pkg: PreparedPackage,
+        reporter: Arc<dyn Reporter>,
+    ) -> Result<InstallInfo, InstallError> {
         let sha256_copy = pkg.resolved.artifact.hash().to_string();
         let (package_def, pkg_store_path, size_bytes) =
-            tokio::task::spawn_blocking(move || install_to_store_only(pkg))
+            tokio::task::spawn_blocking(move || install_to_store_only(pkg, reporter))
                 .await
                 .map_err(|e| InstallError::Other(format!("Task panic: {e}")))??;
 
@@ -431,6 +452,7 @@ fn get_installer(pkg: &PreparedPackage) -> Box<dyn Installer + Send + Sync> {
 /// The caller (perform_local_install) routes those to perform_app_install.
 pub fn install_to_store_only(
     pkg: PreparedPackage,
+    reporter: Arc<dyn Reporter>,
 ) -> Result<(Package, PathBuf, u64), InstallError> {
     let package_def = &pkg.resolved.def;
 
@@ -456,7 +478,12 @@ pub fn install_to_store_only(
 
     // We intentionally do NOT relink_macho_files here yet?
     // Actually we should, to make them runnable.
-    relink_macho_files(&pkg_store_path);
+    relink_macho_files(
+        &pkg_store_path,
+        &pkg.resolved.name,
+        &pkg.resolved.version,
+        &reporter,
+    );
 
     // Write package metadata for apl shell bin path lookup
     let meta = serde_json::json!({
@@ -646,13 +673,29 @@ fn calculate_dir_size(path: &Path) -> u64 {
         .sum()
 }
 
-fn relink_macho_files(path: &Path) {
+fn relink_macho_files(
+    path: &Path,
+    pkg_name: &PackageName,
+    pkg_version: &Version,
+    reporter: &Arc<dyn Reporter>,
+) {
     #[cfg(target_os = "macos")]
-    for entry in walkdir::WalkDir::new(path).into_iter().flatten() {
-        if entry.path().is_file() {
-            let is_dylib = entry.path().extension().is_some_and(|e| e == "dylib");
-            let is_exec = entry
-                .metadata()
+    {
+        // 1. Collect and count files for progress
+        let mut targets = Vec::new();
+        for entry in walkdir::WalkDir::new(path).into_iter().flatten() {
+            if entry.path().is_file() {
+                targets.push(entry.path().to_path_buf());
+            }
+        }
+
+        let total = targets.len() as u64;
+        let mut current = 0;
+
+        // 2. Iterate and process
+        for path in targets {
+            let is_dylib = path.extension().is_some_and(|e| e == "dylib");
+            let is_exec = std::fs::metadata(&path)
                 .map(|m| {
                     use std::os::unix::fs::PermissionsExt;
                     m.permissions().mode() & 0o111 != 0
@@ -660,10 +703,15 @@ fn relink_macho_files(path: &Path) {
                 .unwrap_or(false);
 
             if is_dylib {
-                let _ = Relinker::fix_dylib(entry.path());
+                let _ = Relinker::fix_dylib(&path);
             } else if is_exec {
-                let _ = Relinker::fix_binary(entry.path());
+                let _ = Relinker::fix_binary(&path);
             }
+
+            current += 1;
+            // Report progress every 10 files or on completion to avoid flooding channel
+            // (Actually the Actor channel is fast, we can just report every time for smooth animation)
+            reporter.installing(pkg_name, pkg_version, Some(current), Some(total));
         }
     }
 }

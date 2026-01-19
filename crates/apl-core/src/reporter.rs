@@ -19,10 +19,19 @@ pub trait Reporter: Send + Sync {
     fn section(&self, title: &str);
 
     /// Updates the progress of a download.
-    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64);
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>);
+
+    /// Updates the progress of an extraction.
+    fn extracting(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>);
 
     /// Updates the state of a package to 'installing'.
-    fn installing(&self, name: &PackageName, version: &Version);
+    fn installing(
+        &self,
+        name: &PackageName,
+        version: &Version,
+        current: Option<u64>,
+        total: Option<u64>,
+    );
 
     /// Updates the state of a package to 'removing'.
     fn removing(&self, name: &PackageName, version: &Version);
@@ -59,11 +68,20 @@ impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
     fn section(&self, title: &str) {
         (**self).section(title)
     }
-    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: u64) {
+    fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
         (**self).downloading(name, version, current, total)
     }
-    fn installing(&self, name: &PackageName, version: &Version) {
-        (**self).installing(name, version)
+    fn extracting(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
+        (**self).extracting(name, version, current, total)
+    }
+    fn installing(
+        &self,
+        name: &PackageName,
+        version: &Version,
+        current: Option<u64>,
+        total: Option<u64>,
+    ) {
+        (**self).installing(name, version, current, total)
     }
     fn removing(&self, name: &PackageName, version: &Version) {
         (**self).removing(name, version)
@@ -111,8 +129,9 @@ impl Reporter for NullReporter {
     fn live_phase_update(&self, _: &str, _: bool) {}
     fn prepare_pipeline(&self, _: &[(PackageName, Option<Version>, usize)]) {}
     fn section(&self, _: &str) {}
-    fn downloading(&self, _: &PackageName, _: &Version, _: u64, _: u64) {}
-    fn installing(&self, _: &PackageName, _: &Version) {}
+    fn downloading(&self, _: &PackageName, _: &Version, _: u64, _: Option<u64>) {}
+    fn extracting(&self, _: &PackageName, _: &Version, _: u64, _: Option<u64>) {}
+    fn installing(&self, _: &PackageName, _: &Version, _: Option<u64>, _: Option<u64>) {}
     fn removing(&self, _: &PackageName, _: &Version) {}
     fn done(&self, _: &PackageName, _: &Version, _: &str, _: Option<u64>) {}
     fn failed(&self, _: &PackageName, _: &Version, _: &str) {}
