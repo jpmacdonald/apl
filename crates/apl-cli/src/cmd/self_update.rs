@@ -102,20 +102,49 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
         .map(|base| format!("{}/cas/{}", base, binary.hash))
         .unwrap_or_else(|| binary.url.clone());
 
-    output.info(&format!("Downloading from {download_url}..."));
-
     // Download the binary to a temporary file
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
     let filename = crate::filename_from_url(&binary.url);
     let download_path = tmp_dir.path().join(filename);
 
-    let bytes = client.get(&download_url).send().await?.bytes().await?;
-    if bytes.starts_with(b"Artifact not found") {
-        return Err(anyhow::anyhow!(
-            "Server returned 'Artifact not found' despite 200 OK status. This indicates a missing asset on the CAS server."
-        ));
+    let mut response = client.get(&download_url).send().await?;
+
+    // If MIRROR (CAS) fails with 404, fall back to GitHub URL
+    if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::NOT_FOUND && download_url.contains("/cas/") {
+            output.warning("Artifact not found in CAS mirror. Falling back to GitHub...");
+            let github_url = &binary.url;
+            output.info(&format!("Downloading from {github_url}..."));
+            response = client.get(github_url).send().await?;
+        }
+
+        if !response.status().is_success() {
+            output.error(&format!(
+                "Failed to download update: HTTP {}",
+                response.status()
+            ));
+            return Ok(());
+        }
     }
-    std::fs::write(&download_path, &bytes).context("Failed to write downloaded asset")?;
+
+    let bytes = response.bytes().await?;
+    if bytes.starts_with(b"Artifact not found") {
+        output.warning("Server returned 'Artifact not found' text. Attempting GitHub fallback...");
+        let github_url = &binary.url;
+        output.info(&format!("Downloading from {github_url}..."));
+        let github_resp = client.get(github_url).send().await?;
+        if !github_resp.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Fallback failed: HTTP {}",
+                github_resp.status()
+            ));
+        }
+        let github_bytes = github_resp.bytes().await?;
+        std::fs::write(&download_path, &github_bytes)
+            .context("Failed to write downloaded asset")?;
+    } else {
+        std::fs::write(&download_path, &bytes).context("Failed to write downloaded asset")?;
+    }
 
     // Extract the archive
     let extract_dir = tmp_dir.path().join("extract");
