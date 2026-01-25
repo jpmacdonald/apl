@@ -9,7 +9,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub use crate::types::{Arch, ArtifactFormat, InstallStrategy, PackageName, PackageType, Version};
+pub use crate::types::{
+    Arch, ArtifactFormat, BuildSpec, InstallStrategy, PackageName, PackageType, Version,
+};
 
 #[derive(Error, Debug)]
 pub enum PackageError {
@@ -19,8 +21,6 @@ pub enum PackageError {
     #[error("Parse error: {0}")]
     Parse(#[from] toml::de::Error),
 }
-
-// Basic enums moved to apl-schema::types
 
 /// Package metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,17 +99,6 @@ pub struct Package {
     pub hints: Hints,
     #[serde(default)]
     pub build: Option<BuildSpec>,
-}
-
-/// Build instructions (from source)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BuildSpec {
-    /// Build-time dependencies (e.g. cmake, ninja)
-    #[serde(default)]
-    pub dependencies: Vec<String>,
-    /// Build script (runs in sysroot)
-    #[serde(default)]
-    pub script: String,
 }
 
 /// Installation specification

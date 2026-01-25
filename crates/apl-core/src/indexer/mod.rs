@@ -984,7 +984,7 @@ async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
     Ok(hash)
 }
 
-async fn hydrate_from_source(
+pub async fn hydrate_from_source(
     client: &Client,
     template: &PackageTemplate,
     full_tag: &str,

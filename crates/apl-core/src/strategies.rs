@@ -686,3 +686,117 @@ impl Strategy for RubyStrategy {
         Ok(artifacts)
     }
 }
+
+pub struct BuildStrategy {
+    name: String,
+    source_url: String,
+    tag_pattern: Option<String>,
+    #[allow(dead_code)]
+    spec: apl_schema::BuildSpec,
+    client: Client,
+}
+
+impl BuildStrategy {
+    pub fn new(
+        name: String,
+        source_url: String,
+        tag_pattern: Option<String>,
+        spec: apl_schema::BuildSpec,
+    ) -> Self {
+        let client = Client::builder()
+            .user_agent("apl-builder/0.1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        Self {
+            name,
+            source_url,
+            tag_pattern,
+            spec,
+            client,
+        }
+    }
+}
+
+#[async_trait]
+impl Strategy for BuildStrategy {
+    async fn fetch_artifacts(
+        &self,
+        known_versions: &HashSet<String>,
+        _cache: &mut StrategyCache,
+    ) -> Result<Vec<Artifact>> {
+        // 1. Resolve versions from Source URL
+        if !self.source_url.contains("github.com") {
+            anyhow::bail!("BuildStrategy currently only supports GitHub source URLs for discovery");
+        }
+
+        let parts: Vec<&str> = self.source_url.split('/').collect();
+        if parts.len() < 5 {
+            anyhow::bail!("Invalid GitHub source URL: {}", self.source_url);
+        }
+        let owner = parts[3];
+        let repo = parts[4].trim_end_matches(".git");
+
+        println!("    [Discovery] Fetching releases for {owner}/{repo}...");
+
+        let releases =
+            crate::indexer::forges::github::fetch_all_releases(&self.client, owner, repo).await?;
+
+        let tag_pattern = self.tag_pattern.as_deref().unwrap_or("{{version}}");
+
+        let mut discovered_versions = Vec::new();
+        for release in releases {
+            if release.draft || release.prerelease {
+                continue;
+            }
+
+            // Extract version from tag using pattern
+            let version_str = if tag_pattern == "{{version}}" {
+                crate::indexer::forges::github::strip_tag_prefix(&release.tag_name, &self.name)
+            } else {
+                let prefix = tag_pattern.replace("{{version}}", "");
+                release.tag_name.trim_start_matches(&prefix).to_string()
+            };
+
+            if !known_versions.contains(&version_str) {
+                discovered_versions.push(version_str);
+            }
+        }
+
+        // 2. Apply version_pattern filter
+        if let Some(pattern) = &self.spec.version_pattern {
+            let regex_str = if pattern.contains('*') {
+                pattern.replace(".", "\\.").replace("*", ".*")
+            } else {
+                pattern.clone()
+            };
+
+            if let Ok(re) = regex::Regex::new(&format!("^{regex_str}$")) {
+                discovered_versions.retain(|v| re.is_match(v));
+            }
+        }
+
+        // 3. Generate Artifacts
+        let mut artifacts = Vec::new();
+        for version in discovered_versions {
+            let tag = tag_pattern.replace("{{version}}", &version);
+            let url = format!("https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.tar.gz");
+
+            artifacts.push(Artifact {
+                name: self.name.clone(),
+                version,
+                arch: "source".to_string(),
+                url,
+                sha256: "BUILD_FROM_SOURCE".to_string(),
+            });
+        }
+
+        println!(
+            "    Found {} potential new versions for {}",
+            artifacts.len(),
+            self.name
+        );
+        Ok(artifacts)
+    }
+}

@@ -8,11 +8,15 @@ use std::path::PathBuf;
 use tokio::fs;
 
 // Use library crate
-use apl_core::Strategy;
-use apl_core::strategies::{
-    AwsStrategy, GitHubStrategy, GolangStrategy, HashiCorpStrategy, NodeStrategy, PythonStrategy,
-    RubyStrategy,
+pub use apl_core::Strategy;
+pub use apl_core::strategies::{
+    AwsStrategy, BuildStrategy, GitHubStrategy, GolangStrategy, HashiCorpStrategy, NodeStrategy,
+    PythonStrategy, RubyStrategy,
 };
+
+use apl_core::indexer::hydrate_from_source;
+use apl_core::package::{PackageInfoTemplate, PackageTemplate};
+use apl_schema::index::VersionInfo;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -69,14 +73,17 @@ async fn main() -> Result<()> {
 
     let op = Operator::new(builder)?.finish();
 
-    // Find all port.toml files
-    let pattern = args.ports_dir.join("**").join("port.toml");
+    // Find all *.toml files recursively
+    let pattern = args.ports_dir.join("**").join("*.toml");
     let pattern_str = pattern.to_str().context("Invalid path pattern")?;
 
     for entry in glob(pattern_str)? {
         let path = entry?;
-        let parent_dir = path.parent().unwrap();
-        let port_name = parent_dir.file_name().unwrap().to_str().unwrap();
+        let content = fs::read_to_string(&path).await?;
+        let manifest: PortManifest = toml::from_str(&content)
+            .with_context(|| format!("Failed to parse {}", path.display()))?;
+
+        let port_name = &manifest.package.name;
 
         if let Some(filter) = &args.filter {
             if port_name != filter {
@@ -101,6 +108,14 @@ async fn main() -> Result<()> {
             PortConfig::Aws => Box::new(AwsStrategy),
             PortConfig::Python => Box::new(PythonStrategy),
             PortConfig::Ruby => Box::new(RubyStrategy),
+            PortConfig::Build { source_url, spec } => {
+                Box::new(apl_core::strategies::BuildStrategy::new(
+                    port_name.to_string(),
+                    source_url.clone(),
+                    Some(spec.tag_pattern.clone()),
+                    spec.clone(),
+                ))
+            }
             _ => {
                 eprintln!("Strategy not implemented yet for {port_name}");
                 continue;
@@ -136,10 +151,78 @@ async fn main() -> Result<()> {
             .collect();
 
         // 3. Execute Strategy with known versions AND cache
-        let artifacts = strategy
+        let raw_artifacts = strategy
             .fetch_artifacts(&known_versions, &mut cache)
             .await?;
-        println!("  Found {} new artifacts. Validating...", artifacts.len());
+        println!("  Found {} new artifact candidates.", raw_artifacts.len());
+
+        let mut artifacts = Vec::new();
+        let client = reqwest::Client::new();
+        let store = apl_core::io::artifacts::get_artifact_store()
+            .await
+            .context("Failed to initialize artifact store")?;
+        let dummy_index = apl_schema::index::PackageIndex::new();
+
+        for art in raw_artifacts {
+            if art.arch == "source" {
+                println!(
+                    "  [BFS] Building {} v{} from source...",
+                    art.name, art.version
+                );
+
+                // Construct a minimal template for hydration
+                let template = PackageTemplate {
+                    package: PackageInfoTemplate {
+                        name: apl_core::types::PackageName::from(art.name.as_str()),
+                        description: String::new(),
+                        homepage: String::new(),
+                        license: String::new(),
+                        tags: Vec::new(),
+                    },
+                    discovery: apl_core::package::DiscoveryConfig::Manual {
+                        manual: vec![art.version.clone()],
+                    },
+                    assets: apl_core::package::AssetConfig::default(),
+                    source: Some(apl_core::package::SourceTemplate {
+                        url: art.url.clone(),
+                        format: apl_schema::ArtifactFormat::TarGz,
+                        sha256: None,
+                    }),
+                    build: match &manifest.package.config {
+                        PortConfig::Build { spec, .. } => Some(spec.clone()),
+                        _ => None,
+                    },
+                    dependencies: apl_core::package::Dependencies::default(),
+                    install: apl_core::package::InstallSpec::default(),
+                    hints: apl_core::package::Hints::default(),
+                };
+
+                // Perform the build
+                let version_info: VersionInfo = hydrate_from_source(
+                    &client,
+                    &template,
+                    &art.version, // Use version as tag
+                    &art.version,
+                    template.build.as_ref().unwrap(),
+                    &store,
+                    &dummy_index,
+                )
+                .await?;
+
+                // Convert VersionInfo binaries back into Port Artifacts
+                for bin in version_info.binaries {
+                    artifacts.push(Artifact {
+                        name: art.name.clone(),
+                        version: art.version.clone(),
+                        arch: bin.arch.to_string(),
+                        url: bin.url,
+                        sha256: bin.hash.to_string(),
+                    });
+                }
+            } else {
+                artifacts.push(art);
+            }
+        }
 
         // 4. Validate NEW artifacts
         let mut error_count = 0;

@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
         args[1].clone()
     } else {
         let home = std::env::var("HOME")?;
-        format!("{}/.apl/index", home)
+        format!("{home}/.apl/index")
     };
 
     let index = PackageIndex::load(Path::new(&path))?;

@@ -357,6 +357,8 @@ impl UnresolvedPackage {
                 Some(apl_core::package::BuildSpec {
                     dependencies: release.build_deps.clone(),
                     script: release.build_script.clone(),
+                    tag_pattern: String::new(),
+                    version_pattern: None,
                 })
             } else {
                 None

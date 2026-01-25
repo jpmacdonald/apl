@@ -123,6 +123,27 @@ pub enum PortConfig {
 
     #[serde(rename = "ruby")]
     Ruby,
+
+    #[serde(rename = "build")]
+    Build {
+        source_url: String,
+        #[serde(default)]
+        #[serde(flatten)]
+        spec: BuildSpec,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildSpec {
+    pub tag_pattern: String,
+    /// Optional regex or glob to filter versions discovered from the source (e.g. "3.12.*")
+    pub version_pattern: Option<String>,
+    /// Build script (runs in sysroot)
+    #[serde(default)]
+    pub script: String,
+    /// Build-time dependencies (e.g. cmake, ninja)
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 /// Top-level structure for `port.toml`
