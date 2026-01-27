@@ -144,20 +144,11 @@ fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>
             continue;
         }
 
-        // Handle archives with a top-level directory (e.g., "neovim-0.10.0/bin/nvim")
-        // by optionally stripping the first component
-        let relative_path: PathBuf = entry_path.components().collect();
-
-        // Create parent directories
-        let absolute_path = dest_dir.join(&relative_path);
-
-        // Sanitize path to prevent Zip Slip
-        if !absolute_path.starts_with(dest_dir) {
-            return Err(ExtractError::Archive(format!(
-                "Invalid path in archive: {}",
-                relative_path.display()
-            )));
-        }
+        // Sanitize path to prevent Zip Slip (path traversal)
+        let absolute_path = validate_safe_path(dest_dir, &entry_path)?;
+        let relative_path = absolute_path
+            .strip_prefix(dest_dir)
+            .map_or_else(|_| entry_path.to_path_buf(), Path::to_path_buf);
 
         if let Some(parent) = absolute_path.parent() {
             fs::create_dir_all(parent)?;
@@ -218,17 +209,23 @@ pub fn extract_zip<R: Reporter>(
         let mut file = archive
             .by_index(i)
             .map_err(|e| ExtractError::Archive(e.to_string()))?;
-        let relative_path = match file.enclosed_name() {
-            Some(path) => path.clone(),
-            None => continue,
-        };
+
+        // zip-rs's enclosed_name() already performs basic sanitization,
+        // but we apply our own validation for'defense-in-depth'.
+        let entry_path = file.enclosed_name().ok_or_else(|| {
+            ExtractError::Archive(format!("Invalid path in zip: {}", file.name()))
+        })?;
+
+        let absolute_path = validate_safe_path(dest_dir, &entry_path)?;
+        let relative_path = absolute_path
+            .strip_prefix(dest_dir)
+            .map_or_else(|_| entry_path.clone(), Path::to_path_buf);
 
         if file.is_dir() {
-            fs::create_dir_all(dest_dir.join(&relative_path))?;
+            fs::create_dir_all(&absolute_path)?;
             continue;
         }
 
-        let absolute_path = dest_dir.join(&relative_path);
         if let Some(p) = absolute_path.parent() {
             fs::create_dir_all(p)?;
         }
@@ -255,6 +252,48 @@ pub fn extract_zip<R: Reporter>(
     }
 
     Ok(extracted_files)
+}
+
+/// Validates that an archive entry path does not escape the destination directory.
+/// Returns the canonicalized absolute path if safe.
+fn validate_safe_path(dest_dir: &Path, entry_path: &Path) -> Result<PathBuf, ExtractError> {
+    // 1. Join paths – this handles absolute entry paths by overriding dest_dir
+    // if entry_path is absolute (which is exactly what we want to detect).
+    let joined = dest_dir.join(entry_path);
+
+    // 2. Normalize components (remove . and ..) without hitting the disk
+    // because the files don't exist yet.
+    let mut absolute_path = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            std::path::Component::Normal(p) => absolute_path.push(p),
+            std::path::Component::ParentDir => {
+                if !absolute_path.pop() {
+                    return Err(ExtractError::Archive(format!(
+                        "Path traversal detected: {}",
+                        entry_path.display()
+                    )));
+                }
+            }
+            std::path::Component::RootDir => {
+                // If it's a root component, we reset the path to the root
+                // effectively detecting an absolute path entry.
+                absolute_path = PathBuf::from("/");
+            }
+            _ => {} // Ignore . and Prefix
+        }
+    }
+
+    // 3. Ensure the resulting path still starts with dest_dir
+    // We normalize dest_dir too for comparison.
+    if !absolute_path.starts_with(dest_dir) {
+        return Err(ExtractError::Archive(format!(
+            "Path traversal detected: {}",
+            entry_path.display()
+        )));
+    }
+
+    Ok(absolute_path)
 }
 
 /// Detect the [`ArtifactFormat`] from a file's extension.
@@ -489,7 +528,9 @@ pub fn extract_pkg(
 ///
 /// Returns an I/O error if directory traversal or file-move operations fail.
 pub fn strip_components(dir: &Path) -> io::Result<()> {
-    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(std::result::Result::ok).collect();
+    let mut entries: Vec<_> = fs::read_dir(dir)?
+        .filter_map(std::result::Result::ok)
+        .collect();
 
     // Filter out hidden files (like .DS_Store)
     entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
@@ -497,7 +538,9 @@ pub fn strip_components(dir: &Path) -> io::Result<()> {
     // If there is exactly one entry and it's a directory, move its contents up
     if entries.len() == 1 && entries[0].file_type()?.is_dir() {
         let top_level = entries[0].path();
-        let sub_entries: Vec<_> = fs::read_dir(&top_level)?.filter_map(std::result::Result::ok).collect();
+        let sub_entries: Vec<_> = fs::read_dir(&top_level)?
+            .filter_map(std::result::Result::ok)
+            .collect();
 
         // 1. Move everything to a temporary unique directory first
         // This avoids collisions if a child has the same name as the top_level directory itself (e.g. age/age)
@@ -516,7 +559,9 @@ pub fn strip_components(dir: &Path) -> io::Result<()> {
         fs::remove_dir(top_level)?;
 
         // 3. Move everything from temp_dir to the root dir
-        let final_entries: Vec<_> = fs::read_dir(&temp_dir)?.filter_map(std::result::Result::ok).collect();
+        let final_entries: Vec<_> = fs::read_dir(&temp_dir)?
+            .filter_map(std::result::Result::ok)
+            .collect();
         for entry in final_entries {
             let target = dir.join(entry.file_name());
             fs::rename(entry.path(), target)?;
@@ -657,5 +702,41 @@ mod tests {
             detect_format(Path::new("installer.pkg")),
             ArtifactFormat::Pkg
         );
+    }
+
+    #[test]
+    fn test_validate_safe_path() {
+        let dest = Path::new("/tmp/apl-test");
+
+        // Simple valid path
+        assert_eq!(
+            validate_safe_path(dest, Path::new("bin/tool")).unwrap(),
+            dest.join("bin/tool")
+        );
+
+        // Path with . (current dir)
+        assert_eq!(
+            validate_safe_path(dest, Path::new("./bin/./tool")).unwrap(),
+            dest.join("bin/tool")
+        );
+
+        // Path with safe .. (still inside dest)
+        assert_eq!(
+            validate_safe_path(dest, Path::new("bin/../lib/tool")).unwrap(),
+            dest.join("lib/tool")
+        );
+
+        // Path traversal: absolute path
+        assert!(validate_safe_path(dest, Path::new("/etc/passwd")).is_err());
+
+        // Path traversal: escaping .. at start
+        assert!(validate_safe_path(dest, Path::new("../evil")).is_err());
+
+        // Path traversal: escaping .. in middle
+        assert!(validate_safe_path(dest, Path::new("bin/../../etc/passwd")).is_err());
+
+        // Path traversal: sneaky absolute path components
+        // Note: dest_dir.join("/foo") on Unix returns "/foo"
+        assert!(validate_safe_path(dest, Path::new("/bin/tool")).is_err());
     }
 }

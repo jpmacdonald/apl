@@ -145,8 +145,9 @@ impl Relinker {
             if parent_name == "bin" {
                 Self::fix_binary(path)?;
             } else if parent_name == "lib"
-                || file_name.ends_with(".dylib")
-                || file_name.ends_with(".so")
+                || path
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("dylib") || ext.eq_ignore_ascii_case("so"))
                 || file_name.contains(".so.")
             {
                 Self::fix_dylib(path)?;

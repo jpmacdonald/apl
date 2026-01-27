@@ -362,6 +362,7 @@ impl UnresolvedPackage {
                     script: release.build_script.clone(),
                     tag_pattern: String::new(),
                     version_pattern: None,
+                    download_url_template: None,
                 })
             } else {
                 None

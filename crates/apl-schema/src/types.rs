@@ -190,6 +190,10 @@ pub struct BuildSpec {
     /// Build-time dependencies (e.g. cmake, ninja)
     #[serde(default)]
     pub dependencies: Vec<String>,
+    /// Optional URL template for downloading the source if discovery source
+    /// does not provide a direct download link (e.g. for generic Git/tarball).
+    #[serde(default)]
+    pub download_url_template: Option<String>,
 }
 
 /// Top-level structure for `port.toml`.

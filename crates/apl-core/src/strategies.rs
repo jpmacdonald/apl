@@ -904,6 +904,8 @@ impl Strategy for BuildStrategy {
                 let owner = parts[3];
                 let repo = parts[4].trim_end_matches(".git");
                 format!("https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.tar.gz")
+            } else if let Some(template) = &self.spec.download_url_template {
+                template.replace("{{version}}", &version)
             } else {
                 // For generic git, we don't have a guaranteed tarball URL unless we know the forge.
                 // But `apl-builder` or `installer` handles `git clone` if URL ends in .git?

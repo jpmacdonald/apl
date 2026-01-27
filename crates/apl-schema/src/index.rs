@@ -79,7 +79,7 @@ pub struct IndexSource {
 }
 
 /// Compact release info (one version)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct VersionInfo {
     /// Version string
     pub version: String,
@@ -109,7 +109,7 @@ pub struct VersionInfo {
 }
 
 /// Compact package entry in the index
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexEntry {
     /// Package name
     pub name: String,

@@ -76,16 +76,14 @@ async fn main() -> Result<()> {
 
     let op = Operator::new(builder)?.finish();
 
-    // Find port manifests (one level deep: <port-name>/<port-name>.toml)
+    // 1. Discover and load all port manifests
     let pattern = args.ports_dir.join("*").join("*.toml");
     let pattern_str = pattern.to_str().context("Invalid path pattern")?;
+    let mut manifests = std::collections::HashMap::new();
 
-    let mut failed_ports = Vec::new();
-
+    println!("Discovering ports in {}...", args.ports_dir.display());
     for entry in glob(pattern_str)? {
         let path = entry?;
-
-        // Skip Cargo.toml and hidden files/directories
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name == "Cargo.toml" || file_name.starts_with('.') {
             continue;
@@ -94,41 +92,72 @@ async fn main() -> Result<()> {
         let content = fs::read_to_string(&path).await?;
         let manifest: PortManifest = match toml::from_str(&content) {
             Ok(m) => m,
-            Err(e) => {
-                // If it doesn't look like a port manifest, skip it with a warning instead of erroring.
-                // Port manifests MUST have a [package] section.
-                if !content.contains("[package]") {
-                    eprintln!("  SKIP: {} (not a port manifest)", path.display());
-                    continue;
-                }
-                return Err(e).with_context(|| format!("Failed to parse {}", path.display()));
-            }
+            Err(_) if !content.contains("[package]") => continue,
+            Err(e) => return Err(e).with_context(|| format!("Failed to parse {}", path.display())),
         };
 
-        let port_name = &manifest.package.name;
-
-        if let Some(filter) = &args.filter {
-            if port_name != filter {
-                continue;
-            }
-        }
-
-        println!("Processing port: {port_name}");
-
-        // Per-port error boundary: one broken port must not abort the entire run.
-        if let Err(e) = process_port(&args, &op, &manifest).await {
-            eprintln!("  ERROR processing {port_name}: {e:#}");
-            failed_ports.push(port_name.clone());
-        }
+        manifests.insert(
+            apl_schema::types::PackageName::new(&manifest.package.name),
+            manifest,
+        );
     }
 
-    if !failed_ports.is_empty() {
-        eprintln!(
-            "\n{} port(s) failed: {}",
-            failed_ports.len(),
-            failed_ports.join(", ")
-        );
-        std::process::exit(1);
+    // 2. Build a temporary index for dependency resolution
+    let mut index = apl_schema::PackageIndex::new();
+    for manifest in manifests.values() {
+        let mut entry = apl_schema::index::IndexEntry {
+            name: manifest.package.name.clone(),
+            ..Default::default()
+        };
+
+        // We only need the dependency info for resolution
+        let mut release = apl_schema::index::VersionInfo {
+            version: "0.0.0".to_string(), // Dummy version for resolution
+            ..Default::default()
+        };
+
+        if let PortConfig::Build { spec, .. } = &manifest.package.config {
+            release.deps.clone_from(&spec.dependencies);
+            release.build_deps.clone_from(&spec.dependencies); // In ports, deps are usually build-time deps
+        }
+
+        entry.releases.push(release);
+        index.upsert(entry);
+    }
+
+    // 3. Resolve build plan (topological layers)
+    let layers = apl_core::resolver::resolve_build_plan(&index)
+        .context("Failed to resolve topological build order")?;
+
+    println!("Build Plan: {} layers", layers.len());
+    for (i, layer) in layers.iter().enumerate() {
+        let layer_names: Vec<String> = layer.iter().map(std::string::ToString::to_string).collect();
+        println!("  Layer {}: {}", i, layer_names.join(", "));
+    }
+
+    let mut failed_ports = Vec::new();
+
+    // 4. Execute build plan layer by layer
+    for layer in layers {
+        for port_name in layer {
+            // Respect filter if provided
+            if let Some(filter) = &args.filter {
+                if port_name.as_str() != filter {
+                    continue;
+                }
+            }
+
+            let Some(manifest) = manifests.get(&port_name) else {
+                continue;
+            };
+
+            println!("\n[Layer] Processing port: {port_name}");
+
+            if let Err(e) = process_port(&args, &op, manifest, &index).await {
+                eprintln!("  ERROR processing {port_name}: {e:#}");
+                failed_ports.push(port_name.to_string());
+            }
+        }
     }
 
     Ok(())
@@ -137,7 +166,12 @@ async fn main() -> Result<()> {
 /// Process a single port manifest end-to-end: fetch artifacts, validate,
 /// merge with existing index, and upload. Extracted so that failures are
 /// isolated per-port via the `?` operator.
-async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Result<()> {
+async fn process_port(
+    args: &Args,
+    op: &Operator,
+    manifest: &PortManifest,
+    index: &apl_schema::PackageIndex,
+) -> Result<()> {
     let port_name = &manifest.package.name;
 
     // Instantiate the discovery strategy from the manifest config.
@@ -196,7 +230,6 @@ async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Re
     let store = apl_core::io::artifacts::get_artifact_store()
         .await
         .context("Failed to initialize artifact store")?;
-    let dummy_index = apl_schema::index::PackageIndex::new();
 
     for art in raw_artifacts {
         if art.arch == "source" {
@@ -205,7 +238,7 @@ async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Re
                 art.name, art.version
             );
 
-            let template = PackageTemplate {
+            let mut template = PackageTemplate {
                 package: PackageInfoTemplate {
                     name: apl_core::types::PackageName::from(art.name.as_str()),
                     description: String::new(),
@@ -231,6 +264,11 @@ async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Re
                 hints: apl_core::package::Hints::default(),
             };
 
+            // Set dependencies from the manifest
+            if let PortConfig::Build { spec, .. } = &manifest.package.config {
+                template.dependencies.build.clone_from(&spec.dependencies);
+            }
+
             let version_info: VersionInfo = hydrate_from_source(
                 &client,
                 &template,
@@ -238,7 +276,7 @@ async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Re
                 &art.version,
                 template.build.as_ref().unwrap(),
                 &store,
-                &dummy_index,
+                index,
             )
             .await?;
 
