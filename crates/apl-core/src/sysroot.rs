@@ -49,11 +49,13 @@ impl Sysroot {
         self.temp_dir.path()
     }
 
-    /// Mount (CoW Clone) a single package/directory into the sysroot
+    /// Mount (`CoW` Clone) a single package/directory into the sysroot
     ///
     /// `source`: Path to the package in the Store (e.g. ~/.apl/store/openssl-1.1)
     /// `target_rel`: Where to put it relative to sysroot (e.g. "usr/local")
     #[allow(unsafe_code)]
+    /// # Errors
+    /// Returns an error if the filesystem clone operation fails or if paths are invalid.
     pub fn mount(&self, source: &Path, target_rel: &Path) -> Result<()> {
         let dest = self.temp_dir.path().join(target_rel);
 

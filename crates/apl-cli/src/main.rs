@@ -1,4 +1,5 @@
 //! apl - A Package Layer CLI
+#![allow(missing_docs)]
 
 use anyhow::Result;
 use clap::Parser;

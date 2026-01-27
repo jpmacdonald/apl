@@ -5,6 +5,10 @@
 
 use crate::types::{PackageName, Version};
 
+/// A trait for reporting progress and status of package operations.
+///
+/// This allows core logic to remain decoupled from specific UI implementations
+/// (e.g. TUI, CLI, GUI).
 pub trait Reporter: Send + Sync {
     /// Prepare a live-updated phase (e.g. "Phase 1: Discovering sources...")
     fn live_phase(&self, title: &str);

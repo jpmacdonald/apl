@@ -17,7 +17,7 @@ pub fn apl_home() -> PathBuf {
     try_apl_home().expect("Could not determine home directory")
 }
 
-/// SQLite database path: ~/.apl/state.db
+/// `SQLite` database path: ~/.apl/state.db
 pub fn db_path() -> PathBuf {
     apl_home().join("state.db")
 }

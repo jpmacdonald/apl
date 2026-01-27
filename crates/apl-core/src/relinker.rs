@@ -11,12 +11,12 @@ use std::process::Command;
 
 /// Utilities for patching Mach-O headers.
 ///
-/// # Implementation Note: Mach-O and RPaths
+/// # Implementation Note: Mach-O and `RPaths`
 /// macOS binaries (Mach-O) look for shared libraries (dylibs) using "load commands" embedded in the file header.
 /// Unlike ELF (Linux) which uses `LD_LIBRARY_PATH` or `rpath`, macOS relies heavily on the `@rpath` token.
 ///
 /// - **`@rpath`**: A variable placeholder in a dylib's ID (e.g., `@rpath/libssl.dylib`).
-/// - **LC_RPATH**: A load command in the *executable* that defines values for `@rpath` (e.g., `@executable_path/../lib`).
+/// - **`LC_RPATH`**: A load command in the *executable* that defines values for `@rpath` (e.g., `@executable_path/../lib`).
 ///
 /// By setting the Dylib ID to start with `@rpath/` and adding a relative `LC_RPATH` to the binary,
 /// we make the package **relocatable**. You can move the entire directory structure anywhere, and the

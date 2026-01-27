@@ -1,3 +1,6 @@
+//! UI Probe utility for testing table alignment.
+#![allow(missing_docs)]
+
 use apl_cli::ui::buffer::OutputBuffer;
 use apl_cli::ui::list::print_list_row;
 

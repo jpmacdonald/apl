@@ -12,7 +12,7 @@ use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt;
 
-/// A wrapper type for package names that implements PubGrub's `Package` trait.
+/// A wrapper type for package names that implements `PubGrub`'s `Package` trait.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct PkgId(
     /// The underlying [`PackageName`].
@@ -47,7 +47,7 @@ impl<'a> AplDependencyProvider<'a> {
         Self { index }
     }
 
-    /// Parse a version string into SemanticVersion.
+    /// Parse a version string into `SemanticVersion`.
     fn parse_version(s: &str) -> Option<SemanticVersion> {
         let parts: Vec<&str> = s.split('.').collect();
         if parts.len() >= 2 {

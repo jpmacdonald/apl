@@ -1,6 +1,6 @@
 //! Block-level content-addressable storage with deduplication.
 //!
-//! Uses FastCDC for content-defined chunking and BLAKE3 for hashing.
+//! Uses `FastCDC` for content-defined chunking and BLAKE3 for hashing.
 
 use crate::types::Blake3Hash;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ pub struct BlobManifest {
 impl BlobManifest {
     /// Create a manifest by chunking the given data.
     ///
-    /// Uses FastCDC with default parameters (avg 64KB chunks).
+    /// Uses `FastCDC` with default parameters (avg 64KB chunks).
     pub fn from_data(data: &[u8]) -> Self {
         use fastcdc::v2020::FastCDC;
 
@@ -69,13 +69,18 @@ impl BlobManifest {
     }
 
     /// Deserialize from JSON.
+    /// # Errors
+    /// Returns an error if the string is not valid JSON.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(s)
     }
 }
 
 /// Reassemble a blob from chunks.
-pub fn reassemble<S: ::std::hash::BuildHasher>(manifest: &BlobManifest, chunk_data: &std::collections::HashMap<String, Vec<u8>, S>) -> Option<Vec<u8>> {
+pub fn reassemble<S: ::std::hash::BuildHasher>(
+    manifest: &BlobManifest,
+    chunk_data: &std::collections::HashMap<String, Vec<u8>, S>,
+) -> Option<Vec<u8>> {
     let mut result = Vec::with_capacity(manifest.size as usize);
 
     for chunk_ref in &manifest.chunks {

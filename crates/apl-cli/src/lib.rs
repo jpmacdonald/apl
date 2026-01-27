@@ -1,4 +1,8 @@
 //! apl - A Package Layer
+#![allow(missing_docs)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::doc_markdown)]
+#![allow(clippy::missing_panics_doc)]
 //!
 //! Fast, minimal package manager for macOS CLI tools.
 //!

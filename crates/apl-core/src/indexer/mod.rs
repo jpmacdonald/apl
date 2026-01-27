@@ -33,6 +33,8 @@ use crate::io::artifacts::{ArtifactStore, get_artifact_store};
 ///
 /// If `force_full` is false, attempts to load the existing index and only
 /// deep-fetches packages whose latest version has changed (Optimistic Delta Hydration).
+/// # Errors
+/// Returns an error if registry IO fails, network requests fail, or if manifest parsing fails.
 pub async fn generate_index_from_registry(
     _client: &Client,
     registry_dir: &Path,
@@ -41,8 +43,8 @@ pub async fn generate_index_from_registry(
     _verbose: bool,
     _reporter: Arc<dyn crate::Reporter>,
 ) -> Result<PackageIndex> {
-    use futures::stream::{self as fstream, StreamExt as FStreamExt};
     use futures::stream;
+    use futures::stream::{self as fstream, StreamExt as FStreamExt};
 
     // Configure client with timeout (overshadowing the argument)
     let client = reqwest::Client::builder()
@@ -220,7 +222,8 @@ pub async fn generate_index_from_registry(
                                 discovery::auto_parse_version(&extracted)
                             });
 
-                            if local_latest.map(std::string::ToString::to_string) == remote_version {
+                            if local_latest.map(std::string::ToString::to_string) == remote_version
+                            {
                                 _skipped_count += 1;
                             } else {
                                 dirty_repos.push(key);
@@ -378,10 +381,10 @@ pub async fn generate_index_from_registry(
                 version: "0.0.0".into(),
                 binaries: vec![],
                 deps: template.dependencies.runtime.clone(),
-                build_deps: template
-                    .build
-                    .as_ref()
-                    .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
+                build_deps: template.build.as_ref().map_or_else(
+                    || template.dependencies.build.clone(),
+                    |b| b.dependencies.clone(),
+                ),
                 bin: vec![],
                 hints: String::new(),
                 app: None,
@@ -722,10 +725,10 @@ pub async fn package_to_index_ver(
                     binaries: existing_ver.binaries.clone(),
                     source: None,
                     deps: template.dependencies.runtime.clone(),
-                    build_deps: template
-                        .build
-                        .as_ref()
-                        .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
+                    build_deps: template.build.as_ref().map_or_else(
+                        || template.dependencies.build.clone(),
+                        |b| b.dependencies.clone(),
+                    ),
                     build_script: template
                         .build
                         .as_ref()
@@ -879,10 +882,10 @@ pub async fn package_to_index_ver(
         binaries,
         source: None,
         deps: template.dependencies.runtime.clone(),
-        build_deps: template
-            .build
-            .as_ref()
-            .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
+        build_deps: template.build.as_ref().map_or_else(
+            || template.dependencies.build.clone(),
+            |b| b.dependencies.clone(),
+        ),
         build_script: template
             .build
             .as_ref()

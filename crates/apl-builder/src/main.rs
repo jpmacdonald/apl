@@ -1,3 +1,8 @@
+//! `apl-builder` - The APL Build System.
+//!
+//! This binary discovers, builds, and indexes ports from various sources
+//! (GitHub, `HashiCorp`, etc.) and uploads artifacts to the R2 store.
+
 use anyhow::{Context, Result};
 use apl_schema::Artifact;
 use apl_schema::{PortConfig, PortManifest};
@@ -127,14 +132,12 @@ async fn process_port(args: &Args, op: &Operator, manifest: &PortManifest) -> Re
         PortConfig::Golang => Box::new(GolangStrategy),
         PortConfig::Node => Box::new(NodeStrategy),
         PortConfig::Aws => Box::new(AwsStrategy),
-        PortConfig::Build { source_url, spec } => {
-            Box::new(BuildStrategy::new(
-                port_name.to_string(),
-                source_url.clone(),
-                Some(spec.tag_pattern.clone()),
-                spec.clone(),
-            ))
-        }
+        PortConfig::Build { source_url, spec } => Box::new(BuildStrategy::new(
+            port_name.to_string(),
+            source_url.clone(),
+            Some(spec.tag_pattern.clone()),
+            spec.clone(),
+        )),
         _ => {
             anyhow::bail!("strategy not implemented yet");
         }

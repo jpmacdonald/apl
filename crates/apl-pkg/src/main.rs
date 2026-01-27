@@ -1,3 +1,8 @@
+//! `apl-pkg` - The APL Package Registry Maintainer Tool.
+//!
+//! This binary provides commands for maintaining the APL package registry,
+//! including indexing, signing, and syncing packages.
+
 use anyhow::{Context, Result};
 use apl_core::indexer::forges::github::{self, build_client};
 use apl_core::package::Package;
@@ -66,7 +71,7 @@ enum Commands {
         /// Path to the package TOML file
         package: std::path::PathBuf,
     },
-    /// Sign an arbitrary file using APL_SIGNING_KEY
+    /// Sign an arbitrary file using `APL_SIGNING_KEY`
     Sign {
         /// Input file to sign
         #[arg(short, long)]

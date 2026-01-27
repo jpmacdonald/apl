@@ -30,6 +30,8 @@ impl Drop for MountPoint {
 ///
 /// Returns an error if the DMG file does not exist, `hdiutil` fails or
 /// times out, or the mount point cannot be parsed from the command output.
+/// # Panics
+/// Panics if the child process `stdout` cannot be captured (should never happen).
 pub fn attach(dmg_path: &Path) -> Result<MountPoint> {
     if !dmg_path.exists() {
         bail!("DMG file not found: {}", dmg_path.display());

@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use tokio::process::Command;
 
-/// Cached HTTP response metadata (ETag and Last-Modified) for a single URL,
+/// Cached HTTP response metadata (`ETag` and Last-Modified) for a single URL,
 /// used to avoid redundant downloads when the upstream has not changed.
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct CacheEntry {
@@ -138,9 +138,9 @@ async fn fetch_shasums(client: &Client, url: &str) -> Result<HashMap<String, Str
     Ok(map)
 }
 
-/// Strategy for discovering artifacts from the HashiCorp release index.
+/// Strategy for discovering artifacts from the `HashiCorp` release index.
 ///
-/// Fetches the JSON release index for a given HashiCorp product, filters for
+/// Fetches the JSON release index for a given `HashiCorp` product, filters for
 /// macOS builds, and retrieves SHA-256 checksums from the accompanying
 /// `SHA256SUMS` files.
 #[derive(Debug)]
@@ -572,7 +572,7 @@ impl Strategy for AwsStrategy {
     }
 }
 
-/// Strategy for discovering CPython source tarballs from the official
+/// Strategy for discovering `CPython` source tarballs from the official
 /// Python FTP mirror.
 #[derive(Debug)]
 pub struct PythonStrategy;

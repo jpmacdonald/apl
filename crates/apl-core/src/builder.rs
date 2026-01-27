@@ -41,7 +41,7 @@ use crate::sysroot::Sysroot;
 
 /// Minimum macOS version we target. Ventura (13.0) is the baseline: it is the
 /// oldest release that ships with the required APFS clonefile(2) semantics and
-/// a Rosetta 2 translation layer for x86_64 binaries on Apple Silicon.
+/// a Rosetta 2 translation layer for `x86_64` binaries on Apple Silicon.
 const MACOSX_DEPLOYMENT_TARGET: &str = "13.0";
 
 /// Fixed epoch for `SOURCE_DATE_EPOCH`. Using zero (1970-01-01T00:00:00Z)
@@ -107,10 +107,7 @@ impl<'a> Builder<'a> {
             let abs_dep = sysroot_path.join(&target_rel);
 
             // Per-dependency env var: DEP_OPENSSL, DEP_ZLIB, etc.
-            let env_name = format!(
-                "DEP_{}",
-                name.to_uppercase().replace(['-', '.'], "_")
-            );
+            let env_name = format!("DEP_{}", name.to_uppercase().replace(['-', '.'], "_"));
             per_dep_env.push((env_name, abs_dep.to_string_lossy().to_string()));
 
             if abs_dep.join("include").exists() {
@@ -124,9 +121,7 @@ impl<'a> Builder<'a> {
                 library_paths.push(lib);
             }
             if abs_dep.join("lib/pkgconfig").exists() {
-                pkg_config_paths.push(
-                    abs_dep.join("lib/pkgconfig").to_string_lossy().to_string(),
-                );
+                pkg_config_paths.push(abs_dep.join("lib/pkgconfig").to_string_lossy().to_string());
             }
         }
 

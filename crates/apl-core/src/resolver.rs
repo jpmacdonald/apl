@@ -44,6 +44,8 @@ pub fn resolve_dependencies(
 /// # Errors
 ///
 /// Returns an error if a circular dependency is detected in the build graph.
+/// # Panics
+/// Panics if the internal graph structure is inconsistent (e.g. missing node degree).
 pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>> {
     let mut adjacency: HashMap<PackageName, Vec<PackageName>> = HashMap::new();
     let mut in_degree: HashMap<PackageName, usize> = HashMap::new();

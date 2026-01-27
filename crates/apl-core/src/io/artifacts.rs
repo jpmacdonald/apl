@@ -65,6 +65,9 @@ pub struct ArtifactStore {
 impl ArtifactStore {
     // ... all the methods I viewed earlier ...
     /// Create a new artifact store client.
+    ///
+    /// # Errors
+    /// Returns an error if the S3 client cannot be initialized (e.g. invalid config).
     #[allow(clippy::unused_async)] // Callers expect an async constructor to match the rest of the API
     pub async fn new(config: ArtifactConfig) -> Result<Self> {
         let credentials = s3::config::Credentials::new(
@@ -119,6 +122,8 @@ impl ArtifactStore {
     }
 
     /// Retrieve an artifact from the store.
+    /// # Errors
+    /// Returns an error if the artifact cannot be retrieved.
     pub async fn get(&self, hash: &str) -> Result<Vec<u8>> {
         let key = format!("cas/{hash}");
         let resp = self
@@ -139,6 +144,8 @@ impl ArtifactStore {
     }
 
     /// Retrieve a delta/patch from the store.
+    /// # Errors
+    /// Returns an error if the delta cannot be retrieved.
     pub async fn get_delta(&self, from_hash: &str, to_hash: &str) -> Result<Vec<u8>> {
         let key = format!("deltas/{from_hash}_{to_hash}.zst");
         let resp = self
@@ -173,6 +180,8 @@ impl ArtifactStore {
     /// Upload an artifact to the store.
     ///
     /// Returns the public URL on success.
+    /// # Errors
+    /// Returns an error if the upload fails.
     pub async fn upload(&self, hash: &str, data: Vec<u8>) -> Result<String> {
         let key = format!("cas/{hash}");
         let body = s3::primitives::ByteStream::from(data);
@@ -197,6 +206,8 @@ impl ArtifactStore {
     /// 3. Uploads the manifest.
     ///
     /// Returns the public manifest URL.
+    /// # Errors
+    /// Returns an error if the chunked upload fails.
     pub async fn upload_chunked(&self, hash: &str, data: &[u8]) -> Result<String> {
         use crate::io::chunked::BlobManifest;
 
@@ -247,6 +258,8 @@ impl ArtifactStore {
     }
 
     /// Retrieve a manifest from the store.
+    /// # Errors
+    /// Returns an error if the manifest cannot be retrieved or parsed from the store.
     pub async fn get_manifest(&self, hash: &str) -> Result<crate::io::chunked::BlobManifest> {
         let key = format!("manifests/{hash}");
         let resp = self
@@ -269,6 +282,8 @@ impl ArtifactStore {
     }
 
     /// Upload from a stream (for large files).
+    /// # Errors
+    /// Returns an error if the upload operation fails.
     pub async fn upload_stream(
         &self,
         hash: &str,
