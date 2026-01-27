@@ -1,3 +1,9 @@
+//! Artifact discovery strategies for upstream package sources.
+//!
+//! Each strategy knows how to fetch version and artifact metadata from a
+//! specific upstream provider (e.g. HashiCorp, Go, Node.js, GitHub releases)
+//! and return a list of `Artifact` records suitable for indexing.
+
 use anyhow::Result;
 use apl_schema::Artifact;
 use async_trait::async_trait;
@@ -8,15 +14,27 @@ use futures::stream::{self, StreamExt};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use tokio::process::Command;
 
+/// Cached HTTP response metadata (ETag and Last-Modified) for a single URL,
+/// used to avoid redundant downloads when the upstream has not changed.
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct CacheEntry {
+    /// HTTP `ETag` header value from the last successful response.
     pub etag: Option<String>,
+    /// HTTP `Last-Modified` header value from the last successful response.
     pub last_modified: Option<String>,
 }
 
+/// A map from URL strings to their corresponding `CacheEntry`, used by
+/// strategies to persist HTTP caching state across runs.
 pub type StrategyCache = HashMap<String, CacheEntry>;
 
+/// Trait implemented by every artifact discovery strategy.
+///
+/// A strategy knows how to contact an upstream source, enumerate available
+/// versions, and produce `Artifact` records for each platform-specific
+/// downloadable asset.
 #[async_trait]
 pub trait Strategy: Send + Sync {
     /// Fetch artifacts based on the configuration strategy.
@@ -25,6 +43,11 @@ pub trait Strategy: Send + Sync {
     /// skip these to avoid redundant work. This enables incremental indexing.
     ///
     /// `cache` contains ETag/Last-Modified data for upstream URLs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the upstream source cannot be reached or if the
+    /// response cannot be parsed into valid artifact metadata.
     async fn fetch_artifacts(
         &self,
         known_versions: &HashSet<String>,
@@ -61,11 +84,11 @@ async fn fetch_text_with_cache(
     let etag = resp
         .headers()
         .get("etag")
-        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+        .and_then(|h| h.to_str().ok().map(std::string::ToString::to_string));
     let last_modified = resp
         .headers()
         .get("last-modified")
-        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+        .and_then(|h| h.to_str().ok().map(std::string::ToString::to_string));
 
     if etag.is_some() || last_modified.is_some() {
         cache.insert(
@@ -115,12 +138,20 @@ async fn fetch_shasums(client: &Client, url: &str) -> Result<HashMap<String, Str
     Ok(map)
 }
 
+/// Strategy for discovering artifacts from the HashiCorp release index.
+///
+/// Fetches the JSON release index for a given HashiCorp product, filters for
+/// macOS builds, and retrieves SHA-256 checksums from the accompanying
+/// `SHA256SUMS` files.
+#[derive(Debug)]
 pub struct HashiCorpStrategy {
     product: String,
     client: Client,
 }
 
 impl HashiCorpStrategy {
+    /// Create a new `HashiCorpStrategy` for the given product name
+    /// (e.g. `"terraform"`, `"vault"`).
     pub fn new(product: String) -> Self {
         Self {
             product,
@@ -178,7 +209,7 @@ impl Strategy for HashiCorpStrategy {
         if let Some(etag) = resp
             .headers()
             .get("etag")
-            .and_then(|h| h.to_str().ok().map(|s| s.to_string()))
+            .and_then(|h| h.to_str().ok().map(std::string::ToString::to_string))
         {
             cache.insert(
                 url.clone(),
@@ -263,7 +294,14 @@ impl Strategy for HashiCorpStrategy {
 
 // ... HashiCorp implementation ...
 
+/// Strategy for discovering Go toolchain artifacts from the official Go
+/// download API.
+#[derive(Debug)]
 pub struct GolangStrategy;
+
+/// Strategy for discovering Node.js artifacts from the official release
+/// index.
+#[derive(Debug)]
 pub struct NodeStrategy;
 
 #[derive(Deserialize)]
@@ -419,6 +457,9 @@ impl Strategy for NodeStrategy {
     }
 }
 
+/// Strategy for discovering artifacts from GitHub releases of a specific
+/// repository.
+#[derive(Debug)]
 pub struct GitHubStrategy {
     #[allow(dead_code)]
     owner: String,
@@ -427,6 +468,8 @@ pub struct GitHubStrategy {
 }
 
 impl GitHubStrategy {
+    /// Create a new `GitHubStrategy` targeting the given GitHub `owner` and
+    /// `repo`.
     pub fn new(owner: String, repo: String) -> Self {
         Self { owner, repo }
     }
@@ -446,6 +489,10 @@ impl Strategy for GitHubStrategy {
     }
 }
 
+/// Strategy for discovering AWS CLI v2 artifacts by parsing the upstream
+/// changelog and downloading macOS `.pkg` installers to compute their
+/// SHA-256 checksums.
+#[derive(Debug)]
 pub struct AwsStrategy;
 
 #[async_trait]
@@ -458,12 +505,9 @@ impl Strategy for AwsStrategy {
         // AWS CLI v2 Changelog parsing
         let url = "https://raw.githubusercontent.com/aws/aws-cli/v2/CHANGELOG.rst";
 
-        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
-            Some(t) => t,
-            None => {
-                println!("  [Cache] AWS Changelog not modified");
-                return Ok(vec![]);
-            }
+        let Some(text) = fetch_text_with_cache(&Client::new(), url, cache).await? else {
+            println!("  [Cache] AWS Changelog not modified");
+            return Ok(vec![]);
         };
         let mut artifacts = Vec::new();
 
@@ -501,10 +545,12 @@ impl Strategy for AwsStrategy {
                     .await
                     .unwrap_or_else(|e| {
                         eprintln!("    [WARN] Failed to hash {url}: {e}");
-                        "".to_string()
+                        String::new()
                     });
 
-                if !sha.is_empty() {
+                if sha.is_empty() {
+                    None
+                } else {
                     Some(Artifact {
                         name: "aws".to_string(),
                         version,
@@ -512,8 +558,6 @@ impl Strategy for AwsStrategy {
                         url,
                         sha256: sha,
                     })
-                } else {
-                    None
                 }
             })
             .buffer_unordered(5); // Limit concurrency for large downloads
@@ -528,6 +572,9 @@ impl Strategy for AwsStrategy {
     }
 }
 
+/// Strategy for discovering CPython source tarballs from the official
+/// Python FTP mirror.
+#[derive(Debug)]
 pub struct PythonStrategy;
 
 #[async_trait]
@@ -538,12 +585,9 @@ impl Strategy for PythonStrategy {
         cache: &mut StrategyCache,
     ) -> Result<Vec<Artifact>> {
         let url = "https://www.python.org/ftp/python/";
-        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
-            Some(t) => t,
-            None => {
-                println!("  [Cache] Python index not modified");
-                return Ok(vec![]);
-            }
+        let Some(text) = fetch_text_with_cache(&Client::new(), url, cache).await? else {
+            println!("  [Cache] Python index not modified");
+            return Ok(vec![]);
         };
         let re = Regex::new(r#"href="(\d+\.\d+\.\d+)/""#).unwrap();
 
@@ -572,7 +616,9 @@ impl Strategy for PythonStrategy {
                     .await
                     .unwrap_or_default();
 
-                if !sha.is_empty() {
+                if sha.is_empty() {
+                    None
+                } else {
                     Some(Artifact {
                         name: "python".to_string(),
                         version,
@@ -580,8 +626,6 @@ impl Strategy for PythonStrategy {
                         url,
                         sha256: sha,
                     })
-                } else {
-                    None
                 }
             })
             .buffer_unordered(5);
@@ -596,6 +640,10 @@ impl Strategy for PythonStrategy {
     }
 }
 
+/// Strategy for discovering Ruby source tarballs from the official Ruby
+/// downloads page by scraping version numbers and their associated SHA-256
+/// checksums.
+#[derive(Debug)]
 pub struct RubyStrategy;
 
 #[async_trait]
@@ -607,12 +655,9 @@ impl Strategy for RubyStrategy {
     ) -> Result<Vec<Artifact>> {
         // https://www.ruby-lang.org/en/downloads/
         let url = "https://www.ruby-lang.org/en/downloads/";
-        let text = match fetch_text_with_cache(&Client::new(), url, cache).await? {
-            Some(t) => t,
-            None => {
-                println!("  [Cache] Ruby index not modified");
-                return Ok(vec![]);
-            }
+        let Some(text) = fetch_text_with_cache(&Client::new(), url, cache).await? else {
+            println!("  [Cache] Ruby index not modified");
+            return Ok(vec![]);
         };
 
         // Regex to capture "Ruby 3.3.0" ... "sha256: <hash>"
@@ -687,6 +732,12 @@ impl Strategy for RubyStrategy {
     }
 }
 
+/// Strategy for discovering packages that must be built from source.
+///
+/// Uses GitHub releases to enumerate versions and produces `Artifact` records
+/// with a placeholder `"BUILD_FROM_SOURCE"` SHA-256, signaling to the
+/// installer that a source build is required rather than a binary download.
+#[derive(Debug)]
 pub struct BuildStrategy {
     name: String,
     source_url: String,
@@ -697,6 +748,10 @@ pub struct BuildStrategy {
 }
 
 impl BuildStrategy {
+    /// Create a new `BuildStrategy` for a package with the given `name`,
+    /// `source_url` (must be a GitHub URL), optional `tag_pattern` for
+    /// extracting version strings from tags, and a `BuildSpec` describing
+    /// how to compile the package.
     pub fn new(
         name: String,
         source_url: String,
@@ -726,48 +781,108 @@ impl Strategy for BuildStrategy {
         known_versions: &HashSet<String>,
         _cache: &mut StrategyCache,
     ) -> Result<Vec<Artifact>> {
-        // 1. Resolve versions from Source URL
-        if !self.source_url.contains("github.com") {
-            anyhow::bail!("BuildStrategy currently only supports GitHub source URLs for discovery");
-        }
-
-        let parts: Vec<&str> = self.source_url.split('/').collect();
-        if parts.len() < 5 {
-            anyhow::bail!("Invalid GitHub source URL: {}", self.source_url);
-        }
-        let owner = parts[3];
-        let repo = parts[4].trim_end_matches(".git");
-
-        println!("    [Discovery] Fetching releases for {owner}/{repo}...");
-
-        let releases =
-            crate::indexer::forges::github::fetch_all_releases(&self.client, owner, repo).await?;
-
         let tag_pattern = self.tag_pattern.as_deref().unwrap_or("{{version}}");
-
         let mut discovered_versions = Vec::new();
-        for release in releases {
-            if release.draft || release.prerelease {
-                continue;
+
+        // 1. Resolve versions
+        if self.source_url.contains("github.com") {
+            let parts: Vec<&str> = self.source_url.split('/').collect();
+            if parts.len() < 5 {
+                anyhow::bail!("Invalid GitHub source URL: {}", self.source_url);
+            }
+            let owner = parts[3];
+            let repo = parts[4].trim_end_matches(".git");
+
+            println!("    [Discovery] Fetching releases for {owner}/{repo}...");
+
+            let releases =
+                crate::indexer::forges::github::fetch_all_releases(&self.client, owner, repo)
+                    .await?;
+
+            for release in releases {
+                if release.draft || release.prerelease {
+                    continue;
+                }
+
+                // Extract version from tag using pattern
+                let version_str = if tag_pattern == "{{version}}" {
+                    crate::indexer::forges::github::strip_tag_prefix(&release.tag_name, &self.name)
+                } else {
+                    let prefix = tag_pattern.replace("{{version}}", "");
+                    release.tag_name.trim_start_matches(&prefix).to_string()
+                };
+
+                if !known_versions.contains(&version_str) {
+                    discovered_versions.push(version_str);
+                }
+            }
+        } else {
+            // Generic Git Discovery using ls-remote
+            println!(
+                "    [Discovery] Running git ls-remote on {}...",
+                self.source_url
+            );
+
+            let output = Command::new("git")
+                .arg("ls-remote")
+                .arg("--tags")
+                .arg(&self.source_url)
+                .output()
+                .await?;
+
+            if !output.status.success() {
+                anyhow::bail!(
+                    "git ls-remote failed for {}: {}",
+                    self.source_url,
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
 
-            // Extract version from tag using pattern
-            let version_str = if tag_pattern == "{{version}}" {
-                crate::indexer::forges::github::strip_tag_prefix(&release.tag_name, &self.name)
-            } else {
-                let prefix = tag_pattern.replace("{{version}}", "");
-                release.tag_name.trim_start_matches(&prefix).to_string()
-            };
+            let stdout = String::from_utf8_lossy(&output.stdout);
 
-            if !known_versions.contains(&version_str) {
-                discovered_versions.push(version_str);
+            // Parse refs/tags/TAGNAME
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 2 {
+                    continue;
+                }
+                let ref_name = parts[1];
+
+                if let Some(tag) = ref_name.strip_prefix("refs/tags/") {
+                    // Skip dereferenced tags (^{})
+                    if tag.ends_with("^{}") {
+                        continue;
+                    }
+
+                    // Extract version from tag using pattern
+                    let version_str = if tag_pattern == "{{version}}" {
+                        // Simple heuristic: try to strip package name if present
+                        if tag.starts_with(&self.name) {
+                            tag.trim_start_matches(&self.name)
+                                .trim_start_matches(['-', '_', 'v'])
+                                .to_string()
+                        } else {
+                            tag.trim_start_matches('v').to_string()
+                        }
+                    } else {
+                        let prefix = tag_pattern.replace("{{version}}", "");
+                        if !tag.starts_with(&prefix) {
+                            continue;
+                        }
+                        tag.trim_start_matches(&prefix).to_string()
+                    };
+
+                    if !version_str.is_empty() && !known_versions.contains(&version_str) {
+                        discovered_versions.push(version_str);
+                    }
+                }
             }
         }
 
         // 2. Apply version_pattern filter
         if let Some(pattern) = &self.spec.version_pattern {
             let regex_str = if pattern.contains('*') {
-                pattern.replace(".", "\\.").replace("*", ".*")
+                pattern.replace('.', "\\.").replace('*', ".*")
             } else {
                 pattern.clone()
             };
@@ -781,13 +896,28 @@ impl Strategy for BuildStrategy {
         let mut artifacts = Vec::new();
         for version in discovered_versions {
             let tag = tag_pattern.replace("{{version}}", &version);
-            let url = format!("https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.tar.gz");
+
+            // Construct download URL
+            let url = if self.source_url.contains("github.com") {
+                // GitHub Archive URL
+                let parts: Vec<&str> = self.source_url.split('/').collect();
+                let owner = parts[3];
+                let repo = parts[4].trim_end_matches(".git");
+                format!("https://github.com/{owner}/{repo}/archive/refs/tags/{tag}.tar.gz")
+            } else {
+                // For generic git, we don't have a guaranteed tarball URL unless we know the forge.
+                // But `apl-builder` or `installer` handles `git clone` if URL ends in .git?
+                // Actually, looking at Artifact struct, it expects a URL.
+                // If we return the git URL, the installer must know how to handle it.
+                // Or we append `#tag` to `source_url`.
+                format!("{}#{}", self.source_url, tag)
+            };
 
             artifacts.push(Artifact {
                 name: self.name.clone(),
                 version,
                 arch: "source".to_string(),
-                url,
+                url, // If not github, this is git_url#tag
                 sha256: "BUILD_FROM_SOURCE".to_string(),
             });
         }
