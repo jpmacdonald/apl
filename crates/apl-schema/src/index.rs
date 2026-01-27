@@ -34,17 +34,22 @@ impl HashType {
     }
 }
 
+/// Errors that can occur when loading, saving, or validating the package index.
 #[derive(Error, Debug)]
 pub enum IndexError {
+    /// An I/O error occurred while reading or writing the index file.
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    /// The Postcard binary format failed to serialize or deserialize.
     #[error("Serialization error: {0}")]
     Postcard(#[from] postcard::Error),
 
+    /// A package-level validation error (e.g. missing required fields).
     #[error("Package definition error: {0}")]
     Package(String),
 
+    /// The on-disk index version is incompatible with this build.
     #[error("Index version mismatch: found v{0}, expected v{1}. Run 'dl update' or update 'dl'.")]
     VersionMismatch(u32, u32),
 }
@@ -52,7 +57,7 @@ pub enum IndexError {
 /// Binary artifact info in the index
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexBinary {
-    /// Architecture (arm64, x86_64, or universal)
+    /// Architecture (arm64, `x86_64`, or universal).
     pub arch: Arch,
     /// Download URL
     pub url: String,
@@ -62,11 +67,14 @@ pub struct IndexBinary {
     pub hash_type: HashType,
 }
 
-/// Source artifact info
+/// Source artifact info for build-from-source packages.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IndexSource {
+    /// Download URL for the source tarball.
     pub url: String,
+    /// Hash of the source tarball for integrity verification.
     pub hash: Sha256Hash,
+    /// Algorithm used for the source hash.
     pub hash_type: HashType,
 }
 
@@ -153,7 +161,7 @@ pub struct PackageIndex {
     pub updated_at: i64,
     /// Package entries
     pub packages: Vec<IndexEntry>,
-    /// Base URL for artifact mirror (CAS layout: {base_url}/cas/{hash})
+    /// Base URL for artifact mirror (CAS layout: `{base_url}/cas/{hash}`).
     #[serde(default)]
     pub mirror_base_url: Option<String>,
     /// Merkle tree root hash (BLAKE3) for integrity verification
@@ -174,8 +182,18 @@ impl PackageIndex {
     }
 
     /// Memory-maps and deserializes the index, auto-detecting Zstd compression.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IndexError::Io`] if the file cannot be opened or mapped,
+    /// [`IndexError::Postcard`] if deserialization fails, or
+    /// [`IndexError::VersionMismatch`] if the on-disk version is too old.
+    #[allow(unsafe_code)]
     pub fn load(path: &Path) -> Result<Self, IndexError> {
         let file = fs::File::open(path)?;
+        // SAFETY: The file is opened read-only and we hold the File handle for
+        // the lifetime of the Mmap. No concurrent writers exist because the CLI
+        // takes an advisory lock before writing the index.
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
         // Implementation Note: Memory Mapping and Zero-Copy
@@ -201,6 +219,11 @@ impl PackageIndex {
     }
 
     /// Serializes to an uncompressed Postcard file, optimized for MMAP usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IndexError::Postcard`] on serialization failure or
+    /// [`IndexError::Io`] if the file cannot be written.
     pub fn save(&self, path: &Path) -> Result<(), IndexError> {
         let buf = postcard::to_allocvec(self)?;
         fs::write(path, &buf)?;
@@ -208,6 +231,11 @@ impl PackageIndex {
     }
 
     /// Serializes and compresses the index for network distribution.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IndexError::Postcard`] on serialization failure or
+    /// [`IndexError::Io`] if compression or file writing fails.
     pub fn save_compressed(&self, path: &Path) -> Result<(), IndexError> {
         let buf = postcard::to_allocvec(self)?;
         let compressed = zstd::encode_all(&buf[..], 3)?;
@@ -215,12 +243,21 @@ impl PackageIndex {
         Ok(())
     }
 
-    /// Serialize to bytes (for network transfer)
+    /// Serialize to bytes (for network transfer).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IndexError::Postcard`] if serialization fails.
     pub fn to_bytes(&self) -> Result<Vec<u8>, IndexError> {
         Ok(postcard::to_allocvec(self)?)
     }
 
-    /// Deserialize from bytes
+    /// Deserialize from bytes, validating the index format version.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IndexError::VersionMismatch`] if the header version is below 4,
+    /// or [`IndexError::Postcard`] if deserialization fails.
     pub fn from_bytes(data: &[u8]) -> Result<Self, IndexError> {
         // Postcard serializes fields in order. We deserialize just the header to check version.
         // This must match the first few fields of PackageIndex exactly!
@@ -329,9 +366,11 @@ impl PackageIndex {
 
     /// Search packages by query (matches name or description)
     ///
-    /// Supports fuzzy matching via SkimMatcherV2 and tag filtering via `tag:<name>`.
+    /// Supports fuzzy matching via `SkimMatcherV2` and tag filtering via `tag:<name>`.
     /// Results are ranked by match score.
     pub fn search(&self, query: &str) -> Vec<&IndexEntry> {
+        const MIN_SCORE: i64 = 50;
+
         if query.is_empty() {
             return self.packages.iter().take(50).collect();
         }
@@ -347,10 +386,6 @@ impl PackageIndex {
                 .filter(|e| e.tags.iter().any(|t| t.to_lowercase() == tag_query))
                 .collect();
         }
-
-        // Minimum score threshold to filter out false positives
-        // Calibrated: exact 3-char match scores ~45, so 50 requires strong match
-        const MIN_SCORE: i64 = 50;
 
         // 2. Perform fuzzy search
         let mut results: Vec<(i64, &IndexEntry)> = self
@@ -515,7 +550,7 @@ mod tests {
         let path = dir.path().join("index");
 
         let mut index = PackageIndex::new();
-        index.updated_at = 1234567890;
+        index.updated_at = 1_234_567_890;
         index.upsert_release(
             "ripgrep",
             "Fast grep",
@@ -542,7 +577,7 @@ mod tests {
         index.save(&path).unwrap();
         let loaded = PackageIndex::load(&path).unwrap();
 
-        assert_eq!(loaded.updated_at, 1234567890);
+        assert_eq!(loaded.updated_at, 1_234_567_890);
         assert_eq!(loaded.packages[0].name, "ripgrep");
     }
 

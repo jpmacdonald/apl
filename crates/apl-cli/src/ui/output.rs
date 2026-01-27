@@ -5,6 +5,7 @@
 
 use super::actor::{UiActor, UiEvent};
 use apl_schema::types::{PackageName, Version};
+use std::fmt;
 use std::sync::{OnceLock, mpsc};
 
 /// Singleton instance of the UI actor channel.
@@ -29,6 +30,12 @@ fn get_actor_sender() -> mpsc::Sender<UiEvent> {
 #[derive(Clone)]
 pub struct Output {
     sender: mpsc::Sender<UiEvent>,
+}
+
+impl fmt::Debug for Output {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Output").finish_non_exhaustive()
+    }
 }
 
 impl Output {

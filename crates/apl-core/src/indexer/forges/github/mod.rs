@@ -5,26 +5,38 @@ use async_trait::async_trait;
 use reqwest::header;
 use serde::Deserialize;
 
+/// Batched GraphQL queries for efficient release and version fetching.
 pub mod graphql;
 use sha2::Digest;
 
+/// A GitHub release as returned by the REST or GraphQL API.
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
+    /// Numeric release identifier.
     pub id: u64,
+    /// The Git tag associated with this release.
     pub tag_name: String,
+    /// Assets (binaries, archives, checksums) attached to the release.
     pub assets: Vec<GithubAsset>,
+    /// Whether the release is a draft.
     #[serde(default)]
     pub draft: bool,
+    /// Whether the release is marked as a pre-release.
     #[serde(default)]
     pub prerelease: bool,
+    /// Optional release body / description text.
     #[serde(default)]
     pub body: Option<String>,
 }
 
+/// A single downloadable asset attached to a [`GithubRelease`].
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubAsset {
+    /// Filename of the asset.
     pub name: String,
+    /// Browser-accessible download URL.
     pub browser_download_url: String,
+    /// Optional hex-encoded `SHA-256` digest, when provided by the API.
     #[serde(default)]
     pub digest: Option<String>,
 }
@@ -49,7 +61,7 @@ pub const MACOS_ARM_PATTERNS: &[&str] = &[
     "-aarch64", // generic aarch64 (careful - last resort)
 ];
 
-/// Priority patterns for macOS x86_64 binaries
+/// Priority patterns for macOS `x86_64` binaries.
 pub const MACOS_X86_PATTERNS: &[&str] = &[
     "x86_64-apple-darwin",
     "amd64-apple-darwin",
@@ -69,7 +81,7 @@ pub const MACOS_X86_PATTERNS: &[&str] = &[
     "-x86_64", // generic x86_64 (careful - last resort)
 ];
 
-/// Universal binary patterns (work on both ARM64 and x86_64)
+/// Universal binary patterns (work on both `ARM64` and `x86_64`).
 pub const MACOS_UNIVERSAL_PATTERNS: &[&str] = &["universal", "macos", "mac"];
 
 /// Strip common prefixes from GitHub tags (e.g., 'v1.0.0', 'jq-1.8.1' -> '1.8.1')
@@ -94,7 +106,7 @@ pub fn strip_tag_prefix(tag: &str, package_name: &str) -> String {
     version.to_string()
 }
 
-/// Find both ARM64 and x86_64 assets for macOS
+/// Find both `ARM64` and `x86_64` assets for macOS.
 pub fn find_macos_assets<'a>(
     release: &'a GithubRelease,
     package_name: &str,
@@ -112,6 +124,7 @@ pub fn find_macos_assets<'a>(
 }
 
 /// Find asset matching specific architecture patterns
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn find_asset_for_arch<'a>(
     release: &'a GithubRelease,
     package_name: &str,
@@ -154,6 +167,7 @@ fn find_asset_for_arch<'a>(
 }
 
 /// Legacy function - find best ARM64 asset (kept for compatibility)
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 pub fn find_best_asset<'a>(
     release: &'a GithubRelease,
     package_name: &str,
@@ -211,6 +225,20 @@ use std::fs;
 use std::path::Path;
 use toml_edit::{DocumentMut, value};
 
+/// Update a package definition TOML file with the latest GitHub release.
+///
+/// Reads the TOML at `path`, queries GitHub for the newest release,
+/// downloads the asset to compute its `SHA-256` hash, and writes the
+/// updated TOML back to disk.
+///
+/// Returns `true` if the file was updated, `false` if it was already at the
+/// latest version.
+///
+/// # Errors
+///
+/// Returns an error if the TOML cannot be read or parsed, if GitHub API
+/// requests fail, if no compatible asset is found and no source archive
+/// fallback is available, or if the file cannot be written.
 pub async fn update_package_definition(client: &reqwest::Client, path: &Path) -> Result<bool> {
     let content = fs::read_to_string(path)?;
     let mut doc = content.parse::<DocumentMut>()?;
@@ -240,9 +268,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     };
 
     let repo_re = Regex::new(r"github\.com/([^/]+)/([^/]+)")?;
-    let captures = if let Some(c) = repo_re.captures(url) {
-        c
-    } else {
+    let Some(captures) = repo_re.captures(url) else {
         return Ok(false);
     };
 
@@ -324,7 +350,14 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     Ok(true)
 }
 
-/// Fetch all releases (paginated) and filter/sort by SemVer
+/// Fetch all releases (paginated) and filter/sort by `SemVer`.
+///
+/// Falls back to fetching tags if the releases endpoint returns a 404.
+///
+/// # Errors
+///
+/// Returns an error if the GitHub API requests fail or the response cannot
+/// be deserialized.
 pub async fn fetch_all_releases(
     client: &reqwest::Client,
     owner: &str,
@@ -398,6 +431,11 @@ async fn fetch_all_tags(
     owner: &str,
     repo: &str,
 ) -> Result<Vec<GithubRelease>> {
+    #[derive(Deserialize)]
+    struct GithubTag {
+        name: String,
+    }
+
     let mut all_tags = Vec::new();
     let mut page = 1;
 
@@ -410,11 +448,6 @@ async fn fetch_all_tags(
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             anyhow::bail!("Failed to fetch tags for {owner}/{repo}: HTTP {status} - {body}");
-        }
-
-        #[derive(Deserialize)]
-        struct GithubTag {
-            name: String,
         }
 
         let tags: Vec<GithubTag> = resp.json().await?;
@@ -442,8 +475,14 @@ async fn fetch_all_tags(
     Ok(all_tags)
 }
 
-// Keep the old function for backward compatibility or single-fetch scenarios if needed,
-// but for the indexer we will use fetch_all_releases.
+/// Fetch the latest (most recent, non-draft) release for a GitHub repository.
+///
+/// This is a convenience wrapper around [`fetch_all_releases`] that returns
+/// only the first entry.
+///
+/// # Errors
+///
+/// Returns an error if no releases are found or if the API request fails.
 pub async fn fetch_latest_release(
     client: &reqwest::Client,
     owner: &str,
@@ -456,7 +495,15 @@ pub async fn fetch_latest_release(
         .ok_or_else(|| anyhow::anyhow!("No releases found for {owner}/{repo}"))
 }
 
-/// Build an authenticated GitHub client
+/// Build an authenticated GitHub HTTP client.
+///
+/// Configures a [`reqwest::Client`] with a `User-Agent` header and, if a
+/// token is provided, a `Bearer` authorization header.
+///
+/// # Errors
+///
+/// Returns an error if the authorization header value is invalid or if the
+/// underlying HTTP client cannot be constructed.
 pub fn build_client(token: Option<&str>) -> Result<reqwest::Client> {
     let mut headers = header::HeaderMap::new();
     headers.insert(
@@ -476,8 +523,14 @@ pub fn build_client(token: Option<&str>) -> Result<reqwest::Client> {
         .build()?)
 }
 
+/// A [`ListingSource`] backed by a GitHub repository.
+///
+/// Fetches releases and their assets via the GitHub GraphQL API.
+#[derive(Debug)]
 pub struct GitHubSource {
+    /// Repository owner (user or organization).
     pub owner: String,
+    /// Repository name.
     pub repo: String,
 }
 

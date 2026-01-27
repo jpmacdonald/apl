@@ -19,7 +19,7 @@ fn compute_file_hash(path: &std::path::Path) -> Result<String> {
 
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 65536]; // 64KB buffer
+    let mut buffer = vec![0u8; 65536]; // 64KB buffer
 
     loop {
         let bytes_read = file.read(&mut buffer)?;

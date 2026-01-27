@@ -20,20 +20,7 @@ pub fn link_binaries(
     let mut files_to_record = Vec::new();
     let mut bins_to_link = Vec::new();
 
-    if !bin_list.is_empty() {
-        for bin_spec in bin_list {
-            if bin_spec.contains(':') {
-                let parts: Vec<&str> = bin_spec.split(':').collect();
-                bins_to_link.push((parts[0].to_string(), parts[1].to_string()));
-            } else {
-                let target = Path::new(bin_spec)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| bin_spec.clone());
-                bins_to_link.push((bin_spec.clone(), target));
-            }
-        }
-    } else {
+    if bin_list.is_empty() {
         let bin_dir = pkg_store_path.join("bin");
         let search_dir = if bin_dir.exists() {
             &bin_dir
@@ -52,6 +39,18 @@ pub fn link_binaries(
                         }
                     }
                 }
+            }
+        }
+    } else {
+        for bin_spec in bin_list {
+            if bin_spec.contains(':') {
+                let parts: Vec<&str> = bin_spec.split(':').collect();
+                bins_to_link.push((parts[0].to_string(), parts[1].to_string()));
+            } else {
+                let target = Path::new(bin_spec)
+                    .file_name()
+                    .map_or_else(|| bin_spec.clone(), |n| n.to_string_lossy().to_string());
+                bins_to_link.push((bin_spec.clone(), target));
             }
         }
     }

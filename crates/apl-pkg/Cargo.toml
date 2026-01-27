@@ -8,10 +8,12 @@ description = "APL index generator and registry maintenance tool"
 name = "apl-pkg"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 apl-core = { workspace = true, features = ["upload", "parsing", "network"] }
 apl-schema = { workspace = true }
-# NOTE: apl-cli dependency removed - Reporter trait now lives in apl-core
 
 tempfile = { workspace = true }
 tokio = { workspace = true }

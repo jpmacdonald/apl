@@ -7,6 +7,9 @@ use apl_schema::types::{PackageName, Version};
 
 /// Check status of installed packages
 pub fn status() -> Result<()> {
+    use crate::ui::Theme;
+    use crossterm::style::Stylize;
+
     let db = StateDb::open().context("Failed to open state database")?;
 
     // 1. Version
@@ -17,12 +20,14 @@ pub fn status() -> Result<()> {
     let index_meta = std::fs::metadata(&index_path).ok();
     let index_date = index_meta
         .and_then(|m| m.modified().ok())
-        .map(|t| {
-            chrono::DateTime::<chrono::Local>::from(t)
-                .format("%Y-%m-%d")
-                .to_string()
-        })
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(
+            || "unknown".to_string(),
+            |t| {
+                chrono::DateTime::<chrono::Local>::from(t)
+                    .format("%Y-%m-%d")
+                    .to_string()
+            },
+        );
 
     let index = if index_path.exists() {
         PackageIndex::load(&index_path).ok()
@@ -71,9 +76,6 @@ pub fn status() -> Result<()> {
     }
 
     // --- RENDER ---
-    use crate::ui::Theme;
-    use crossterm::style::Stylize;
-
     let theme = Theme::default();
     let label_width = 12;
 
@@ -109,7 +111,10 @@ pub fn status() -> Result<()> {
     );
 
     // Section 2: Updates (if any)
-    if !update_list.is_empty() {
+    if update_list.is_empty() {
+        println!();
+        println!("{}", "System is up to date".dark_grey());
+    } else {
         println!();
         println!(
             "{}",
@@ -120,15 +125,12 @@ pub fn status() -> Result<()> {
         for (name, old, new) in update_list {
             let name_part = format!("{:<width$}", name, width = theme.layout.name_width);
             println!(
-                "  {} {}  →  {}",
+                "  {} {}  ->  {}",
                 name_part.with(theme.colors.package_name),
                 old.as_str().dark_grey(),
                 new.with(theme.colors.success)
             );
         }
-    } else {
-        println!();
-        println!("{}", "System is up to date".dark_grey());
     }
 
     println!();

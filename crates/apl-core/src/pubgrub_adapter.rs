@@ -12,9 +12,12 @@ use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt;
 
-/// A wrapper type for package names that implements PubGrub's Package trait.
+/// A wrapper type for package names that implements PubGrub's `Package` trait.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct PkgId(pub PackageName);
+pub struct PkgId(
+    /// The underlying [`PackageName`].
+    pub PackageName,
+);
 
 impl fmt::Display for PkgId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -28,7 +31,12 @@ impl Borrow<str> for PkgId {
     }
 }
 
-/// Adapter that provides APL package info to the PubGrub solver.
+/// Adapter that provides APL package info to the `PubGrub` solver.
+///
+/// Implements [`DependencyProvider`] so the `PubGrub` SAT-based resolver
+/// can query available versions and dependency constraints from the
+/// [`PackageIndex`].
+#[derive(Debug)]
 pub struct AplDependencyProvider<'a> {
     index: &'a PackageIndex,
 }
@@ -53,7 +61,7 @@ impl<'a> AplDependencyProvider<'a> {
     }
 }
 
-impl<'a> DependencyProvider<PkgId, SemanticVersion> for AplDependencyProvider<'a> {
+impl DependencyProvider<PkgId, SemanticVersion> for AplDependencyProvider<'_> {
     fn choose_package_version<T: Borrow<PkgId>, U: Borrow<Range<SemanticVersion>>>(
         &self,
         potential_packages: impl Iterator<Item = (T, U)>,
@@ -104,7 +112,15 @@ impl<'a> DependencyProvider<PkgId, SemanticVersion> for AplDependencyProvider<'a
     }
 }
 
-/// Resolve dependencies using PubGrub algorithm.
+/// Resolve dependencies using the `PubGrub` algorithm.
+///
+/// Returns a sorted list of `(PackageName, version_string)` pairs
+/// representing the full dependency solution rooted at `root`.
+///
+/// # Errors
+///
+/// Returns an error string if the root package is not found in the index
+/// or the solver encounters an unresolvable version conflict.
 pub fn resolve_with_pubgrub(
     root: &PackageName,
     index: &PackageIndex,
@@ -148,8 +164,8 @@ mod tests {
     fn simple_entry(name: &str, version: &str, deps: Vec<String>) -> IndexEntry {
         IndexEntry {
             name: name.into(),
-            description: "".into(),
-            homepage: "".into(),
+            description: String::new(),
+            homepage: String::new(),
             type_: "cli".into(),
             bins: vec![],
             releases: vec![VersionInfo {
@@ -157,7 +173,7 @@ mod tests {
                 binaries: vec![],
                 deps,
                 bin: vec![],
-                hints: "".into(),
+                hints: String::new(),
                 app: None,
                 source: None,
                 build_deps: vec![],

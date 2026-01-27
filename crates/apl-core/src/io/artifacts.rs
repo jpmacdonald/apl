@@ -49,7 +49,12 @@ impl ArtifactConfig {
     }
 }
 
+/// Client for interacting with the S3-compatible artifact store.
+///
+/// Provides methods to upload, download, and query content-addressed
+/// artifacts and their chunked manifests.
 #[cfg(feature = "upload")]
+#[derive(Debug)]
 pub struct ArtifactStore {
     client: s3::Client,
     bucket: String,
@@ -60,6 +65,7 @@ pub struct ArtifactStore {
 impl ArtifactStore {
     // ... all the methods I viewed earlier ...
     /// Create a new artifact store client.
+    #[allow(clippy::unused_async)] // Callers expect an async constructor to match the rest of the API
     pub async fn new(config: ArtifactConfig) -> Result<Self> {
         let credentials = s3::config::Credentials::new(
             &config.access_key,
@@ -294,6 +300,11 @@ impl ArtifactStore {
 #[cfg(feature = "upload")]
 static ARTIFACT_STORE: std::sync::OnceLock<Option<Arc<ArtifactStore>>> = std::sync::OnceLock::new();
 
+/// Return the global [`ArtifactStore`] singleton, initializing it from
+/// environment variables on first call.
+///
+/// Returns `None` if the artifact store is not configured or initialization
+/// fails.
 #[cfg(feature = "upload")]
 pub async fn get_artifact_store() -> Option<Arc<ArtifactStore>> {
     // Check if already initialized
@@ -311,28 +322,44 @@ pub async fn get_artifact_store() -> Option<Arc<ArtifactStore>> {
     Some(store)
 }
 
+/// Stub artifact store used when the `upload` feature is disabled.
+///
+/// All mutation methods return errors and all queries return empty results.
 #[cfg(not(feature = "upload"))]
+#[derive(Debug)]
 pub struct ArtifactStore;
 
 #[cfg(not(feature = "upload"))]
 impl ArtifactStore {
+    /// Return the public URL for an artifact (always empty when uploads are disabled).
     pub fn public_url(&self, _hash: &str) -> String {
         String::new()
     }
 
+    /// Return the public URL for a manifest (always empty when uploads are disabled).
     pub fn manifest_url(&self, _hash: &str) -> String {
         String::new()
     }
 
+    /// Attempt a chunked upload (always fails when uploads are disabled).
+    ///
+    /// # Errors
+    ///
+    /// Always returns an error because the `upload` feature is not enabled.
+    #[allow(clippy::unused_async)] // Must match the async signature of the upload-enabled variant
     pub async fn upload_chunked(&self, _hash: &str, _data: &[u8]) -> Result<String> {
         anyhow::bail!("Artifact uploads are disabled in this build")
     }
 
+    /// Check if a manifest exists (always returns `false` when uploads are disabled).
+    #[allow(clippy::unused_async)] // Must match the async signature of the upload-enabled variant
     pub async fn exists_manifest(&self, _hash: &str) -> bool {
         false
     }
 }
 
+/// Return the global [`ArtifactStore`] singleton (always `None` when
+/// the `upload` feature is disabled).
 #[cfg(not(feature = "upload"))]
 pub async fn get_artifact_store() -> Option<Arc<ArtifactStore>> {
     None

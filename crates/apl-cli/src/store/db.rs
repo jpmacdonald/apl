@@ -2,6 +2,7 @@
 //!
 //! Manages the SQLite state database for tracking packages, versions, and file artifacts.
 
+use std::fmt;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -61,6 +62,12 @@ pub struct InstalledFile {
 /// 2. Or, open a new connection per thread (SQLite WAL mode handles this well).
 pub struct StateDb {
     conn: Connection,
+}
+
+impl fmt::Debug for StateDb {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StateDb").finish_non_exhaustive()
+    }
 }
 
 impl StateDb {

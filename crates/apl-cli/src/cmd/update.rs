@@ -7,6 +7,9 @@ use reqwest::Client;
 
 /// Update package index from CDN
 pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
+    use base64::Engine;
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
     let index_path = apl_home().join("index");
     let output = crate::ui::Output::new();
 
@@ -49,8 +52,6 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
         match sig_response {
             Ok(resp) if resp.status().is_success() => {
                 let sig_b64 = resp.text().await?.trim().to_string();
-                use base64::Engine;
-                use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
                 let public_bytes = base64::engine::general_purpose::STANDARD
                     .decode(crate::APL_PUBLIC_KEY)
@@ -146,8 +147,8 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
 
     // Show available updates (upgrade command actually installs them)
     if !update_list.is_empty() {
-        let theme = crate::ui::Theme::default();
         use crossterm::style::Stylize;
+        let theme = crate::ui::Theme::default();
 
         println!();
         // U.S. Graphics: Clean summary line, no separator

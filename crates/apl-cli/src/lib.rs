@@ -69,7 +69,7 @@ pub use apl_schema::APL_PUBLIC_KEY;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "apl")]
 #[command(author, version, about = "apl - A Package Layer for macOS")]
 pub struct Cli {
@@ -85,7 +85,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Install a package
     Install {

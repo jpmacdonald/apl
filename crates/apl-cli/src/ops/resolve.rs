@@ -137,7 +137,7 @@ mod tests {
         IndexEntry {
             name: name.to_string(),
             description: "test".to_string(),
-            homepage: "".to_string(),
+            homepage: String::new(),
             type_: "cli".to_string(),
             bins: vec![],
             releases: versions
@@ -152,9 +152,9 @@ mod tests {
                     }],
                     deps: vec![],
                     build_deps: vec![],
-                    build_script: "".to_string(),
+                    build_script: String::new(),
                     bin: vec![],
-                    hints: "".to_string(),
+                    hints: String::new(),
                     app: None,
                     source: None,
                 })
@@ -211,7 +211,7 @@ mod tests {
         use apl_core::manifest::LockPackage;
 
         // Create a mock existing lockfile with a timestamp
-        let old_timestamp = 1700000000i64;
+        let old_timestamp = 1_700_000_000_i64;
         let existing = Lockfile {
             package: vec![LockPackage {
                 name: PackageName::from("node".to_string()),

@@ -1,7 +1,12 @@
+/// Version discovery and asset resolution logic.
 pub mod discovery;
+/// Forge adapters for code hosting platforms.
 pub mod forges;
+/// Persistent hash caching for indexed artifacts.
 pub mod hashing;
+/// Importers for translating external package registries to APL TOML.
 pub mod import;
+/// Registry directory traversal utilities.
 pub mod walk;
 
 pub use discovery::*;
@@ -36,6 +41,9 @@ pub async fn generate_index_from_registry(
     _verbose: bool,
     _reporter: Arc<dyn crate::Reporter>,
 ) -> Result<PackageIndex> {
+    use futures::stream::{self as fstream, StreamExt as FStreamExt};
+    use futures::stream;
+
     // Configure client with timeout (overshadowing the argument)
     let client = reqwest::Client::builder()
         .user_agent("apl/0.1.0")
@@ -112,9 +120,8 @@ pub async fn generate_index_from_registry(
     let mut pkg_source_map: HashMap<String, String> = HashMap::new();
 
     for template_path in toml_files {
-        let toml_str = match fs::read_to_string(&template_path) {
-            Ok(s) => s,
-            Err(_) => continue, // Squelch error for clean UI
+        let Ok(toml_str) = fs::read_to_string(&template_path) else {
+            continue; // Squelch error for clean UI
         };
 
         let template: PackageTemplate = match toml::from_str(&toml_str) {
@@ -213,7 +220,7 @@ pub async fn generate_index_from_registry(
                                 discovery::auto_parse_version(&extracted)
                             });
 
-                            if local_latest.map(|s| s.to_string()) == remote_version {
+                            if local_latest.map(std::string::ToString::to_string) == remote_version {
                                 _skipped_count += 1;
                             } else {
                                 dirty_repos.push(key);
@@ -230,12 +237,10 @@ pub async fn generate_index_from_registry(
         }
         // pb_delta.finish_and_clear();
     } else {
-        dirty_repos = github_repos.clone();
+        dirty_repos.clone_from(&github_repos);
     }
 
     // Phase 2: Metadata Fetching (parallelized)
-    use futures::stream::{self as fstream, StreamExt as FStreamExt};
-
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
     let total_dirty = dirty_repos.len();
     println!("Phase 2: Fetching metadata for {total_dirty} repositories...");
@@ -245,7 +250,7 @@ pub async fn generate_index_from_registry(
         let token = std::sync::Arc::new(token);
 
         // Create chunks and process them concurrently
-        let chunks: Vec<Vec<RepoKey>> = dirty_repos.chunks(4).map(|c| c.to_vec()).collect();
+        let chunks: Vec<Vec<RepoKey>> = dirty_repos.chunks(4).map(<[RepoKey]>::to_vec).collect();
 
         let total_chunks = chunks.len();
         let processed_chunks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -376,13 +381,12 @@ pub async fn generate_index_from_registry(
                 build_deps: template
                     .build
                     .as_ref()
-                    .map(|b| b.dependencies.clone())
-                    .unwrap_or_else(|| template.dependencies.build.clone()),
+                    .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
                 bin: vec![],
-                hints: "".into(),
+                hints: String::new(),
                 app: None,
                 source: None,
-                build_script: "".into(),
+                build_script: String::new(),
             },
         );
     }
@@ -402,8 +406,6 @@ pub async fn generate_index_from_registry(
     let mut fully_indexed = 0;
     let mut partial = 0;
     let mut failed = 0;
-
-    use futures::stream;
 
     for layer in layers {
         let mut layer_templates = Vec::new();
@@ -604,9 +606,10 @@ pub async fn generate_index_from_registry(
             // Aligned UI Output: [S/T] pkg_name  (status)
             let status_msg = if !errors.is_empty() && success_count == 0 {
                 let human_err = humanize_error(&errors[0].to_string());
-                match human_err.contains("Skipped:") {
-                    true => format!("({human_err})"),
-                    false => format!("(Skipped: {human_err})"),
+                if human_err.contains("Skipped:") {
+                    format!("({human_err})")
+                } else {
+                    format!("(Skipped: {human_err})")
                 }
             } else if !errors.is_empty() {
                 "(partial)".to_string()
@@ -666,13 +669,32 @@ fn humanize_error(e: &str) -> String {
     }
 }
 
+/// Shared context passed to per-version indexing tasks.
+///
+/// Holds a reference to the HTTP client, a shared hash cache, an optional
+/// pre-fetched release map, and the current package index snapshot.
+#[derive(Debug)]
 pub struct IndexingContext<'a> {
+    /// HTTP client used for downloading assets and checksums.
     pub client: &'a Client,
+    /// Thread-safe, persistent hash cache to avoid redundant downloads.
     pub hash_cache: Arc<Mutex<HashCache>>,
+    /// Pre-fetched release metadata keyed by tag name, if available.
     pub releases_map: Option<Arc<HashMap<String, ReleaseInfo>>>,
+    /// Snapshot of the current package index for reuse checks.
     pub index: &'a PackageIndex,
 }
 
+/// Convert a single package template and version tag into a [`VersionInfo`] entry.
+///
+/// Reuses cached binary data when the version is already present in the index,
+/// otherwise resolves assets, computes hashes, and optionally hydrates from
+/// source using the build specification.
+///
+/// # Errors
+///
+/// Returns an error if asset resolution, hash computation, or source hydration
+/// fails for the given version.
 pub async fn package_to_index_ver(
     ctx: IndexingContext<'_>,
     template: &PackageTemplate,
@@ -703,13 +725,11 @@ pub async fn package_to_index_ver(
                     build_deps: template
                         .build
                         .as_ref()
-                        .map(|b| b.dependencies.clone())
-                        .unwrap_or_else(|| template.dependencies.build.clone()),
+                        .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
                     build_script: template
                         .build
                         .as_ref()
-                        .map(|b| b.script.clone())
-                        .unwrap_or_default(),
+                        .map_or_else(String::new, |b| b.script.clone()),
                     bin: template
                         .install
                         .bin
@@ -862,13 +882,11 @@ pub async fn package_to_index_ver(
         build_deps: template
             .build
             .as_ref()
-            .map(|b| b.dependencies.clone())
-            .unwrap_or_else(|| template.dependencies.build.clone()),
+            .map_or_else(|| template.dependencies.build.clone(), |b| b.dependencies.clone()),
         build_script: template
             .build
             .as_ref()
-            .map(|b| b.script.clone())
-            .unwrap_or_default(),
+            .map_or_else(String::new, |b| b.script.clone()),
         bin: bin_list,
         hints: template.hints.post_install.clone(),
         app: template.install.app.clone(),
@@ -892,7 +910,6 @@ async fn resolve_hash(
 
     if let DiscoveryConfig::GitHub { .. } = template.discovery {
         let filename = crate::filename_from_url(asset_url);
-        let _tag = version; // Renamed to _tag as it's not directly used after this point
 
         if let Some(map) = releases_map {
             if let Some(release) = map.get(version) {
@@ -984,6 +1001,17 @@ async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
     Ok(hash)
 }
 
+/// Build a package from source, bundle the output, and upload it to the artifact store.
+///
+/// Downloads the source archive, extracts it, resolves build dependencies from
+/// the index, runs the build script inside a [`Sysroot`](crate::sysroot::Sysroot),
+/// and uploads the resulting `tar.zst` bundle to the configured
+/// [`ArtifactStore`].
+///
+/// # Errors
+///
+/// Returns an error if the source download, extraction, dependency resolution,
+/// build execution, or artifact upload fails.
 pub async fn hydrate_from_source(
     client: &Client,
     template: &PackageTemplate,
@@ -1250,9 +1278,9 @@ mod indexer_tests {
             package: crate::package::PackageInfoTemplate {
                 name: "test-pkg".into(),
                 description: "test".to_string(),
-                homepage: "".to_string(),
-                license: "".to_string(),
-                tags: vec![], // Added this line based on the instruction
+                homepage: String::new(),
+                license: String::new(),
+                tags: vec![],
             },
             discovery: DiscoveryConfig::GitHub {
                 github: "owner/repo".to_string(),
@@ -1342,8 +1370,8 @@ mod indexer_tests {
             package: crate::package::PackageInfoTemplate {
                 name: "test-pkg".into(),
                 description: "test".to_string(),
-                homepage: "".to_string(),
-                license: "".to_string(),
+                homepage: String::new(),
+                license: String::new(),
                 tags: vec![],
             },
             discovery: DiscoveryConfig::Manual {
@@ -1376,7 +1404,7 @@ mod indexer_tests {
         hash_cache
             .lock()
             .await
-            .insert("".to_string(), "dummy_hash".to_string(), HashType::Sha256);
+            .insert(String::new(), "dummy_hash".to_string(), HashType::Sha256);
 
         let ver_info = package_to_index_ver(ctx, &template, "v1.0.0", "1.0.0", "1.0.0")
             .await

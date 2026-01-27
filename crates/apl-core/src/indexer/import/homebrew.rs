@@ -26,13 +26,22 @@ struct BrewUrl {
     // tag: Option<String>,
 }
 
+/// Import one or more Homebrew formulae into the APL registry.
+///
+/// For each package name, fetches the formula metadata from the Homebrew JSON
+/// API, analyses the upstream source URL, and writes a TOML template into the
+/// registry directory.
+///
+/// # Errors
+///
+/// Returns an error if any individual formula cannot be fetched or converted.
 pub async fn import_homebrew_packages(packages: &[String], registry_dir: &Path) -> Result<()> {
     let client = reqwest::Client::new();
 
     for pkg_name in packages {
         println!("Importing {pkg_name} from Homebrew...");
         match import_single_package(&client, pkg_name, registry_dir).await {
-            Ok(_) => println!("   ✓ Imported {pkg_name}"),
+            Ok(()) => println!("   ✓ Imported {pkg_name}"),
             Err(e) => eprintln!("   ✗ Failed to import {pkg_name}: {e}"),
         }
     }

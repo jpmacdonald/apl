@@ -34,7 +34,7 @@ pub enum PackageState {
 }
 
 /// A single package row in the table
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PackageRow {
     name: PackageName,
     version: String,
@@ -53,6 +53,7 @@ pub enum TableMode {
 }
 
 /// Table renderer for package operations
+#[derive(Debug)]
 pub struct TableRenderer {
     packages: Vec<PackageRow>,
     mode: TableMode,
@@ -86,7 +87,7 @@ impl TableRenderer {
 
         // 2. Initialize package data
         for (name, version, depth) in items {
-            let ver = version.as_ref().map(|v| v.as_str()).unwrap_or("-");
+            let ver = version.as_ref().map_or("-", apl_schema::Version::as_str);
             self.packages.push(PackageRow {
                 name: name.clone(),
                 version: ver.to_string(),
@@ -200,18 +201,11 @@ impl TableRenderer {
                         theme.colors.package_name,
                         theme.colors.secondary,
                     ),
-                    PackageState::Downloading { .. } => (
+                    PackageState::Downloading { .. }
+                    | PackageState::Installing { .. }
+                    | PackageState::Extracting { .. }
+                    | PackageState::Removing => (
                         theme.colors.error, // Red icon (Milspec active)
-                        theme.colors.package_name,
-                        theme.colors.secondary, // Neutral status text
-                    ),
-                    PackageState::Installing { .. } | PackageState::Extracting { .. } => (
-                        theme.colors.error, // Red icon
-                        theme.colors.package_name,
-                        theme.colors.secondary, // Neutral status text
-                    ),
-                    PackageState::Removing => (
-                        theme.colors.error, // Red icon
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
@@ -243,7 +237,7 @@ impl TableRenderer {
                         let size_str = if *current > 0 {
                             format!(" ({})", super::theme::format_size(*current))
                         } else {
-                            "".to_string()
+                            String::new()
                         };
                         let msg = format!("unpacking...{size_str}");
                         format!("{msg:<50}")
@@ -252,8 +246,9 @@ impl TableRenderer {
                         format!("{:<50}", "linking...")
                     }
                     PackageState::Removing => format!("{:<50}", "uninstalling..."),
-                    PackageState::Done { detail } => format!("{detail:<50}"),
-                    PackageState::Warn { detail } => format!("{detail:<50}"),
+                    PackageState::Done { detail } | PackageState::Warn { detail } => {
+                        format!("{detail:<50}")
+                    }
                     PackageState::Failed { reason } => {
                         let msg = format!("FAILED: {reason}");
                         format!("{msg:<50}")
@@ -265,7 +260,7 @@ impl TableRenderer {
                 let prefix = if pkg.depth > 0 {
                     format!("{:indent$}└─ ", "", indent = pkg.depth * 2)
                 } else {
-                    "".to_string()
+                    String::new()
                 };
 
                 // Calculate visible length for padding (assuming 1-char icons/ascii)
@@ -318,10 +313,10 @@ impl TableRenderer {
 
         match severity {
             Severity::Success => {
-                println!("{} {}", self.theme.icons.success.green(), message.green())
+                println!("{} {}", self.theme.icons.success.green(), message.green());
             }
             Severity::Warning => {
-                println!("{} {}", self.theme.icons.warning.yellow(), message.yellow())
+                println!("{} {}", self.theme.icons.warning.yellow(), message.yellow());
             }
             Severity::Error => println!("{} {}", self.theme.icons.error.red(), message.red()),
         }

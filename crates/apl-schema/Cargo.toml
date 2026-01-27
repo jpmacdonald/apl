@@ -5,6 +5,9 @@ edition = "2024"
 description = "Shared types and wire format for APL"
 license = "MIT"
 
+[lints]
+workspace = true
+
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }

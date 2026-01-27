@@ -11,6 +11,7 @@ use crossterm::{
 };
 use std::io::{Result, Stdout, Write, stdout};
 
+#[derive(Debug)]
 pub struct RelativeFrame {
     stdout: Stdout,
     total_rows: u16,

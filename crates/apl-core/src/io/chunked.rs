@@ -30,7 +30,7 @@ impl BlobManifest {
     pub fn from_data(data: &[u8]) -> Self {
         use fastcdc::v2020::FastCDC;
 
-        let chunker = FastCDC::new(data, 16384, 65536, 262144); // min 16KB, avg 64KB, max 256KB
+        let chunker = FastCDC::new(data, 16384, 65536, 262_144); // min 16KB, avg 64KB, max 256KB
         let mut chunks = Vec::new();
 
         for chunk in chunker {
@@ -75,7 +75,7 @@ impl BlobManifest {
 }
 
 /// Reassemble a blob from chunks.
-pub fn reassemble(manifest: &BlobManifest, chunk_data: &std::collections::HashMap<String, Vec<u8>>) -> Option<Vec<u8>> {
+pub fn reassemble<S: ::std::hash::BuildHasher>(manifest: &BlobManifest, chunk_data: &std::collections::HashMap<String, Vec<u8>, S>) -> Option<Vec<u8>> {
     let mut result = Vec::with_capacity(manifest.size as usize);
 
     for chunk_ref in &manifest.chunks {

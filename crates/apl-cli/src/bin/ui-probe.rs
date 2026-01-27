@@ -8,9 +8,9 @@ fn main() {
     println!("01234567890123456789012345678901234567890123456789");
     println!("   PACKAGE          VERSION      SIZE       INSTALLED");
 
-    print_list_row(&mut buffer, "bat", "0.26.1", 5000000, "2025-12-31", " ");
+    print_list_row(&mut buffer, "bat", "0.26.1", 5_000_000, "2025-12-31", " ");
     print_list_row(&mut buffer, "jq", "1.8.1", 0, "2025-12-31", " ");
-    print_list_row(&mut buffer, "just", "1.45.0", 4000000, "2025-12-31", " ");
+    print_list_row(&mut buffer, "just", "1.45.0", 4_000_000, "2025-12-31", " ");
 
     buffer.flush();
 }

@@ -6,6 +6,8 @@ use apl_schema::index::PackageIndex;
 
 /// Search packages in the local index (U.S. Graphics style output)
 pub fn search(query: &str) -> Result<()> {
+    use crossterm::style::Stylize;
+
     let start = std::time::Instant::now();
     let index_path = apl_home().join("index");
     if !index_path.exists() {
@@ -17,7 +19,6 @@ pub fn search(query: &str) -> Result<()> {
     let results = index.search(query);
 
     let theme = crate::ui::Theme::default();
-    use crossterm::style::Stylize;
 
     if results.is_empty() {
         println!();
@@ -35,7 +36,7 @@ pub fn search(query: &str) -> Result<()> {
 
     for entry in &results {
         let name = entry.name.to_string();
-        let version = entry.latest().map(|v| v.version.as_str()).unwrap_or("?");
+        let version = entry.latest().map_or("?", |v| v.version.as_str());
         let description = &entry.description;
 
         crate::ui::list::print_list_row(&mut buffer, &name, version, 0, description, " ");

@@ -8,18 +8,27 @@ use anyhow::{Result, bail};
 
 use crate::{PackageName, Version};
 
-/// Parsed package specifier with optional version
+/// Parsed package specifier with optional pinned version (e.g. `jq` or `jq@1.7.1`).
 #[derive(Debug, Clone)]
 pub struct PackageSpec {
+    /// Normalized package name.
     pub name: PackageName,
+    /// Pinned version, or `None` for "latest".
     pub version: Option<Version>,
 }
 
 impl PackageSpec {
-    /// Parse a package specifier like `jq` or `jq@1.7.1`
+    /// Parse a package specifier like `jq` or `jq@1.7.1`.
+    ///
+    /// The `@latest` suffix is treated as unpinned (returns `version: None`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the package name is empty or if `@` is present but
+    /// the version portion is missing.
     pub fn parse(spec: &str) -> Result<Self> {
         // Strip any trailing comments (e.g. jq#comment)
-        let spec = spec.split_once('#').map(|(s, _)| s).unwrap_or(spec).trim();
+        let spec = spec.split_once('#').map_or(spec, |(s, _)| s).trim();
 
         if let Some((name, version)) = spec.split_once('@') {
             if name.is_empty() {
@@ -90,7 +99,7 @@ pub fn is_newer(current: &str, latest: &str) -> bool {
 
     // If numeric parts are identical, check for pre-release suffixes.
     // Logic: Stable (no suffix) > Pre-release (any suffix).
-    let has_suffix = |v: &str| v.contains('-') || v.chars().any(|c| c.is_alphabetic());
+    let has_suffix = |v: &str| v.contains('-') || v.chars().any(char::is_alphabetic);
 
     let c_has_suffix = has_suffix(current);
     let l_has_suffix = has_suffix(latest);

@@ -12,6 +12,18 @@ use crate::types::Artifact;
 
 // Removed local PortMetadata struct definition as we now use apl_types::Artifact
 
+/// Fetch release metadata for a port package from the remote R2 bucket.
+///
+/// Reads the index file at `<bucket_url>/ports/<package_name>/index.json`,
+/// groups the artifacts by version, and returns them as [`ReleaseInfo`]
+/// entries sorted in descending version order.
+///
+/// Returns an empty list if the index file is not found (HTTP 404).
+///
+/// # Errors
+///
+/// Returns an error if the HTTP request fails with a status other than 404,
+/// or if the response body cannot be deserialized.
 pub async fn fetch_releases(
     client: &reqwest::Client,
     package_name: &str,

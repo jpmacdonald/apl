@@ -67,7 +67,7 @@ pub async fn shell(frozen: bool, update: bool, command: Option<Vec<String>>) -> 
     let client = reqwest::Client::new();
     ensure_installed(&lockfile, &index, &output, &client).await?;
 
-    run_shell(&output, &lockfile, root_dir, command)
+    run_shell(&output, &lockfile, root_dir, command.as_deref())
 }
 
 /// Load the package index from APL home
@@ -81,7 +81,7 @@ fn run_shell(
     output: &Output,
     lockfile: &Lockfile,
     root_dir: &Path,
-    command: Option<Vec<String>>,
+    command: Option<&[String]>,
 ) -> Result<()> {
     // 1. Create Ephemeral Sysroot
     let sysroot =
@@ -132,8 +132,7 @@ fn run_shell(
     // Get project name for prompt prefix
     let project_name = root_dir
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "apl".to_string());
+        .map_or_else(|| "apl".to_string(), |n| n.to_string_lossy().to_string());
     let ps1_prefix = format!("(apl:{project_name}) ");
 
     output.success("Entering apl ephemeral shell...");
@@ -150,7 +149,7 @@ fn run_shell(
     };
 
     let status = match command {
-        Some(ref args) if !args.is_empty() => {
+        Some(args) if !args.is_empty() => {
             // Run specific command
             let (prog, rest) = args.split_first().unwrap();
             let mut cmd = Command::new(prog);

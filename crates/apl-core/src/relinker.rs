@@ -21,16 +21,31 @@ use std::process::Command;
 /// By setting the Dylib ID to start with `@rpath/` and adding a relative `LC_RPATH` to the binary,
 /// we make the package **relocatable**. You can move the entire directory structure anywhere, and the
 /// binary will still find its libraries in `../lib` relative to itself.
+#[derive(Debug)]
 pub struct Relinker;
 
 impl Relinker {
-    /// Adds a relative `../lib` rpath to an executable.
+    /// Adds a relative `../lib` rpath to an executable via `install_name_tool`.
+    ///
+    /// After patching, the binary is re-signed with an ad-hoc signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `install_name_tool` is not found, exits with a
+    /// non-zero status, or the subsequent code-signing step fails.
     pub fn fix_binary(binary_path: &Path) -> Result<()> {
         Self::run_install_name_tool(binary_path, &["-add_rpath", "@executable_path/../lib"])?;
         Self::resign(binary_path)
     }
 
-    /// Sets the install ID of a dynamic library to leverage `@rpath`.
+    /// Sets the install ID of a dynamic library to `@rpath/<filename>`.
+    ///
+    /// After patching, the library is re-signed with an ad-hoc signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the path has no filename, `install_name_tool`
+    /// is not found or fails, or the subsequent code-signing step fails.
     pub fn fix_dylib(dylib_path: &Path) -> Result<()> {
         let name = dylib_path
             .file_name()
@@ -44,7 +59,14 @@ impl Relinker {
     }
 
     /// Updates a load command to point to a new location.
-    /// e.g. /usr/local/lib/libssl.dylib -> @rpath/libssl.dylib
+    ///
+    /// For example, `/usr/local/lib/libssl.dylib` can be changed to
+    /// `@rpath/libssl.dylib`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `install_name_tool` is not found, exits with a
+    /// non-zero status, or the subsequent code-signing step fails.
     pub fn change_dep(path: &Path, old: &str, new: &str) -> Result<()> {
         Self::run_install_name_tool(path, &["-change", old, new])?;
         Self::resign(path)
@@ -74,7 +96,15 @@ impl Relinker {
         Ok(())
     }
 
-    /// Re-applies ad-hoc code signing to validity patched binaries.
+    /// Re-applies ad-hoc code signing to patched Mach-O binaries.
+    ///
+    /// Uses `codesign -s - --force` to apply an ad-hoc signature while
+    /// preserving existing entitlements, requirements, flags, and runtime
+    /// metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `codesign` process cannot be spawned.
     pub fn resign(path: &Path) -> Result<()> {
         let _ = Command::new("codesign")
             .args([

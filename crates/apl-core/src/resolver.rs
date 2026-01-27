@@ -6,6 +6,14 @@ use apl_schema::version::is_newer;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Resolves dependencies for a set of packages and returns them in installation order.
+///
+/// Performs a recursive depth-first traversal of the dependency graph,
+/// detecting cycles and producing a topologically sorted list.
+///
+/// # Errors
+///
+/// Returns an error if a package is not found in the index or a circular
+/// dependency is detected.
 pub fn resolve_dependencies(
     pkg_names: &[PackageName],
     index: &PackageIndex,
@@ -29,6 +37,13 @@ pub fn resolve_dependencies(
 
 /// Resolves a build plan for the entire index, returning layers of packages
 /// that can be built in parallel.
+///
+/// Uses Kahn's algorithm for topological sorting. Each layer contains
+/// packages whose dependencies have all been resolved in prior layers.
+///
+/// # Errors
+///
+/// Returns an error if a circular dependency is detected in the build graph.
 pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>> {
     let mut adjacency: HashMap<PackageName, Vec<PackageName>> = HashMap::new();
     let mut in_degree: HashMap<PackageName, usize> = HashMap::new();
@@ -91,7 +106,7 @@ pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>>
     }
 
     // Check for cycles
-    let total_sorted: usize = layers.iter().map(|l| l.len()).sum();
+    let total_sorted: usize = layers.iter().map(Vec::len).sum();
     if total_sorted < all_packages.len() {
         bail!("Circular dependency detected in build graph");
     }
@@ -99,7 +114,14 @@ pub fn resolve_build_plan(index: &PackageIndex) -> Result<Vec<Vec<PackageName>>>
     Ok(layers)
 }
 
-/// Resolves a package spec (e.g. "pkg@v1.0.0") against the index.
+/// Resolves a package spec (e.g. `pkg@v1.0.0`) against the index.
+///
+/// If no `@version` suffix is present, the latest version is selected.
+///
+/// # Errors
+///
+/// Returns an error if the package is not found in the index or no version
+/// matches the requested requirement.
 pub fn resolve_package_spec<'a>(
     spec: &str,
     index: &'a PackageIndex,
@@ -243,7 +265,7 @@ mod tests {
     fn simple_entry(name: &str, deps: Vec<String>) -> IndexEntry {
         IndexEntry {
             name: name.into(),
-            description: "".into(),
+            description: String::new(),
             homepage: "https://example.com".into(),
             type_: "cli".into(),
             bins: vec![],
@@ -252,7 +274,7 @@ mod tests {
                 binaries: vec![],
                 deps,
                 bin: vec![],
-                hints: "".into(),
+                hints: String::new(),
                 app: None,
                 source: None,
                 build_deps: vec![],

@@ -3,6 +3,7 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 #[derive(Serialize)]
 struct GraphQlQuery {
@@ -71,7 +72,16 @@ fn repo_alias(index: usize) -> String {
     format!("repo_{index}")
 }
 
-/// Fetch releases for multiple repositories in a single GraphQL request
+/// Fetch releases for multiple repositories in a single GitHub GraphQL request.
+///
+/// Builds a batched query with per-repository aliases and returns a map of
+/// [`RepoKey`](crate::types::RepoKey) to its [`GithubRelease`] list.
+/// Retries up to 3 times on transient server errors or timeouts.
+///
+/// # Errors
+///
+/// Returns an error if the `GITHUB_TOKEN` is empty, the request fails after
+/// all retries, or the response cannot be parsed.
 pub async fn fetch_batch_releases(
     client: &Client,
     token: &str,
@@ -85,7 +95,8 @@ pub async fn fetch_batch_releases(
     // repo_0: repository(owner: "x", name: "y") { ... }
     let mut fragment = String::new();
     for (i, key) in repos.iter().enumerate() {
-        fragment.push_str(&format!(
+        let _ = write!(
+            fragment,
             r#"
             {}: repository(owner: "{}", name: "{}") {{
                 releases(first: 20, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
@@ -107,7 +118,7 @@ pub async fn fetch_batch_releases(
             repo_alias(i),
             escape_graphql_string(&key.owner),
             escape_graphql_string(&key.repo)
-        ));
+        );
     }
 
     let query_str = format!("query {{ {fragment} }}");
@@ -141,9 +152,8 @@ pub async fn fetch_batch_releases(
                             tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
                                 .await;
                             continue;
-                        } else {
-                            anyhow::bail!("GraphQL request failed after retries: timeout");
                         }
+                        anyhow::bail!("GraphQL request failed after retries: timeout");
                     }
 
                     // Parse the success response
@@ -239,38 +249,20 @@ pub async fn fetch_batch_releases(
 }
 
 /// Fetch only the latest release tag for multiple repositories.
-/// This is a lightweight query for delta checking (no assets, no bodies).
+///
+/// This is a lightweight GraphQL query for delta checking (no assets, no
+/// bodies). Returns a map from [`RepoKey`](crate::types::RepoKey) to an
+/// optional tag name string.
+///
+/// # Errors
+///
+/// Returns an error if the request fails after all retries or the response
+/// cannot be parsed.
 pub async fn fetch_latest_versions_batch(
     client: &Client,
     token: &str,
     repos: &[crate::types::RepoKey],
 ) -> Result<HashMap<crate::types::RepoKey, Option<String>>> {
-    if repos.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    // Build ultra-lightweight query: only tagName of the first release
-    let mut fragment = String::new();
-    for (i, key) in repos.iter().enumerate() {
-        fragment.push_str(&format!(
-            r#"
-            {}: repository(owner: "{}", name: "{}") {{
-                releases(first: 1, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
-                    nodes {{
-                        tagName
-                    }}
-                }}
-            }}
-            "#,
-            repo_alias(i),
-            escape_graphql_string(&key.owner),
-            escape_graphql_string(&key.repo)
-        ));
-    }
-
-    let query_str = format!("query {{ {fragment} }}");
-    let payload = GraphQlQuery { query: query_str };
-
     // Response structure for lightweight query
     #[derive(Deserialize, Debug)]
     struct LightweightRepoData {
@@ -287,6 +279,33 @@ pub async fn fetch_latest_versions_batch(
         #[serde(rename = "tagName")]
         tag_name: String,
     }
+
+    if repos.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Build ultra-lightweight query: only tagName of the first release
+    let mut fragment = String::new();
+    for (i, key) in repos.iter().enumerate() {
+        let _ = write!(
+            fragment,
+            r#"
+            {}: repository(owner: "{}", name: "{}") {{
+                releases(first: 1, orderBy: {{field: CREATED_AT, direction: DESC}}) {{
+                    nodes {{
+                        tagName
+                    }}
+                }}
+            }}
+            "#,
+            repo_alias(i),
+            escape_graphql_string(&key.owner),
+            escape_graphql_string(&key.repo)
+        );
+    }
+
+    let query_str = format!("query {{ {fragment} }}");
+    let payload = GraphQlQuery { query: query_str };
 
     let mut attempt = 0;
     while attempt < 3 {
@@ -309,9 +328,8 @@ pub async fn fetch_latest_versions_batch(
                             tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt))
                                 .await;
                             continue;
-                        } else {
-                            anyhow::bail!("GraphQL request failed after retries: timeout");
                         }
+                        anyhow::bail!("GraphQL request failed after retries: timeout");
                     }
 
                     let raw_body: GraphQlResponse<HashMap<String, Option<LightweightRepoData>>> =

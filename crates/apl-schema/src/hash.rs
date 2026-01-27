@@ -9,12 +9,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct Sha256Hash(String);
 
 impl Sha256Hash {
-    /// Create a new Sha256Hash without validation (for index/deserialized data).
+    /// Create a new `Sha256Hash` without validation (for index/deserialized data).
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
 
-    /// Create a validated Sha256Hash (64 hex characters).
+    /// Create a validated `Sha256Hash` (64 hex characters).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if `s` is not exactly 64 ASCII hex characters.
     pub fn validated(s: &str) -> Result<Self, String> {
         if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
             Ok(Self(s.to_string()))
@@ -25,6 +29,7 @@ impl Sha256Hash {
         }
     }
 
+    /// Return the inner hex string as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -63,10 +68,13 @@ impl From<&str> for Sha256Hash {
 pub struct Sha256Digest(String);
 
 impl Sha256Digest {
-    /// Create a new Sha256Digest, validating the input
+    /// Create a new `Sha256Digest`, validating the input.
     ///
-    /// Accepts strings with or without "sha256:" prefix.
-    /// Returns an error if the digest is not exactly 64 hex characters.
+    /// Accepts strings with or without a `sha256:` prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the hex portion is not exactly 64 ASCII hex characters.
     pub fn new(s: impl Into<String>) -> Result<Self> {
         let s = s.into();
         let hex = s.strip_prefix("sha256:").unwrap_or(&s);
@@ -130,7 +138,7 @@ impl From<Sha256Digest> for Sha256Hash {
 pub struct Blake3Hash(String);
 
 impl Blake3Hash {
-    /// Create a new Blake3Hash (64 hex chars).
+    /// Create a new `Blake3Hash` from a raw hex string (64 hex chars).
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
     }
@@ -141,12 +149,17 @@ impl Blake3Hash {
         Self(hash.to_hex().to_string())
     }
 
-    /// Compute BLAKE3 hash of a file.
+    /// Compute BLAKE3 hash of a file by reading it entirely into memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the file cannot be read.
     pub fn compute_file(path: &std::path::Path) -> std::io::Result<Self> {
         let data = std::fs::read(path)?;
         Ok(Self::compute(&data))
     }
 
+    /// Return the inner hex string as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -60,7 +60,7 @@ async fn main() -> Result<()> {
             PackageCommands::New { name, output_dir } => cmd::package::new(&name, &output_dir),
             PackageCommands::Check { path } => cmd::package::check(&path),
             PackageCommands::Bump { path, version, url } => {
-                cmd::package::bump(&path, &version, &url).await
+                cmd::package::bump(&path, &version, &url)
             }
         },
         Commands::Completions { shell } => {

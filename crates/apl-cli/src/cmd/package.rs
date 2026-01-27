@@ -77,17 +77,17 @@ pub fn check(path: &Path) -> Result<()> {
     println!("  Name: {}", pkg.package.name);
     println!("  Version: {}", pkg.package.version);
 
-    if !pkg.source.url.is_empty() {
-        println!("  Source: {}", pkg.source.url);
-    } else {
+    if pkg.source.url.is_empty() {
         output.warning("No source URL defined");
+    } else {
+        println!("  Source: {}", pkg.source.url);
     }
 
     Ok(())
 }
 
 /// Bump a package version (mostly legacy, but keeping skeleton for now)
-pub async fn bump(path: &Path, version: &str, _url: &str) -> Result<()> {
+pub fn bump(path: &Path, version: &str, _url: &str) -> Result<()> {
     let output = crate::ui::Output::new();
     output.info(&format!("Bumping {} to {}...", path.display(), version));
 

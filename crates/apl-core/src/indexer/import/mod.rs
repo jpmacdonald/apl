@@ -1,5 +1,6 @@
 //! Importers for translating external package registries (Homebrew, Nix) to APL TOML.
 
+/// Homebrew formula importer.
 pub mod homebrew;
 
 use anyhow::Result;
@@ -8,6 +9,14 @@ use std::path::Path;
 use crate::package::{AssetConfig, AssetSelector, DiscoveryConfig};
 use std::collections::HashMap;
 
+/// Import packages from an external registry into the APL registry directory.
+///
+/// Currently supports `"homebrew"` as the `source` identifier.
+///
+/// # Errors
+///
+/// Returns an error if the `source` is unrecognised, or if any individual
+/// package import fails (e.g. network errors, missing metadata).
 pub async fn import_packages(source: &str, packages: &[String], registry_dir: &Path) -> Result<()> {
     match source {
         "homebrew" => homebrew::import_homebrew_packages(packages, registry_dir).await,
@@ -19,6 +28,11 @@ pub async fn import_packages(source: &str, packages: &[String], registry_dir: &P
 ///
 /// This distinguishes between the "Importer Source" (e.g. Homebrew, which provides metadata)
 /// and the "Upstream Source" (e.g. GitHub, GitLab, which hosts the binaries).
+///
+/// # Errors
+///
+/// Returns an error if the URL does not match any known forge pattern (e.g.
+/// a non-GitHub URL).
 pub fn analyze_upstream_url(url: &str) -> Result<(DiscoveryConfig, AssetConfig)> {
     // Check for GitHub
     if url.contains("github.com") {

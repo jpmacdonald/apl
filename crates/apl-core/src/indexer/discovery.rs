@@ -15,6 +15,23 @@ enum VersionType {
     CalVer,
 }
 
+/// Resolve the `SHA-256` digest for a specific asset within a release.
+///
+/// Attempts resolution in the following order:
+///
+/// 1. A pre-computed `digest` field on the matching [`AssetInfo`].
+/// 2. Checksum / `SHA-256` sidecar assets attached to the release.
+/// 3. The release body text (e.g. inline hash tables in the description).
+///
+/// # Errors
+///
+/// Returns an error if the digest cannot be resolved from any source, or if
+/// a network request to download a checksum file fails.
+///
+/// # Panics
+///
+/// Panics if the internal `SHA-256` hex regex cannot be compiled (indicates a
+/// programming error).
 pub async fn resolve_digest(
     client: &reqwest::Client,
     release: &ReleaseInfo,
@@ -28,7 +45,7 @@ pub async fn resolve_digest(
     }
 
     let re = SHA256_REGEX
-        .get_or_init(|| regex::Regex::new(r#"[0-9a-fA-F]{64}"#).expect("Invalid regex"));
+        .get_or_init(|| regex::Regex::new(r"[0-9a-fA-F]{64}").expect("Invalid regex"));
 
     // Look for checksum assets in the release
     for asset in &release.assets {
@@ -50,7 +67,13 @@ pub async fn resolve_digest(
                     }
 
                     // Specific handling for JSON/JSONL (e.g. SLSA provenance)
-                    if name.ends_with(".json") || name.ends_with(".jsonl") {
+                    if std::path::Path::new(&name)
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+                        || std::path::Path::new(&name)
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"))
+                    {
                         // Look for the target filename and a 64-char hex string nearby
                         if text.contains(asset_filename) {
                             // Try to find a sha256 pattern
@@ -79,6 +102,11 @@ pub async fn resolve_digest(
     )
 }
 
+/// Scan free-form text (checksum files, release bodies) for a `SHA-256` hash
+/// associated with `asset_filename`.
+///
+/// Supports common formats including `sha256sum` output, reversed
+/// `filename hash` layouts, and bare 64-character hex strings.
 pub fn scan_text_for_hash(text: &str, asset_filename: &str) -> Option<String> {
     let text = text.trim();
 
@@ -102,7 +130,7 @@ pub fn scan_text_for_hash(text: &str, asset_filename: &str) -> Option<String> {
             }
 
             // Check if reversed (filename hash)
-            let reversed: Vec<&str> = parts.iter().rev().cloned().collect();
+            let reversed: Vec<&str> = parts.iter().rev().copied().collect();
             if let Some(hash) = find_hash_in_parts(&reversed, asset_filename) {
                 return Some(hash);
             }
@@ -138,6 +166,11 @@ fn find_hash_in_parts(parts: &[&str], asset_filename: &str) -> Option<String> {
     None
 }
 
+/// Extract the version string from a Git tag using the given pattern.
+///
+/// The `pattern` uses the `{{version}}` placeholder. For example, given
+/// the pattern `"v{{version}}"` and the tag `"v1.2.3"`, this returns
+/// `"1.2.3"`.
 pub fn extract_version_from_tag(tag: &str, pattern: &str) -> String {
     if pattern == "{{version}}" {
         tag.strip_prefix('v').unwrap_or(tag).to_string()
@@ -161,7 +194,7 @@ fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
             let num_str: String = tag
                 .chars()
                 .skip_while(|c| !c.is_ascii_digit())
-                .take_while(|c| c.is_ascii_digit())
+                .take_while(char::is_ascii_digit)
                 .collect();
 
             if let Ok(major) = num_str.parse::<u64>() {
@@ -181,23 +214,23 @@ fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
                 .iter()
                 .map(|s| {
                     s.chars()
-                        .take_while(|c| c.is_ascii_digit())
+                        .take_while(char::is_ascii_digit)
                         .collect::<String>()
                 })
                 .filter(|s| !s.is_empty())
                 .map(|s| s.parse::<u64>())
-                .take_while(|r| r.is_ok())
+                .take_while(std::result::Result::is_ok)
                 .map(|r| r.unwrap())
                 .collect();
 
-            if !nums.is_empty() {
-                match nums.len() {
-                    1 => Some(format!("{}.0.0", nums[0])),
-                    2 => Some(format!("{}.{}.0", nums[0], nums[1])),
-                    _ => Some(format!("{}.{}.{}", nums[0], nums[1], nums[2])),
-                }
-            } else {
+            if nums.is_empty() {
                 None
+            } else if nums.len() == 1 {
+                Some(format!("{}.0.0", nums[0]))
+            } else if nums.len() == 2 {
+                Some(format!("{}.{}.0", nums[0], nums[1]))
+            } else {
+                Some(format!("{}.{}.{}", nums[0], nums[1], nums[2]))
             }
         }
         VersionType::CalVer => {
@@ -216,8 +249,9 @@ fn parse_version_by_type(tag: &str, v_type: &VersionType) -> Option<String> {
 }
 
 /// Auto-detect version type and parse the tag.
-/// Tries parsers in order of strictness: SemVer → CalVer → Sequential → Snapshot.
-/// Returns the first successful parse result.
+///
+/// Tries parsers in order of strictness: `SemVer`, `CalVer`, Sequential,
+/// Snapshot. Returns the first successful parse result.
 pub fn auto_parse_version(tag: &str) -> Option<String> {
     // Try SemVer first (strictest: X.Y.Z)
     if let Some(v) = parse_version_by_type(tag, &VersionType::SemVer) {
@@ -234,8 +268,7 @@ pub fn auto_parse_version(tag: &str) -> Option<String> {
     if tag
         .chars()
         .next()
-        .map(|c| !c.is_ascii_digit())
-        .unwrap_or(false)
+        .is_some_and(|c| !c.is_ascii_digit())
     {
         if let Some(v) = parse_version_by_type(tag, &VersionType::Sequential) {
             return Some(v);
@@ -252,6 +285,10 @@ pub fn auto_parse_version(tag: &str) -> Option<String> {
 
 use apl_schema::asset_pattern::AssetPattern;
 
+/// Find the first asset matching the given [`AssetSelector`] for the specified
+/// architecture target key (e.g. `"arm64-macos"`).
+///
+/// Returns `None` if no asset matches.
 pub fn find_asset_by_selector<'a>(
     assets: &'a [AssetInfo],
     selector: &AssetSelector,

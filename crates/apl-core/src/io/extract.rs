@@ -14,14 +14,18 @@ use crate::Reporter;
 use crate::types::{PackageName, Version};
 use apl_schema::ArtifactFormat;
 
+/// Errors that can occur during archive extraction.
 #[derive(Error, Debug)]
 pub enum ExtractError {
+    /// A filesystem or I/O operation failed.
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    /// The archive format is not recognised or not supported.
     #[error("Unsupported archive format: {0}")]
     UnsupportedFormat(String),
 
+    /// The archive is malformed, corrupt, or contains invalid entries.
     #[error("Archive error: {0}")]
     Archive(String),
 }
@@ -46,7 +50,7 @@ struct ProgressReader<'a, R, Rep> {
     total: Option<u64>,
 }
 
-impl<'a, R: Read, Rep: Reporter> Read for ProgressReader<'a, R, Rep> {
+impl<R: Read, Rep: Reporter> Read for ProgressReader<'_, R, Rep> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.current += n as u64;
@@ -56,13 +60,20 @@ impl<'a, R: Read, Rep: Reporter> Read for ProgressReader<'a, R, Rep> {
     }
 }
 
-impl<'a, R: Seek, Rep> Seek for ProgressReader<'a, R, Rep> {
+impl<R: Seek, Rep> Seek for ProgressReader<'_, R, Rep> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.inner.seek(pos)
     }
 }
 
-/// Extract a tar.zst archive to a destination directory
+/// Extract a `tar.zst` archive to a destination directory.
+///
+/// Reports extraction progress through the provided [`Reporter`].
+///
+/// # Errors
+///
+/// Returns [`ExtractError`] if the archive cannot be opened, decoded, or
+/// if any entry cannot be written to `dest_dir`.
 pub fn extract_tar_zst<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
@@ -86,7 +97,14 @@ pub fn extract_tar_zst<R: Reporter>(
     extract_tar(zstd_decoder, dest_dir)
 }
 
-/// Extract a tar.gz archive to a destination directory
+/// Extract a `tar.gz` archive to a destination directory.
+///
+/// Reports extraction progress through the provided [`Reporter`].
+///
+/// # Errors
+///
+/// Returns [`ExtractError`] if the archive cannot be opened, decoded, or
+/// if any entry cannot be written to `dest_dir`.
 pub fn extract_tar_gz<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
@@ -165,7 +183,14 @@ fn extract_tar<R: Read>(reader: R, dest_dir: &Path) -> Result<Vec<ExtractedFile>
     Ok(extracted_files)
 }
 
-/// Extract a zip archive
+/// Extract a zip archive to a destination directory.
+///
+/// Reports extraction progress through the provided [`Reporter`].
+///
+/// # Errors
+///
+/// Returns [`ExtractError`] if the archive cannot be opened, parsed, or
+/// if any entry cannot be written to `dest_dir`.
 pub fn extract_zip<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
@@ -194,7 +219,7 @@ pub fn extract_zip<R: Reporter>(
             .by_index(i)
             .map_err(|e| ExtractError::Archive(e.to_string()))?;
         let relative_path = match file.enclosed_name() {
-            Some(path) => path.to_owned(),
+            Some(path) => path.clone(),
             None => continue,
         };
 
@@ -232,7 +257,11 @@ pub fn extract_zip<R: Reporter>(
     Ok(extracted_files)
 }
 
-/// Detect archive format from file extension
+/// Detect the [`ArtifactFormat`] from a file's extension.
+///
+/// The comparison is case-insensitive. Returns [`ArtifactFormat::Binary`] as
+/// the fallback when no known extension is matched.
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 pub fn detect_format(path: &Path) -> ArtifactFormat {
     let path_str = path.to_string_lossy().to_lowercase();
 
@@ -253,7 +282,15 @@ pub fn detect_format(path: &Path) -> ArtifactFormat {
     }
 }
 
-/// Extract an archive, auto-detecting format
+/// Extract an archive, auto-detecting its format from the file extension.
+///
+/// Delegates to the format-specific extractor (e.g. [`extract_tar_zst`],
+/// [`extract_zip`]) after calling [`detect_format`].
+///
+/// # Errors
+///
+/// Returns [`ExtractError`] if the format cannot be handled or the
+/// underlying extraction fails.
 pub fn extract_auto<R: Reporter>(
     archive_path: &Path,
     dest_dir: &Path,
@@ -302,7 +339,16 @@ pub fn extract_auto<R: Reporter>(
     }
 }
 
-/// Extract a macOS PKG (using xar and cpio)
+/// Extract a macOS `.pkg` installer using `xar` and `cpio`.
+///
+/// Shells out to `xar` to expand the outer package, locates the `Payload`
+/// file, then pipes it through `gunzip` and `cpio` to produce the final
+/// directory tree.
+///
+/// # Errors
+///
+/// Returns [`ExtractError`] if `xar` or `cpio` is not available, the
+/// archive is malformed, or any I/O operation fails.
 pub fn extract_pkg(
     archive_path: &Path,
     dest_dir: &Path,
@@ -334,15 +380,13 @@ pub fn extract_pkg(
     let mut stack = vec![temp_dir.path().to_path_buf()];
 
     while let Some(dir) = stack.pop() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(iter) => iter,
-            Err(_) => continue,
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
         };
 
         for entry_res in entries {
-            let entry = match entry_res {
-                Ok(e) => e,
-                Err(_) => continue,
+            let Ok(entry) = entry_res else {
+                continue;
             };
             let path = entry.path();
             if path.file_name().and_then(|n| n.to_str()) == Some("Payload") {
@@ -402,9 +446,8 @@ pub fn extract_pkg(
     let mut stack = vec![dest_dir.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
-        let entries = match fs::read_dir(&dir) {
-            Ok(iter) => iter,
-            Err(_) => continue,
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -413,7 +456,7 @@ pub fn extract_pkg(
             } else {
                 let relative_path = path
                     .strip_prefix(dest_dir)
-                    .map(|p| p.to_path_buf())
+                    .map(std::path::Path::to_path_buf)
                     .unwrap_or(path.clone());
                 // Check executable (simple heuristic or check mode)
                 let is_executable = if let Ok(metadata) = path.metadata() {
@@ -435,9 +478,18 @@ pub fn extract_pkg(
     Ok(extracted_files)
 }
 
-/// Detect if a directory has a single top-level directory and strip it by moving contents up.
+/// Detect if a directory has a single top-level directory and strip it by
+/// moving its contents up one level.
+///
+/// Hidden files (names starting with `.`) are ignored when counting
+/// top-level entries, so a lone `.DS_Store` will not prevent stripping.
+/// The operation recurses until no further stripping is possible.
+///
+/// # Errors
+///
+/// Returns an I/O error if directory traversal or file-move operations fail.
 pub fn strip_components(dir: &Path) -> io::Result<()> {
-    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(std::result::Result::ok).collect();
 
     // Filter out hidden files (like .DS_Store)
     entries.retain(|e| !e.file_name().to_string_lossy().starts_with('.'));
@@ -445,7 +497,7 @@ pub fn strip_components(dir: &Path) -> io::Result<()> {
     // If there is exactly one entry and it's a directory, move its contents up
     if entries.len() == 1 && entries[0].file_type()?.is_dir() {
         let top_level = entries[0].path();
-        let sub_entries: Vec<_> = fs::read_dir(&top_level)?.filter_map(|e| e.ok()).collect();
+        let sub_entries: Vec<_> = fs::read_dir(&top_level)?.filter_map(std::result::Result::ok).collect();
 
         // 1. Move everything to a temporary unique directory first
         // This avoids collisions if a child has the same name as the top_level directory itself (e.g. age/age)
@@ -464,7 +516,7 @@ pub fn strip_components(dir: &Path) -> io::Result<()> {
         fs::remove_dir(top_level)?;
 
         // 3. Move everything from temp_dir to the root dir
-        let final_entries: Vec<_> = fs::read_dir(&temp_dir)?.filter_map(|e| e.ok()).collect();
+        let final_entries: Vec<_> = fs::read_dir(&temp_dir)?.filter_map(std::result::Result::ok).collect();
         for entry in final_entries {
             let target = dir.join(entry.file_name());
             fs::rename(entry.path(), target)?;

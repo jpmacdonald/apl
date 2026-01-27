@@ -97,8 +97,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Update { package } => {
-            println!("Syncing packages...");
-
             struct UpdateResult {
                 name: String,
                 status: UpdateStatus,
@@ -109,6 +107,8 @@ async fn main() -> Result<()> {
                 UpToDate,
                 Failed(String),
             }
+
+            println!("Syncing packages...");
 
             let mut results = Vec::new();
 
@@ -269,9 +269,8 @@ async fn main() -> Result<()> {
 
             if errors > 0 {
                 anyhow::bail!("Registry check failed with {errors} errors.");
-            } else {
-                println!("Registry integrity verified.");
             }
+            println!("Registry integrity verified.");
         }
         Commands::Index {
             package,
@@ -320,7 +319,9 @@ async fn cli_index(
     verbose: bool,
 ) -> Result<()> {
     if let Some(url) = bootstrap_url {
-        if !index_path.exists() {
+        if index_path.exists() {
+            println!("   ℹ️  Local index exists, skipping bootstrap.");
+        } else {
             println!("   📥 Bootstrapping index from {url}...");
             match client.get(url).send().await {
                 Ok(resp) => {
@@ -339,8 +340,6 @@ async fn cli_index(
                     eprintln!("   ⚠ Bootstrap failed: {e}");
                 }
             }
-        } else {
-            println!("   ℹ️  Local index exists, skipping bootstrap.");
         }
     }
 
@@ -541,6 +540,7 @@ fn cli_keygen() -> Result<()> {
 }
 
 /// Verify a package by parsing and validating its definition.
+#[allow(clippy::unused_async)] // Kept async for consistency with other CLI command handlers
 async fn cli_verify(_client: &reqwest::Client, package_path: &Path) -> Result<()> {
     println!("Verifying {}...", package_path.display());
 

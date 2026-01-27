@@ -11,27 +11,23 @@ pub async fn rollback(pkg_name: &str, dry_run: bool) -> Result<()> {
     // Find last SUCCESSFUL action
     let last_event = db.get_last_successful_history(pkg_name)?;
 
-    let event = match last_event {
-        Some(e) => e,
-        None => bail!("No history found for '{pkg_name}', cannot rollback."),
+    let Some(event) = last_event else {
+        bail!("No history found for '{pkg_name}', cannot rollback.");
     };
 
     // Determine target version
-    let target_version = match event.version_from {
-        Some(v) => v,
-        None => {
-            // If last action was install (with no previous version), rollback means removing
-            if event.action == "install" {
-                println!("Last action was fresh install of {pkg_name}. Removing...");
-                crate::cmd::remove::remove(&[pkg_name.to_string()], false, false, false, dry_run)
-                    .await?;
-                return Ok(());
-            }
-            bail!(
-                "Cannot rollback: previous state unknown (action: {})",
-                event.action
-            );
+    let Some(target_version) = event.version_from else {
+        // If last action was install (with no previous version), rollback means removing
+        if event.action == "install" {
+            println!("Last action was fresh install of {pkg_name}. Removing...");
+            crate::cmd::remove::remove(&[pkg_name.to_string()], false, false, false, dry_run)
+                .await?;
+            return Ok(());
         }
+        bail!(
+            "Cannot rollback: previous state unknown (action: {})",
+            event.action
+        );
     };
 
     // Verify target exists

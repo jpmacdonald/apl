@@ -6,6 +6,7 @@
 use crate::DbHandle;
 use crate::ui::Reporter;
 use apl_schema::index::PackageIndex;
+use std::fmt;
 use std::sync::Arc;
 
 /// Groups common state used during installation operations.
@@ -15,6 +16,14 @@ pub struct Context {
     pub index: Option<Arc<PackageIndex>>,
     pub client: reqwest::Client,
     pub reporter: Arc<dyn Reporter>,
+}
+
+impl fmt::Debug for Context {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Context")
+            .field("index", &self.index)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Context {

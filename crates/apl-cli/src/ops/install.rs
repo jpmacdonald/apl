@@ -153,10 +153,9 @@ async fn plan_install_tasks(
                     target_version.clone(),
                 ));
                 continue;
-            } else {
-                tasks.push(InstallTask::Switch(name.clone(), target_version.clone()));
-                continue;
             }
+            tasks.push(InstallTask::Switch(name.clone(), target_version.clone()));
+            continue;
         }
 
         tasks.push(InstallTask::Download(name.clone(), Some(target_version)));
@@ -185,8 +184,9 @@ pub async fn install_packages(
         .iter()
         .map(|t| match t {
             InstallTask::Download(n, v) => (n.clone(), v.clone(), 0),
-            InstallTask::AlreadyInstalled(n, v) => (n.clone(), Some(v.clone()), 0),
-            InstallTask::Switch(n, v) => (n.clone(), Some(v.clone()), 0),
+            InstallTask::AlreadyInstalled(n, v) | InstallTask::Switch(n, v) => {
+                (n.clone(), Some(v.clone()), 0)
+            }
         })
         .collect();
 
@@ -201,30 +201,30 @@ pub async fn install_packages(
     for task in &tasks {
         match task {
             InstallTask::AlreadyInstalled(name, version) => {
-                let size = if !dry_run {
+                let size = if dry_run {
+                    None
+                } else {
                     ctx.db
                         .get_package_version(name.to_string(), version.to_string())
                         .await
                         .ok()
                         .flatten()
                         .map(|p| p.size_bytes)
-                } else {
-                    None
                 };
                 ctx.reporter.done(name, version, "installed", size);
                 already_installed_count += 1;
             }
             InstallTask::Switch(name, version) => {
                 ctx.reporter.installing(name, version, None, None);
-                if !dry_run {
+                if dry_run {
+                    ctx.reporter.done(name, version, "(dry run)", None);
+                } else {
                     crate::ops::switch::switch_version(name, version, dry_run, &ctx.reporter)
                         .map_err(|e| InstallError::Other(e.to_string()))?;
                     install_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                } else {
-                    ctx.reporter.done(name, version, "(dry run)", None);
                 }
             }
-            _ => {}
+            InstallTask::Download(..) => {}
         }
     }
 
@@ -285,8 +285,7 @@ pub async fn install_packages(
 
         while let Some(res) = set.join_next().await {
             match res {
-                Ok(Ok(Some(_))) => {}
-                Ok(Ok(None)) => {}
+                Ok(Ok(None | Some(_))) => {}
                 Ok(Err(e)) => ctx.reporter.error(&format!("Install failed: {e}")),
                 Err(e) => ctx.reporter.error(&format!("Internal error: {e}")),
             }
@@ -450,6 +449,10 @@ fn get_installer(pkg: &PreparedPackage) -> Box<dyn Installer + Send + Sync> {
 /// Publicly exposed helper for 'apl shell': moves package to store but does NOT link globally.
 /// Note: This function does NOT support App or Pkg install strategies.
 /// The caller (perform_local_install) routes those to perform_app_install.
+// pkg and reporter are taken by value intentionally: pkg owns a TempDir that
+// must stay alive for the duration of the install, and reporter is an Arc
+// shared across threads.
+#[allow(clippy::needless_pass_by_value)]
 pub fn install_to_store_only(
     pkg: PreparedPackage,
     reporter: Arc<dyn Reporter>,
@@ -535,14 +538,15 @@ fn perform_source_build(
         .map_err(|e| InstallError::Script(e.to_string()))
 }
 
+// pkg is taken by value to keep the TempDir alive during installation.
+#[allow(clippy::needless_pass_by_value)]
 fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError> {
     let app_name = pkg.resolved.def.install.app.as_ref().ok_or_else(|| {
         InstallError::Validation("type='app' requires [install] app='Name.app'".to_string())
     })?;
 
     let applications_dir = dirs::home_dir()
-        .map(|h| h.join("Applications"))
-        .unwrap_or_else(|| PathBuf::from("/Applications"));
+        .map_or_else(|| PathBuf::from("/Applications"), |h| h.join("Applications"));
     std::fs::create_dir_all(&applications_dir).map_err(InstallError::Io)?;
 
     let (_mount, search_path) = if pkg
@@ -668,7 +672,7 @@ fn calculate_dir_size(path: &Path) -> u64 {
         .into_iter()
         .flatten()
         .filter_map(|e| e.metadata().ok())
-        .filter(|m| m.is_file())
+        .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
         .sum()
 }

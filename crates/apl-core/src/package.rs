@@ -13,24 +13,32 @@ pub use crate::types::{
     Arch, ArtifactFormat, BuildSpec, InstallStrategy, PackageName, PackageType, Version,
 };
 
+/// Errors that can occur when loading or parsing a package definition.
 #[derive(Error, Debug)]
 pub enum PackageError {
+    /// An I/O error occurred while reading a package file.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The TOML content could not be deserialized into a valid package.
     #[error("Parse error: {0}")]
     Parse(#[from] toml::de::Error),
 }
 
-/// Package metadata
+/// Metadata describing a package's identity and provenance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfo {
+    /// Unique name that identifies this package in the registry.
     pub name: PackageName,
+    /// Semantic version string for the package release.
     pub version: Version,
+    /// Short human-readable summary of the package.
     #[serde(default)]
     pub description: String,
+    /// URL of the project's homepage.
     #[serde(default)]
     pub homepage: String,
+    /// SPDX license identifier for the package.
     #[serde(default)]
     pub license: String,
     /// Categories/Tags
@@ -43,21 +51,28 @@ pub struct PackageInfo {
     pub type_: Option<PackageType>,
 }
 
-/// Package source
+/// Location and integrity information for a package's source archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
+    /// Download URL for the source archive.
     pub url: String,
+    /// Expected SHA-256 digest of the downloaded archive.
     pub sha256: String,
+    /// Archive format (e.g. `tar.gz`, `zip`).
     pub format: ArtifactFormat,
+    /// Number of leading path components to strip when extracting.
     #[serde(default)]
     pub strip_components: Option<u32>,
 }
 
-/// Binary artifact (precompiled)
+/// A precompiled binary artifact for a specific platform.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Binary {
+    /// Download URL for the binary artifact.
     pub url: String,
+    /// Expected SHA-256 digest of the downloaded artifact.
     pub sha256: String,
+    /// Archive format of the binary artifact.
     pub format: ArtifactFormat,
     /// Target architecture
     #[serde(default = "default_arch")]
@@ -75,33 +90,44 @@ fn default_macos() -> String {
     "14.0".to_string()
 }
 
-/// Dependencies
+/// Dependency lists grouped by when they are required.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Dependencies {
+    /// Packages required at runtime.
     #[serde(default)]
     pub runtime: Vec<String>,
+    /// Packages required only during the build phase.
     #[serde(default)]
     pub build: Vec<String>,
+    /// Packages that are optional and provide extra functionality.
     #[serde(default)]
     pub optional: Vec<String>,
 }
 
-/// Complete package definition
+/// Complete package definition combining metadata, source, dependencies,
+/// install instructions, and user-facing hints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Package {
+    /// Core metadata for the package (name, version, description, etc.).
     pub package: PackageInfo,
+    /// Source archive location and integrity data.
     pub source: Source,
+    /// Runtime, build, and optional dependency lists.
     #[serde(default)]
     pub dependencies: Dependencies,
+    /// Instructions describing how to install the package after extraction.
     #[serde(default)]
     pub install: InstallSpec,
+    /// Post-install messages displayed to the user.
     #[serde(default)]
     pub hints: Hints,
+    /// Optional build specification for compiling from source.
     #[serde(default)]
     pub build: Option<BuildSpec>,
 }
 
-/// Installation specification
+/// Installation specification controlling how extracted artifacts are placed
+/// into the sysroot.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct InstallSpec {
     /// Installation strategy (inferred from fields if missing)
@@ -125,10 +151,14 @@ pub struct InstallSpec {
 }
 
 impl InstallSpec {
+    /// Returns the effective list of binaries to install, falling back to an
+    /// empty list when none are explicitly configured.
     pub fn effective_bin(&self, _pkg_name: &str) -> Vec<String> {
         self.bin.clone().unwrap_or_default()
     }
 
+    /// Returns the effective install strategy, defaulting to `App` when an
+    /// `.app` bundle is specified, or `Link` otherwise.
     pub fn effective_strategy(&self) -> InstallStrategy {
         self.strategy.clone().unwrap_or_else(|| {
             if self.app.is_some() {
@@ -149,18 +179,32 @@ pub struct Hints {
 }
 
 impl Package {
-    /// Parse a package from a TOML file
+    /// Parse a package definition from a TOML file on disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PackageError::Io` if the file cannot be read, or
+    /// `PackageError::Parse` if the TOML content is invalid.
     pub fn from_file(path: &Path) -> Result<Self, PackageError> {
         let content = fs::read_to_string(path)?;
         Self::parse(&content)
     }
 
-    /// Parse a package from a TOML string
+    /// Parse a package definition from a TOML string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PackageError::Parse` if the TOML content is invalid or does
+    /// not match the expected schema.
     pub fn parse(content: &str) -> Result<Self, PackageError> {
         Ok(toml::from_str(content)?)
     }
 
-    /// Serialize to TOML string
+    /// Serialize this package definition to a pretty-printed TOML string.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `toml::ser::Error` if serialization fails.
     pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
@@ -180,74 +224,109 @@ impl std::str::FromStr for Package {
 // Algorithmic Registry Structs (Template-Based Package Definitions)
 // ============================================================================
 
-/// Package template for algorithmic registry (stored in registry/)
+/// Template-based package definition stored in the algorithmic registry.
+///
+/// Unlike a concrete `Package`, a template uses discovery rules and asset
+/// selectors to automatically generate versioned package definitions from
+/// upstream release metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageTemplate {
+    /// Template-level metadata (name, description, etc.).
     pub package: PackageInfoTemplate,
+    /// Rules for discovering available versions from upstream sources.
     pub discovery: DiscoveryConfig,
+    /// Configuration for selecting downloadable assets per architecture.
     #[serde(default)]
     pub assets: AssetConfig,
+    /// Optional source-archive template for building from source.
     #[serde(default)]
     pub source: Option<SourceTemplate>,
+    /// Optional build specification for compiling from source.
     #[serde(default)]
     pub build: Option<BuildSpec>,
+    /// Runtime, build, and optional dependency lists.
     #[serde(default)]
     pub dependencies: Dependencies,
+    /// Instructions describing how to install the package.
     pub install: InstallSpec,
+    /// Post-install hints displayed to the user.
     #[serde(default)]
     pub hints: Hints,
 }
 
+/// Source archive template with URL placeholders for version substitution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceTemplate {
-    /// URL template for source code (e.g. "{{github}}/archive/refs/tags/{{tag}}.tar.gz")
+    /// URL template for source code (e.g. `"{{github}}/archive/refs/tags/{{tag}}.tar.gz"`).
     pub url: String,
-    /// Expected format of the source archive
+    /// Expected format of the source archive.
     pub format: ArtifactFormat,
-    /// Verification hash for the source archive (optional, defaults to computing on first fetch)
+    /// Verification hash for the source archive (optional, defaults to computing on first fetch).
     pub sha256: Option<String>,
 }
 
+/// Metadata template for a package in the algorithmic registry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageInfoTemplate {
+    /// Unique name that identifies this package.
     pub name: PackageName,
+    /// Short human-readable summary of the package.
     #[serde(default)]
     pub description: String,
+    /// URL of the project's homepage.
     #[serde(default)]
     pub homepage: String,
+    /// SPDX license identifier.
     #[serde(default)]
     pub license: String,
+    /// Category tags for the package.
     #[serde(default)]
     pub tags: Vec<String>,
 }
 
 impl PackageTemplate {
+    /// Parse a `PackageTemplate` from a TOML string.
+    ///
+    /// # Errors
+    ///
+    /// Returns `PackageError::Parse` if the TOML content is invalid or does
+    /// not match the expected template schema.
     pub fn parse(content: &str) -> Result<Self, PackageError> {
         Ok(toml::from_str(content)?)
     }
 }
 
-/// How to discover versions
+/// Configuration for how upstream versions are discovered.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DiscoveryConfig {
+    /// Discover versions from GitHub releases for the given `owner/repo`.
     GitHub {
+        /// GitHub repository in `"owner/repo"` format.
         github: String, // "owner/repo"
+        /// Tag pattern used to extract version strings (e.g. `"v{{version}}"`).
         #[serde(default = "default_tag_pattern")]
         tag_pattern: String, // "{{version}}" or "v{{version}}"
+        /// Whether to include pre-release versions.
         #[serde(default)]
         include_prereleases: bool,
     },
+    /// Discover versions from a ports-style source (e.g. `"ruby"`).
     Ports {
+        /// Name of the ports package to query.
         #[serde(rename = "ports")]
         name: String, // e.g. "ruby"
     },
+    /// A manually curated list of version strings.
     Manual {
+        /// Explicit list of version strings.
         manual: Vec<String>, // List of versions
     },
 }
 
 impl DiscoveryConfig {
+    /// Returns the GitHub `"owner/repo"` string if this is a `GitHub` variant,
+    /// or `None` otherwise.
     pub fn github_repo(&self) -> Option<&str> {
         match self {
             DiscoveryConfig::GitHub { github, .. } => Some(github),
@@ -260,24 +339,39 @@ fn default_tag_pattern() -> String {
     "{{version}}".to_string()
 }
 
-/// Asset selection rules
+/// Rules for selecting the correct downloadable asset for a given platform.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AssetSelector {
-    /// Auto-detect using typed Pattern Matching (recommended)
-    /// Auto-detect using typed Pattern Matching (recommended)
-    Auto { auto: bool },
-    /// Match files ending with this string (e.g. "x86_64-apple-darwin.tar.gz")
-    Suffix { suffix: String },
-    /// Match files matching this regex
-    Regex { regex: String },
-    /// For packages that must be built from source (hydration)
-    Build { build: bool },
-    /// Exact filename match
-    Exact { name: String },
+    /// Auto-detect using typed pattern matching (recommended).
+    Auto {
+        /// When `true`, enables automatic asset detection.
+        auto: bool,
+    },
+    /// Match files whose name ends with the given suffix
+    /// (e.g. `"x86_64-apple-darwin.tar.gz"`).
+    Suffix {
+        /// The suffix string to match against asset filenames.
+        suffix: String,
+    },
+    /// Match files whose name matches the given regular expression.
+    Regex {
+        /// The regular expression pattern to match asset filenames.
+        regex: String,
+    },
+    /// Indicates the package must be built from source (hydration).
+    Build {
+        /// When `true`, marks the asset as requiring a source build.
+        build: bool,
+    },
+    /// Match by exact filename.
+    Exact {
+        /// The exact filename to match.
+        name: String,
+    },
 }
 
-/// How to construct asset URLs
+/// Configuration for constructing and verifying asset download URLs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AssetConfig {
     /// Explicit selectors for each architecture.
@@ -285,11 +379,12 @@ pub struct AssetConfig {
     #[serde(flatten)]
     pub select: HashMap<String, AssetSelector>,
 
-    /// Optional: Use if the repo doesn't provide checksums
+    /// When `true`, skip checksum verification for downloaded assets.
     #[serde(default)]
     pub skip_checksums: bool,
 
-    /// Optional: URL template for external checksum file
+    /// URL template for an external checksum file, if the repository does not
+    /// embed checksums in its release metadata.
     #[serde(default)]
     pub checksum_url: Option<String>,
 }

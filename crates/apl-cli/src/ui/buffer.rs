@@ -14,6 +14,7 @@ use crossterm::{
 use std::io::{Stdout, Write};
 
 /// A buffer that accumulates terminal commands before flushing
+#[derive(Debug)]
 pub struct OutputBuffer {
     stdout: Stdout,
 }

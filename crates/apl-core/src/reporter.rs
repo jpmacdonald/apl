@@ -63,16 +63,16 @@ pub trait Reporter: Send + Sync {
 
 impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
     fn prepare_pipeline(&self, packages: &[(PackageName, Option<Version>, usize)]) {
-        (**self).prepare_pipeline(packages)
+        (**self).prepare_pipeline(packages);
     }
     fn section(&self, title: &str) {
-        (**self).section(title)
+        (**self).section(title);
     }
     fn downloading(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
-        (**self).downloading(name, version, current, total)
+        (**self).downloading(name, version, current, total);
     }
     fn extracting(&self, name: &PackageName, version: &Version, current: u64, total: Option<u64>) {
-        (**self).extracting(name, version, current, total)
+        (**self).extracting(name, version, current, total);
     }
     fn installing(
         &self,
@@ -81,47 +81,47 @@ impl<T: Reporter + ?Sized> Reporter for std::sync::Arc<T> {
         current: Option<u64>,
         total: Option<u64>,
     ) {
-        (**self).installing(name, version, current, total)
+        (**self).installing(name, version, current, total);
     }
     fn removing(&self, name: &PackageName, version: &Version) {
-        (**self).removing(name, version)
+        (**self).removing(name, version);
     }
     fn done(&self, name: &PackageName, version: &Version, detail: &str, size: Option<u64>) {
-        (**self).done(name, version, detail, size)
+        (**self).done(name, version, detail, size);
     }
     fn failed(&self, name: &PackageName, version: &Version, reason: &str) {
-        (**self).failed(name, version, reason)
+        (**self).failed(name, version, reason);
     }
     fn info(&self, msg: &str) {
-        (**self).info(msg)
+        (**self).info(msg);
     }
     fn success(&self, msg: &str) {
-        (**self).success(msg)
+        (**self).success(msg);
     }
     fn warning(&self, msg: &str) {
-        (**self).warning(msg)
+        (**self).warning(msg);
     }
     fn error(&self, msg: &str) {
-        (**self).error(msg)
+        (**self).error(msg);
     }
     fn summary(&self, count: usize, action: &str, elapsed_secs: f64) {
-        (**self).summary(count, action, elapsed_secs)
+        (**self).summary(count, action, elapsed_secs);
     }
     fn summary_plain(&self, count: usize, status: &str) {
-        (**self).summary_plain(count, status)
+        (**self).summary_plain(count, status);
     }
 
     fn live_phase(&self, title: &str) {
-        (**self).live_phase(title)
+        (**self).live_phase(title);
     }
 
     fn live_phase_update(&self, status: &str, success: bool) {
-        (**self).live_phase_update(status, success)
+        (**self).live_phase_update(status, success);
     }
 }
 
 /// A no-op reporter for silent operations (e.g., verification, testing).
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct NullReporter;
 
 impl Reporter for NullReporter {

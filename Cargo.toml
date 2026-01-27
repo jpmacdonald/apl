@@ -101,6 +101,39 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 mockito = "1"
 
 # ============================================================================
+# LINTS
+# Shared across all workspace members via `[lints] workspace = true`
+# ============================================================================
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# Correctness and safety
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+
+# Style and clarity -- deny to enforce idiomatic Rust
+style = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
+# Pedantic lints we allow (genuinely too noisy or false-positive-prone)
+module_name_repetitions = "allow"  # artifact::ArtifactStore, etc. -- pervasive and harmless
+must_use_candidate = "allow"       # would require #[must_use] on hundreds of fns
+return_self_not_must_use = "allow" # related to must_use_candidate
+similar_names = "allow"            # flags legitimate pairs like is_zip/is_gzip
+too_many_lines = "allow"           # some functions are naturally long (e.g. build())
+cast_possible_truncation = "allow" # systems code, manually verified
+cast_sign_loss = "allow"           # systems code, manually verified
+cast_precision_loss = "allow"      # systems code, manually verified
+cast_possible_wrap = "allow"       # systems code, manually verified
+struct_excessive_bools = "allow"   # architectural, not a real issue
+
+# ============================================================================
 # PROFILES
 # ============================================================================
 

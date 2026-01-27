@@ -5,6 +5,7 @@ use crate::ui::Output;
 use crossterm::style::Stylize;
 
 /// Remove one or more packages
+#[allow(clippy::fn_params_excessive_bools)]
 pub async fn remove(
     packages: &[String],
     all: bool,
@@ -23,12 +24,12 @@ pub async fn remove(
         }
 
         if !yes {
+            use std::io::Write;
             println!();
             print!(
                 "  ⚠ {} This will remove all installed packages. Continue? (y/N) ",
                 "WARNING:".bold().red()
             );
-            use std::io::Write;
             std::io::stdout().flush()?;
 
             let mut input = String::new();

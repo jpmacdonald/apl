@@ -24,6 +24,7 @@ use super::table::{PackageState, Severity, TableRenderer};
 use super::theme::Theme;
 use apl_schema::types::{PackageName, Version};
 use crossterm::style::Stylize;
+use std::fmt;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -103,6 +104,12 @@ pub struct UiActor {
     _handle: thread::JoinHandle<()>,
 }
 
+impl fmt::Debug for UiActor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UiActor").finish_non_exhaustive()
+    }
+}
+
 impl UiActor {
     /// Spawn a new UI actor thread
     pub fn spawn() -> Self {
@@ -134,6 +141,9 @@ impl Drop for UiActor {
 /// Main event loop for the UI actor
 ///
 /// This runs in a dedicated thread and processes all UI events sequentially.
+// The receiver is intentionally moved into this thread for exclusive ownership
+// in the actor pattern.
+#[allow(clippy::needless_pass_by_value)]
 fn run_event_loop(receiver: mpsc::Receiver<UiEvent>) {
     let mut buffer = OutputBuffer::default();
     let theme = Theme::default();

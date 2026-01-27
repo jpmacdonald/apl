@@ -16,31 +16,57 @@ use tokio::io::AsyncWriteExt;
 use crate::Reporter;
 use crate::types::{ArtifactFormat, PackageName, Version};
 
+/// Errors that can occur during a download operation.
 #[derive(Error, Debug)]
 pub enum DownloadError {
+    /// An HTTP request failed (connection, status code, etc.).
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 
+    /// A filesystem or I/O operation failed.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The SHA-256 hash of the downloaded file does not match the expected value.
     #[error("Hash mismatch: expected {expected}, got {actual}")]
-    HashMismatch { expected: String, actual: String },
+    HashMismatch {
+        /// The hash that was expected.
+        expected: String,
+        /// The hash that was actually computed.
+        actual: String,
+    },
 }
 
-/// Request for a download operation
+/// Request for a download operation.
+///
+/// Bundles all parameters needed to download (and optionally extract) a
+/// package artifact. Use [`DownloadRequest::new`] to construct, then call
+/// [`DownloadRequest::execute`] to run the operation.
+#[derive(Debug)]
 pub struct DownloadRequest<'a, R: Reporter + Clone + 'static> {
+    /// HTTP client used to perform the download.
     pub client: &'a Client,
+    /// Name of the package being downloaded.
     pub pkg_name: &'a PackageName,
+    /// Version of the package being downloaded.
     pub version: &'a Version,
+    /// URL to download the artifact from.
     pub url: &'a str,
+    /// Filesystem path where the downloaded file will be written.
     pub dest: &'a Path,
+    /// Expected SHA-256 hex digest for integrity verification.
     pub expected_hash: &'a str,
+    /// Progress reporter for UI feedback.
     pub reporter: &'a R,
+    /// Optional directory to extract the archive into after downloading.
     pub extract_dest: Option<&'a Path>,
 }
 
 impl<'a, R: Reporter + Clone + 'static> DownloadRequest<'a, R> {
+    /// Create a new download request without an extraction destination.
+    ///
+    /// To also extract the archive after downloading, chain
+    /// [`with_extract_dest`](Self::with_extract_dest).
     pub fn new(
         client: &'a Client,
         pkg_name: &'a PackageName,
@@ -62,12 +88,21 @@ impl<'a, R: Reporter + Clone + 'static> DownloadRequest<'a, R> {
         }
     }
 
+    /// Set the extraction destination, causing [`execute`](Self::execute) to
+    /// extract the archive after downloading.
     pub fn with_extract_dest(mut self, extract_dest: &'a Path) -> Self {
         self.extract_dest = Some(extract_dest);
         self
     }
 
-    /// Execute the download (and extraction if requested)
+    /// Execute the download (and extraction if requested).
+    ///
+    /// Returns the hex-encoded SHA-256 hash of the downloaded file on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DownloadError`] if the HTTP request fails, an I/O error
+    /// occurs, or the computed hash does not match `expected_hash`.
     pub async fn execute(self) -> Result<String, DownloadError> {
         if self.extract_dest.is_some() {
             download_and_extract(self).await
@@ -78,6 +113,13 @@ impl<'a, R: Reporter + Clone + 'static> DownloadRequest<'a, R> {
 }
 
 /// Downloads and verifies a file, automatically switching to parallel chunking for large files.
+///
+/// Returns the hex-encoded SHA-256 hash of the downloaded file on success.
+///
+/// # Errors
+///
+/// Returns [`DownloadError`] if the HTTP request fails, an I/O error
+/// occurs, or the computed hash does not match the expected hash in the request.
 pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
     req: DownloadRequest<'_, R>,
 ) -> Result<String, DownloadError> {
@@ -101,8 +143,7 @@ pub async fn download_and_verify_mp<R: Reporter + Clone + 'static>(
     let accept_ranges = head_resp
         .headers()
         .get(reqwest::header::ACCEPT_RANGES)
-        .map(|v| v == "bytes")
-        .unwrap_or(false);
+        .is_some_and(|v| v == "bytes");
 
     // Initialize progress state
     reporter.downloading(pkg_name, version, 0, Some(total_size));
@@ -258,6 +299,17 @@ async fn download_from_manifest<R: Reporter + Clone + 'static>(
 }
 
 /// Perform a simple, sequential download with streaming verification.
+///
+/// Unlike [`download_and_verify_mp`], this variant does not report progress
+/// through a [`Reporter`] but still uses chunked downloads for large files
+/// when the server supports HTTP range requests.
+///
+/// Returns the hex-encoded SHA-256 hash of the downloaded file on success.
+///
+/// # Errors
+///
+/// Returns [`DownloadError`] if the HTTP request fails, an I/O error
+/// occurs, or the computed hash does not match `expected_hash`.
 pub async fn download_and_verify_simple(
     client: &Client,
     url: &str,
@@ -276,8 +328,7 @@ pub async fn download_and_verify_simple(
     let accept_ranges = head_resp
         .headers()
         .get(reqwest::header::ACCEPT_RANGES)
-        .map(|v| v == "bytes")
-        .unwrap_or(false);
+        .is_some_and(|v| v == "bytes");
 
     if total_size > 10 * 1024 * 1024 && accept_ranges {
         let opts = ChunkedDownloadOptions {
@@ -340,6 +391,8 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
     client: &Client,
     opts: ChunkedDownloadOptions<'_, R>,
 ) -> Result<String, DownloadError> {
+    use std::io::Read;
+
     let total_size = opts.total_size;
     let pkg_name = opts.pkg_name;
     let version = opts.version;
@@ -432,7 +485,6 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
         let mut hasher = Sha256::new();
         let mut file = std::fs::File::open(&dest_clone)?;
         let mut buffer = [0u8; 8192];
-        use std::io::Read;
         loop {
             let count = file.read(&mut buffer)?;
             if count == 0 {
@@ -460,6 +512,18 @@ async fn download_chunked<R: Reporter + Clone + 'static>(
 }
 
 /// Simultaneously downloads, caches, and extracts an archive via a streaming pipeline.
+///
+/// The download stream is tee'd: one copy is written to `cache_dest` for
+/// caching while the other is piped into the decompressor/extractor. This
+/// avoids a separate extraction pass after the download completes.
+///
+/// Returns the hex-encoded SHA-256 hash of the downloaded file on success.
+///
+/// # Errors
+///
+/// Returns [`DownloadError`] if the HTTP request fails, an I/O error
+/// occurs during writing or extraction, or the computed hash does not match
+/// the expected hash in the request.
 pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     req: DownloadRequest<'_, R>,
 ) -> Result<String, DownloadError> {
@@ -577,7 +641,7 @@ pub async fn download_and_extract<R: Reporter + Clone + 'static>(
     }
 
     match extractor_handle.await {
-        Ok(Ok(_)) => Ok(actual_hash),
+        Ok(Ok(())) => Ok(actual_hash),
         Ok(Err(e)) => Err(DownloadError::Io(e)),
         Err(e) => Err(DownloadError::Io(std::io::Error::other(e))),
     }

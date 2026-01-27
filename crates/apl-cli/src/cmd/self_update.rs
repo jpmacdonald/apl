@@ -61,12 +61,9 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
         .context("Failed to parse index for self-update")?;
 
     // 2. Find 'apl' package
-    let entry = match index.find("apl") {
-        Some(e) => e,
-        None => {
-            output.error("Could not find 'apl' in registry. Using GitHub fallback...");
-            return self_update_github_fallback(client, dry_run).await;
-        }
+    let Some(entry) = index.find("apl") else {
+        output.error("Could not find 'apl' in registry. Using GitHub fallback...");
+        return self_update_github_fallback(client, dry_run).await;
     };
 
     let release = entry.latest().context("No releases found for 'apl'")?;
@@ -99,8 +96,7 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
     let download_url = index
         .mirror_base_url
         .as_ref()
-        .map(|base| format!("{}/cas/{}", base, binary.hash))
-        .unwrap_or_else(|| binary.url.clone());
+        .map_or_else(|| binary.url.clone(), |base| format!("{}/cas/{}", base, binary.hash));
 
     // Download the binary to a temporary file
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;
@@ -223,12 +219,9 @@ async fn self_update_github_fallback(client: Client, dry_run: bool) -> Result<()
         .find(|r| r.tag_name.starts_with('v') && r.tag_name != "index" && !r.draft && !r.prerelease)
         .or_else(|| releases.iter().find(|r| r.tag_name.starts_with('v')));
 
-    let release = match release {
-        Some(r) => r,
-        None => {
-            output.success(&format!("APL is up to date (v{current_version})"));
-            return Ok(());
-        }
+    let Some(release) = release else {
+        output.success(&format!("APL is up to date (v{current_version})"));
+        return Ok(());
     };
 
     let latest_version = release.tag_name.trim_start_matches('v');

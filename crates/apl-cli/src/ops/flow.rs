@@ -115,6 +115,7 @@ impl ArtifactKind {
 /// # Transitions
 ///
 /// - [`resolve()`](Self::resolve) → [`ResolvedPackage`]
+#[derive(Debug)]
 pub struct UnresolvedPackage {
     /// The requested package name.
     pub name: PackageName,
@@ -130,6 +131,7 @@ pub struct UnresolvedPackage {
 /// # Transitions
 ///
 /// - [`prepare()`](Self::prepare) → [`PreparedPackage`]
+#[derive(Debug)]
 pub struct ResolvedPackage {
     /// The resolved package name.
     pub name: PackageName,
@@ -146,6 +148,7 @@ pub struct ResolvedPackage {
 /// This is the final state before installation. The archive has been downloaded,
 /// verified, and extracted to a temporary directory. The package is ready to be
 /// moved to the store and linked.
+#[derive(Debug)]
 pub struct PreparedPackage {
     /// The resolved package information.
     pub resolved: ResolvedPackage,
@@ -184,7 +187,12 @@ impl UnresolvedPackage {
         let package_def =
             Package::from_file(path).map_err(|e| InstallError::Validation(e.to_string()))?;
 
-        if !package_def.source.url.is_empty() {
+        if package_def.source.url.is_empty() {
+            Err(InstallError::Validation(format!(
+                "Package {} has no binary for this arch and no source.",
+                path.display()
+            )))
+        } else {
             Ok(ResolvedPackage {
                 name: package_def.package.name.clone(),
                 version: package_def.package.version.clone(),
@@ -195,11 +203,6 @@ impl UnresolvedPackage {
                 },
                 def: package_def,
             })
-        } else {
-            Err(InstallError::Validation(format!(
-                "Package {} has no binary for this arch and no source.",
-                path.display()
-            )))
         }
     }
 
@@ -386,13 +389,15 @@ impl ResolvedPackage {
             ArtifactKind::Binary { .. } => {
                 // Infer format from URL since it's not explicitly in ArtifactKind yet
                 let url = self.artifact.url().to_lowercase();
-                if url.ends_with(".tar.gz") || url.ends_with(".tgz") {
+                let url_path = std::path::Path::new(url.as_str());
+                if url.ends_with(".tar.gz") || url_path.extension().is_some_and(|ext| ext == "tgz")
+                {
                     ArtifactFormat::TarGz
-                } else if url.ends_with(".zip") {
+                } else if url_path.extension().is_some_and(|ext| ext == "zip") {
                     ArtifactFormat::Zip
-                } else if url.ends_with(".dmg") {
+                } else if url_path.extension().is_some_and(|ext| ext == "dmg") {
                     ArtifactFormat::Dmg
-                } else if url.ends_with(".pkg") {
+                } else if url_path.extension().is_some_and(|ext| ext == "pkg") {
                     ArtifactFormat::Pkg
                 } else {
                     ArtifactFormat::Binary

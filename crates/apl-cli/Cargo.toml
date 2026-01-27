@@ -10,6 +10,9 @@ repository = "https://github.com/jpmacdonald/apl"
 name = "apl"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 apl-schema = { workspace = true }
 apl-core = { workspace = true }

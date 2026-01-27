@@ -7,16 +7,15 @@ use crate::index::PackageIndex;
 
 /// Upgrade installed packages
 pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> Result<()> {
+    use crossterm::style::Stylize;
+
     let index_path = apl_home().join("index");
     let output = crate::ui::Output::new();
 
     // Load index
-    let index = match PackageIndex::load(&index_path) {
-        Ok(idx) => idx,
-        Err(_) => {
-            output.error("No index found. Run 'apl update' first.");
-            return Ok(());
-        }
+    let Ok(index) = PackageIndex::load(&index_path) else {
+        output.error("No index found. Run 'apl update' first.");
+        return Ok(());
     };
 
     // Load installed packages
@@ -74,7 +73,6 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
     }
 
     // Actually perform the upgrades by calling install
-    use crossterm::style::Stylize;
     let theme = crate::ui::Theme::default();
 
     println!();

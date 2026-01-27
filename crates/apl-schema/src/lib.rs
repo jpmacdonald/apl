@@ -1,9 +1,24 @@
+//! Shared types and wire format for the APL package manager.
+//!
+//! This crate defines the canonical data structures used across all APL components:
+//! the CLI, the build engine, and the package index. It includes schema types for
+//! artifacts, package metadata, version specifiers, hash wrappers, architecture
+//! detection, asset filename pattern matching, and the binary package index format
+//! (Postcard + Zstd).
+
+/// CPU architecture detection and representation for macOS targets.
 pub mod arch;
+/// Asset filename pattern matching for cross-vendor OS/arch/extension detection.
 pub mod asset_pattern;
+/// Typed wrappers for cryptographic hashes (SHA-256, BLAKE3).
 pub mod hash;
+/// Binary package index: serialization, search, and lookup.
 pub mod index;
+/// Merkle tree for index integrity verification.
 pub mod merkle;
+/// Core domain types: artifacts, port configs, package names, and versions.
 pub mod types;
+/// Version parsing, comparison, and requirement matching.
 pub mod version;
 
 // Re-exports

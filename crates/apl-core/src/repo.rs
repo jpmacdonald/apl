@@ -13,7 +13,12 @@
 pub struct GitHubRepo(String);
 
 impl GitHubRepo {
-    /// Create a new GitHubRepo, validating the `owner/repo` format.
+    /// Create a new `GitHubRepo`, validating the `owner/repo` format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if `s` is not in `owner/repo` format or if
+    /// either component is empty.
     pub fn new(s: &str) -> Result<Self, String> {
         if s.contains('/') && s.split('/').count() == 2 {
             let parts: Vec<&str> = s.split('/').collect();
@@ -36,6 +41,7 @@ impl GitHubRepo {
         self.0.split('/').nth(1).unwrap_or("")
     }
 
+    /// Return the raw `owner/repo` string.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -53,12 +59,14 @@ impl std::fmt::Display for GitHubRepo {
 /// and makes the API self-documenting.
 #[derive(Debug, Clone, Hash, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RepoKey {
+    /// Repository owner (GitHub user or organization).
     pub owner: String,
+    /// Repository name.
     pub repo: String,
 }
 
 impl RepoKey {
-    /// Create a new RepoKey
+    /// Create a new `RepoKey` from an owner and repository name.
     pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
         Self {
             owner: owner.into(),
@@ -66,7 +74,7 @@ impl RepoKey {
         }
     }
 
-    /// Create a RepoKey from an existing GitHubRepo
+    /// Create a `RepoKey` from an existing [`GitHubRepo`].
     pub fn from_github_repo(gh: &GitHubRepo) -> Self {
         Self {
             owner: gh.owner().to_string(),

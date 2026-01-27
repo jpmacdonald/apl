@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-/// Represents a mounted DMG. Dropping this struct will detach the volume.
+/// Represents a mounted DMG volume. Dropping this struct will detach the volume.
 #[derive(Debug)]
 pub struct MountPoint {
+    /// Filesystem path where the DMG is mounted (e.g. `/Volumes/MyApp`).
     pub path: PathBuf,
 }
 
@@ -17,10 +18,18 @@ impl Drop for MountPoint {
     }
 }
 
-/// Attach a DMG file and return its mount point
+/// Attach a DMG file and return its [`MountPoint`].
+///
+/// The volume is mounted read-only and will not open in Finder.
 ///
 /// # Timeout
-/// Will timeout after 30 seconds to prevent hanging on interactive DMGs
+///
+/// Will timeout after 30 seconds to prevent hanging on interactive DMGs.
+///
+/// # Errors
+///
+/// Returns an error if the DMG file does not exist, `hdiutil` fails or
+/// times out, or the mount point cannot be parsed from the command output.
 pub fn attach(dmg_path: &Path) -> Result<MountPoint> {
     if !dmg_path.exists() {
         bail!("DMG file not found: {}", dmg_path.display());
@@ -109,7 +118,13 @@ pub fn attach(dmg_path: &Path) -> Result<MountPoint> {
     bail!("Could not find mount point in hdiutil output:\n{stdout}");
 }
 
-/// Detach a volume with retries
+/// Detach a mounted volume with up to 5 retries.
+///
+/// Uses `hdiutil detach -force` to ensure the volume is unmounted.
+///
+/// # Errors
+///
+/// Returns an error if all 5 detach attempts fail.
 pub fn detach(mount_point: &Path) -> Result<()> {
     tracing::debug!("Detaching volume: {}", mount_point.display());
 

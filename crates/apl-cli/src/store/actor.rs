@@ -5,6 +5,7 @@
 //! the database handle in a dedicated background thread and communicate
 //! via message passing.
 
+use std::fmt;
 use std::sync::mpsc;
 use std::thread;
 use tokio::sync::oneshot;
@@ -57,10 +58,56 @@ pub enum DbEvent {
     Shutdown,
 }
 
+impl fmt::Debug for DbEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GetPackage { name, .. } => {
+                f.debug_struct("GetPackage").field("name", name).finish_non_exhaustive()
+            }
+            Self::GetPackageFiles { name, .. } => {
+                f.debug_struct("GetPackageFiles").field("name", name).finish_non_exhaustive()
+            }
+            Self::GetPackageVersion { name, version, .. } => f
+                .debug_struct("GetPackageVersion")
+                .field("name", name)
+                .field("version", version)
+                .finish_non_exhaustive(),
+            Self::RemovePackage { name, .. } => {
+                f.debug_struct("RemovePackage").field("name", name).finish_non_exhaustive()
+            }
+            Self::AddHistory {
+                name,
+                action,
+                version,
+                ..
+            } => f
+                .debug_struct("AddHistory")
+                .field("name", name)
+                .field("action", action)
+                .field("version", version)
+                .finish_non_exhaustive(),
+            Self::InstallComplete {
+                name, version, ..
+            } => f
+                .debug_struct("InstallComplete")
+                .field("name", name)
+                .field("version", version)
+                .finish_non_exhaustive(),
+            Self::Shutdown => write!(f, "Shutdown"),
+        }
+    }
+}
+
 /// A handle to the Database Actor that is Send + Sync and Clone.
 #[derive(Clone)]
 pub struct DbHandle {
     sender: mpsc::Sender<DbEvent>,
+}
+
+impl fmt::Debug for DbHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DbHandle").finish_non_exhaustive()
+    }
 }
 
 impl DbHandle {
@@ -156,6 +203,9 @@ impl DbHandle {
 }
 
 /// The actual event loop running in the background thread
+// The db and receiver are intentionally moved into this thread to ensure
+// exclusive ownership for the actor pattern.
+#[allow(clippy::needless_pass_by_value)]
 fn run_db_event_loop(db: StateDb, receiver: mpsc::Receiver<DbEvent>) {
     while let Ok(event) = receiver.recv() {
         match event {

@@ -1,5 +1,5 @@
 ///
-/// APL supports both Apple Silicon (ARM64) and Intel (x86_64) Macs.
+/// APL supports both Apple Silicon (ARM64) and Intel (`x86_64`) Macs.
 /// The architecture is used to select the correct pre-compiled binary
 /// from the package index.
 ///
@@ -19,7 +19,7 @@ pub enum Arch {
     /// ARM64 architecture (Apple Silicon: M1, M2, M3, etc.)
     #[default]
     Arm64,
-    /// x86_64 architecture (Intel Macs)
+    /// `x86_64` architecture (Intel Macs)
     X86_64,
     /// Universal binary (works on both architectures)
     Universal,

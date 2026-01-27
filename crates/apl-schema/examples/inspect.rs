@@ -1,3 +1,5 @@
+//! Example: inspect a local APL index file and print its contents.
+
 use apl_schema::index::PackageIndex;
 use std::path::Path;
 

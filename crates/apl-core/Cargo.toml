@@ -5,6 +5,9 @@ edition = "2024"
 description = "Core library for APL - shared indexer, resolver, and IO logic"
 
 
+[lints]
+workspace = true
+
 [dependencies]
 apl-schema = { workspace = true }
 

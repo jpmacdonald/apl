@@ -33,7 +33,7 @@ pub fn info(package_str: &str) -> Result<()> {
     // U.S. Graphics style: Package name + version as header
     println!();
     if let Some(entry) = &index_entry {
-        let version = entry.latest().map(|v| v.version.as_str()).unwrap_or("?");
+        let version = entry.latest().map_or("?", |v| v.version.as_str());
         println!(
             "{} {}",
             package.as_str().white().bold(),
