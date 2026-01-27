@@ -349,6 +349,14 @@ impl Strategy for GolangStrategy {
                 };
 
                 if valid {
+                    if file.sha256.is_empty() {
+                        eprintln!(
+                            "    [WARN] Skipping {} v{} ({}) - Missing SHA256",
+                            "go", version, apl_arch
+                        );
+                        continue;
+                    }
+
                     artifacts.push(Artifact {
                         name: "go".to_string(),
                         version: version.clone(),
@@ -758,8 +766,17 @@ impl BuildStrategy {
         tag_pattern: Option<String>,
         spec: apl_schema::BuildSpec,
     ) -> Self {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+            );
+        }
+
         let client = Client::builder()
             .user_agent("apl-builder/0.1.0")
+            .default_headers(headers)
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_else(|_| Client::new());

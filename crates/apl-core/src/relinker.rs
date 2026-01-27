@@ -142,17 +142,43 @@ impl Relinker {
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
 
+            if !Self::is_macho(path) {
+                continue;
+            }
+
             if parent_name == "bin" {
                 Self::fix_binary(path)?;
             } else if parent_name == "lib"
-                || path
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("dylib") || ext.eq_ignore_ascii_case("so"))
+                || path.extension().is_some_and(|ext| {
+                    ext.eq_ignore_ascii_case("dylib") || ext.eq_ignore_ascii_case("so")
+                })
                 || file_name.contains(".so.")
             {
                 Self::fix_dylib(path)?;
             }
         }
         Ok(())
+    }
+
+    /// Checks if a file is a Mach-O binary (magic bytes).
+    fn is_macho(path: &Path) -> bool {
+        use std::io::Read;
+        let mut f = match std::fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+        let mut magic = [0u8; 4];
+        if f.read_exact(&mut magic).is_err() {
+            return false;
+        }
+        // feedface, feedfacf, cafebabe (universal) - and their LE/BE variants
+        matches!(
+            magic,
+            [0xfe, 0xed, 0xfa, 0xce]
+                | [0xfe, 0xed, 0xfa, 0xcf]
+                | [0xcf, 0xfa, 0xed, 0xfe]
+                | [0xce, 0xfa, 0xed, 0xfe]
+                | [0xca, 0xfe, 0xba, 0xbe]
+        )
     }
 }

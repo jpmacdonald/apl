@@ -102,6 +102,15 @@ async fn main() -> Result<()> {
         );
     }
 
+    println!("Found {} port manifests.", manifests.len());
+    for (name, manifest) in &manifests {
+        if let PortConfig::Build { spec, .. } = &manifest.package.config {
+            println!("  Port: {}, Deps: {:?}", name, spec.dependencies);
+        } else {
+            println!("  Port: {} (not a build strategy)", name);
+        }
+    }
+
     // 2. Build a temporary index for dependency resolution
     let mut index = apl_schema::PackageIndex::new();
     for manifest in manifests.values() {

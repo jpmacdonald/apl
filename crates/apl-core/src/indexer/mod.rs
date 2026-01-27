@@ -1231,6 +1231,11 @@ async fn mirror_asset(client: &Client, url: &str, hash: &str, store: &ArtifactSt
 }
 
 /// Helper to bundle a directory into a .tar.zst archive for the artifact store.
+///
+/// Symlinks are preserved as symlinks in the archive rather than being
+/// dereferenced. This avoids ENOENT errors from dangling absolute symlinks
+/// (common after `make install` with `$PREFIX`) and ensures the archive is
+/// portable.
 fn bundle_directory(src_dir: &Path, dest_archive: &Path) -> Result<()> {
     use std::fs::File;
     use std::io::BufWriter;
@@ -1239,6 +1244,12 @@ fn bundle_directory(src_dir: &Path, dest_archive: &Path) -> Result<()> {
     let writer = BufWriter::new(file);
     let zstd_encoder = zstd::stream::Encoder::new(writer, 3)?;
     let mut tar_builder = tar::Builder::new(zstd_encoder);
+
+    // Preserve symlinks instead of following them. Build outputs often contain
+    // symlinks (e.g. bzegrep -> bzgrep) that should remain as links in the
+    // archive. Following them would fail for broken absolute symlinks and
+    // would duplicate file content for valid ones.
+    tar_builder.follow_symlinks(false);
 
     tar_builder.append_dir_all(".", src_dir)?;
     tar_builder.finish()?;

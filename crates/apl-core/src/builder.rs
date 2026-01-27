@@ -185,6 +185,14 @@ impl<'a> Builder<'a> {
             path_dirs.insert(0, xcode_clt.to_string_lossy().to_string());
         }
 
+        // Add bin/ directory for each dependency for tool discovery (e.g. autoconf, cmake)
+        for (name, _) in deps {
+            let dep_bin = sysroot_path.join("deps").join(name).join("bin");
+            if dep_bin.is_dir() {
+                path_dirs.insert(0, dep_bin.to_string_lossy().to_string());
+            }
+        }
+
         // -- 6. Build the command ------------------------------------------
         // On macOS, we wrap the execution in `sandbox-exec` to ensure
         // process-level hermeticity (no network, restricted FS access).
@@ -226,6 +234,21 @@ impl<'a> Builder<'a> {
             // Reproducibility
             .env("MACOSX_DEPLOYMENT_TARGET", MACOSX_DEPLOYMENT_TARGET)
             .env("SOURCE_DATE_EPOCH", SOURCE_DATE_EPOCH);
+
+        if cfg!(target_os = "macos") {
+            // Attempt to find the SDK path using xcrun
+            if let Ok(output) = std::process::Command::new("xcrun")
+                .arg("--show-sdk-path")
+                .output()
+            {
+                if output.status.success() {
+                    let sdk_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !sdk_path.is_empty() {
+                        cmd.env("SDKROOT", sdk_path);
+                    }
+                }
+            }
+        }
 
         // Compiler / linker flags aggregated from all dependencies
         if !cflags.is_empty() {
@@ -294,8 +317,93 @@ impl<'a> Builder<'a> {
             copy_dir_all(&install_abs, output_path)?;
         }
 
+        // -- 8. Fix absolute symlinks -----------------------------------------
+        // Build scripts (e.g. bzip2, openssl) often create absolute symlinks
+        // pointing into $PREFIX. After the rename/copy above, these point to the
+        // old sysroot path and are dangling. Convert them to portable relative
+        // symlinks so the package is relocatable and can be bundled into a
+        // tar.zst archive without following broken links.
+        fix_absolute_symlinks(&install_abs, output_path)?;
+
         Ok(())
     }
+}
+
+/// Walk the output directory and convert absolute symlinks that pointed into
+/// the old sysroot install prefix to relative symlinks.
+///
+/// Many build systems (Make, `CMake`, Autotools) create absolute symlinks during
+/// `make install` that reference `$PREFIX`. After the builder moves the output
+/// out of the sysroot, these links become dangling. This function detects them
+/// and rewrites each one as a relative symlink so the package remains portable.
+///
+/// # Errors
+///
+/// Returns an error if symlink metadata cannot be read or if rewriting a
+/// symlink fails.
+fn fix_absolute_symlinks(old_prefix: &Path, new_root: &Path) -> Result<()> {
+    for entry in walkdir::WalkDir::new(new_root)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+    {
+        let path = entry.path();
+        let Ok(meta) = path.symlink_metadata() else {
+            continue;
+        };
+        if !meta.is_symlink() {
+            continue;
+        }
+        let Ok(target) = std::fs::read_link(path) else {
+            continue;
+        };
+        if !target.is_absolute() {
+            continue;
+        }
+
+        // Check if the target was inside the old install prefix.
+        let Ok(suffix) = target.strip_prefix(old_prefix) else {
+            continue;
+        };
+
+        // Compute where the target now lives inside new_root.
+        let new_target = new_root.join(suffix);
+        let Some(link_dir) = path.parent() else {
+            continue;
+        };
+
+        let relative = relative_path(link_dir, &new_target);
+        std::fs::remove_file(path)?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&relative, path)?;
+    }
+
+    Ok(())
+}
+
+/// Compute a relative path from `from_dir` to `to_path`.
+///
+/// Both arguments must be absolute paths. The function walks up from
+/// `from_dir` to the common ancestor and then descends into `to_path`.
+///
+/// Example: `relative_path("/a/b/c", "/a/b/d/e")` returns `"../d/e"`.
+fn relative_path(from_dir: &Path, to_path: &Path) -> std::path::PathBuf {
+    let from_components: Vec<_> = from_dir.components().collect();
+    let to_components: Vec<_> = to_path.components().collect();
+
+    let common_len = from_components
+        .iter()
+        .zip(to_components.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let mut result = std::path::PathBuf::new();
+    for _ in common_len..from_components.len() {
+        result.push("..");
+    }
+    for part in &to_components[common_len..] {
+        result.push(part);
+    }
+    result
 }
 
 /// Recursively copy a directory tree from `src` to `dst`.
@@ -397,5 +505,54 @@ mod tests {
 
         // Verify that output was extracted
         assert!(out_tmp.path().join("bin/test-bin").exists());
+    }
+
+    #[test]
+    fn test_relative_path_same_dir() {
+        let result = relative_path(Path::new("/a/b/c"), Path::new("/a/b/c/file"));
+        assert_eq!(result, std::path::PathBuf::from("file"));
+    }
+
+    #[test]
+    fn test_relative_path_sibling() {
+        let result = relative_path(Path::new("/a/b/bin"), Path::new("/a/b/bin/bzgrep"));
+        assert_eq!(result, std::path::PathBuf::from("bzgrep"));
+    }
+
+    #[test]
+    fn test_relative_path_cross_dir() {
+        let result = relative_path(Path::new("/a/b/lib"), Path::new("/a/b/bin/tool"));
+        assert_eq!(result, std::path::PathBuf::from("../bin/tool"));
+    }
+
+    #[test]
+    fn test_fix_absolute_symlinks() {
+        let tmp = tempdir().unwrap();
+        let old_prefix = Path::new("/old/sysroot/usr/local");
+        let new_root = tmp.path();
+
+        // Create directory structure
+        std::fs::create_dir_all(new_root.join("bin")).unwrap();
+        std::fs::write(new_root.join("bin/bzgrep"), "#!/bin/sh\n").unwrap();
+
+        // Create an absolute symlink like bzip2's Makefile would
+        #[cfg(unix)]
+        {
+            let symlink_path = new_root.join("bin/bzegrep");
+            std::os::unix::fs::symlink("/old/sysroot/usr/local/bin/bzgrep", &symlink_path).unwrap();
+
+            // Verify symlink is broken (absolute target doesn't exist)
+            assert!(symlink_path.symlink_metadata().unwrap().is_symlink());
+            assert!(!symlink_path.exists()); // target doesn't exist
+
+            // Fix it
+            fix_absolute_symlinks(old_prefix, new_root).unwrap();
+
+            // Verify it's now a relative symlink pointing to the right place
+            let new_target = std::fs::read_link(&symlink_path).unwrap();
+            assert!(!new_target.is_absolute());
+            assert_eq!(new_target, std::path::PathBuf::from("bzgrep"));
+            assert!(symlink_path.exists()); // target now resolves
+        }
     }
 }
