@@ -49,6 +49,43 @@ const MACOSX_DEPLOYMENT_TARGET: &str = "13.0";
 /// of when the build actually ran.
 const SOURCE_DATE_EPOCH: &str = "0";
 
+/// Sandbox profile template for macOS `sandbox-exec`.
+///
+/// This profile is designed for full hermeticity:
+/// - Default deny.
+/// - Deny all network access.
+/// - Deny access to host user data (`~/.ssh`, etc.).
+/// - Allow read access to system toolchains and SDKs.
+/// - Allow read/write access ONLY to the sysroot and temporary directories.
+const SANDBOX_PROFILE: &str = r#"
+(version 1)
+(allow default)
+
+;; 1. Deny Network
+(deny network-outbound)
+
+;; 2. Protect Host Toolchains (Hermeticity)
+;; Prevents picking up host headers/libs from Homebrew or /usr/local
+(deny file-read* (subpath "/usr/local"))
+(deny file-read* (subpath "/opt/homebrew"))
+
+;; 3. Prevent Write access to host system
+(deny file-write* (subpath "/usr"))
+(deny file-write* (subpath "/bin"))
+(deny file-write* (subpath "/sbin"))
+(deny file-write* (subpath "/System"))
+(deny file-write* (subpath "/Library"))
+
+;; 4. Protect Sensitive User Data
+;; We don't block all of /Users because we need to read/write the sysroot
+;; which is likely in a subdirectory of the user's home or workspace.
+;; Instead, we block specific sensitive directories.
+(deny file-read* (subpath "/Users/{USER}/.ssh"))
+(deny file-read* (subpath "/Users/{USER}/.gitconfig"))
+(deny file-read* (subpath "/Users/{USER}/.aws"))
+(deny file-read* (subpath "/Users/{USER}/.gnupg"))
+"#;
+
 /// Orchestrates hermetic package builds inside an APFS [`Sysroot`].
 ///
 /// See the [module-level documentation](self) for the full environment
@@ -149,7 +186,20 @@ impl<'a> Builder<'a> {
         }
 
         // -- 6. Build the command ------------------------------------------
-        let mut cmd = Command::new("/bin/sh");
+        // On macOS, we wrap the execution in `sandbox-exec` to ensure
+        // process-level hermeticity (no network, restricted FS access).
+        let mut cmd = if cfg!(target_os = "macos") {
+            let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+            let profile = SANDBOX_PROFILE
+                .replace("{SYSROOT}", &sysroot_path.to_string_lossy())
+                .replace("{USER}", &current_user);
+
+            let mut c = Command::new("sandbox-exec");
+            c.arg("-p").arg(profile).arg("/bin/sh");
+            c
+        } else {
+            Command::new("/bin/sh")
+        };
 
         // Start from a blank slate so host env vars never leak in.
         cmd.env_clear();

@@ -119,4 +119,39 @@ impl Relinker {
 
         Ok(())
     }
+
+    /// Recursively scan a directory and relink all Mach-O files.
+    ///
+    /// - Files in `bin/` are treated as executables.
+    /// - Files ending in `.dylib`, `.so`, or in `lib/` are treated as libraries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if directory traversal fails or if `install_name_tool` fails.
+    pub fn relink_all(root: &Path) -> Result<()> {
+        for entry in walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let parent_name = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            if parent_name == "bin" {
+                Self::fix_binary(path)?;
+            } else if parent_name == "lib"
+                || file_name.ends_with(".dylib")
+                || file_name.ends_with(".so")
+                || file_name.contains(".so.")
+            {
+                Self::fix_dylib(path)?;
+            }
+        }
+        Ok(())
+    }
 }

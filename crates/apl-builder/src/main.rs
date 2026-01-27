@@ -84,9 +84,26 @@ async fn main() -> Result<()> {
 
     for entry in glob(pattern_str)? {
         let path = entry?;
+
+        // Skip Cargo.toml and hidden files/directories
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if file_name == "Cargo.toml" || file_name.starts_with('.') {
+            continue;
+        }
+
         let content = fs::read_to_string(&path).await?;
-        let manifest: PortManifest = toml::from_str(&content)
-            .with_context(|| format!("Failed to parse {}", path.display()))?;
+        let manifest: PortManifest = match toml::from_str(&content) {
+            Ok(m) => m,
+            Err(e) => {
+                // If it doesn't look like a port manifest, skip it with a warning instead of erroring.
+                // Port manifests MUST have a [package] section.
+                if !content.contains("[package]") {
+                    eprintln!("  SKIP: {} (not a port manifest)", path.display());
+                    continue;
+                }
+                return Err(e).with_context(|| format!("Failed to parse {}", path.display()));
+            }
+        };
 
         let port_name = &manifest.package.name;
 

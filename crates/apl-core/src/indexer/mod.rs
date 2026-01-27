@@ -1165,6 +1165,13 @@ pub async fn hydrate_from_source(
         &log_path,
     )?;
 
+    // 6b. Relink (make relocatable)
+    // Build-from-source binaries often have absolute paths to the Sysroot in their RPATH.
+    // We patch these to be relative to the binary/dylib so the package stays portable.
+    if cfg!(target_os = "macos") {
+        crate::relinker::Relinker::relink_all(&build_dir)?;
+    }
+
     // 7. Bundle Output (tar.zst)
     let bundle_path = tmp_dir.path().join("bundle.tar.zst");
     bundle_directory(&build_dir, &bundle_path)?;
