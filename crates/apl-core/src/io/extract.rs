@@ -257,11 +257,11 @@ pub fn extract_zip<R: Reporter>(
 /// Validates that an archive entry path does not escape the destination directory.
 /// Returns the canonicalized absolute path if safe.
 fn validate_safe_path(dest_dir: &Path, entry_path: &Path) -> Result<PathBuf, ExtractError> {
-    // 1. Join paths – this handles absolute entry paths by overriding dest_dir
+    // Join paths -- this handles absolute entry paths by overriding dest_dir
     // if entry_path is absolute (which is exactly what we want to detect).
     let joined = dest_dir.join(entry_path);
 
-    // 2. Normalize components (remove . and ..) without hitting the disk
+    // Normalize components (remove . and ..) without hitting the disk
     // because the files don't exist yet.
     let mut absolute_path = PathBuf::new();
     for component in joined.components() {

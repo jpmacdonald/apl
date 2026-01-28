@@ -41,8 +41,8 @@ pub async fn import_homebrew_packages(packages: &[String], registry_dir: &Path) 
     for pkg_name in packages {
         println!("Importing {pkg_name} from Homebrew...");
         match import_single_package(&client, pkg_name, registry_dir).await {
-            Ok(()) => println!("   ✓ Imported {pkg_name}"),
-            Err(e) => eprintln!("   ✗ Failed to import {pkg_name}: {e}"),
+            Ok(()) => println!("   OK: Imported {pkg_name}"),
+            Err(e) => eprintln!("   FAIL: Failed to import {pkg_name}: {e}"),
         }
     }
 

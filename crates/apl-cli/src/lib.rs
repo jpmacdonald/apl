@@ -14,8 +14,8 @@
 //!
 //! # Architecture
 //!
-//! - **Typestate Pattern**: The installation flow uses `UnresolvedPackage` →
-//!   `ResolvedPackage` → `PreparedPackage` to enforce correct ordering at compile time.
+//! - **Typestate Pattern**: The installation flow uses `UnresolvedPackage` ->
+//!   `ResolvedPackage` -> `PreparedPackage` to enforce correct ordering at compile time.
 //! - **Actor Pattern**: Database access is serialized through `DbHandle` for thread safety.
 //! - **Newtypes**: `PackageName`, `Version`, and `Sha256Hash` provide type-safe identifiers.
 //!

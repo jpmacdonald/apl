@@ -54,9 +54,8 @@ impl Default for ProgressIndicator {
     }
 }
 
-/// Format progress status with word-based Mission Control style (no bars)
+/// Format progress status as a bare status word
 pub fn format_progress_status(current: u64, total: Option<u64>) -> String {
-    // Treat None or Some(0) as indeterminate
     let total_valid = total.filter(|&t| t > 0);
 
     let status_word = if current == 0 {
@@ -65,22 +64,13 @@ pub fn format_progress_status(current: u64, total: Option<u64>) -> String {
         if current >= t {
             "installed"
         } else {
-            "fetching..."
+            "fetching"
         }
     } else {
-        "verifying..."
+        "fetching"
     };
 
-    let size_str = if current > 0 {
-        super::theme::format_size(current)
-    } else {
-        " ".to_string()
-    };
-
-    // Pad everything to exactly 50 characters total
-    // Mission Control: "fetching...  1.2 MB"
-    let combined = format!("{status_word: <15} {size_str:>10}");
-    format!("{combined:<50}")
+    format!("{status_word:<30}")
 }
 
 #[cfg(test)]
@@ -99,25 +89,19 @@ mod tests {
 
     #[test]
     fn test_progress_status_format() {
-        // 50% progress download
         let result = format_progress_status(512, Some(1024));
-        assert!(result.contains("fetching..."));
-        assert!(result.contains("512 B"));
+        assert!(result.contains("fetching"));
 
-        // 100% progress
         let result = format_progress_status(1024, Some(1024));
         assert!(result.contains("installed"));
-        assert!(result.contains("1.0 KB"));
 
-        // 0% progress
         let result = format_progress_status(0, Some(1024));
         assert!(result.contains("queued"));
     }
 
     #[test]
-    fn test_progress_bar_format_removed() {
-        // We verify that the structure is still padded correctly
+    fn test_progress_status_padding() {
         let result = format_progress_status(0, None);
-        assert_eq!(result.len(), 50);
+        assert_eq!(result.len(), 30);
     }
 }

@@ -22,10 +22,6 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
         return Ok(());
     }
 
-    // 1. Check for updates
-    // removed: output.info("Checking for updates...");
-    // removed: artificial sleep
-
     let client = Client::new();
     let response = match client.get(url).send().await {
         Ok(resp) => resp,
@@ -42,7 +38,7 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
 
     let bytes = response.bytes().await?;
 
-    // 🔒 Verify Signature
+    // Verify signature
     if !dry_run {
         let sig_url = format!("{url}.sig");
         // output.info(&format!("Verifying signature: {}", sig_url)); // Optional verbosity
@@ -71,7 +67,7 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
                 );
 
                 if verifying_key.verify(&bytes, &signature).is_ok() {
-                    output.success("Index signature verified");
+                    // Signature valid; success message deferred until index is saved
                 } else {
                     output.error("Signature verification FAILED");
                     bail!(
@@ -123,7 +119,6 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
     // Save RAW (decompressed) data to disk for fast MMAP loading
     std::fs::write(&index_path, &decompressed)?;
 
-    // 2. Show updates table OR Proceed to Upgrade
     if upgrade_all {
         println!();
         return crate::cmd::upgrade::upgrade(&[], false, dry_run).await;
@@ -145,30 +140,25 @@ pub async fn update(url: &str, upgrade_all: bool, dry_run: bool) -> Result<()> {
         }
     }
 
-    // Show available updates (upgrade command actually installs them)
     if !update_list.is_empty() {
         use crossterm::style::Stylize;
         let theme = crate::ui::Theme::default();
 
         println!();
-        // U.S. Graphics: Clean summary line, no separator
-        println!(
-            "{}",
-            format!("{} packages can be upgraded", update_list.len()).dark_grey()
-        );
-        println!();
-
         for (name, old, new) in &update_list {
             let name_part = format!("{:<width$}", name, width = theme.layout.name_width);
             println!(
-                "  {} {}  →  {}",
+                "  {} {}  ->  {}",
                 name_part.with(theme.colors.package_name),
                 old.as_str().dark_grey(),
                 new.as_str().with(theme.colors.success)
             );
         }
         println!();
-        output.info("Run 'apl upgrade' to apply these updates.");
+        println!(
+            "  {} upgrades available -- run 'apl upgrade' to apply",
+            update_list.len()
+        );
     }
 
     Ok(())

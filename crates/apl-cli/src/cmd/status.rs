@@ -80,7 +80,6 @@ pub fn status() -> Result<()> {
     let label_width = 12;
 
     println!();
-    // U.S. Graphics: Section title, no separators
     println!("{}", "System status".dark_grey());
     println!();
 

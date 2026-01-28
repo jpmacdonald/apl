@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
                         .iter()
                         .filter(|r| matches!(r.status, UpdateStatus::Updated))
                     {
-                        println!("  ✓ {}", r.name);
+                        println!("  OK: {}", r.name);
                     }
                 }
 
@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
                         .filter(|r| matches!(r.status, UpdateStatus::Failed(_)))
                     {
                         if let UpdateStatus::Failed(msg) = &r.status {
-                            println!("  ✗ {}: {}", r.name, msg);
+                            println!("  FAIL: {}: {}", r.name, msg);
                         }
                     }
                 }
@@ -325,24 +325,24 @@ async fn cli_index(
 ) -> Result<()> {
     if let Some(url) = bootstrap_url {
         if index_path.exists() {
-            println!("   ℹ️  Local index exists, skipping bootstrap.");
+            println!("   Local index exists, skipping bootstrap.");
         } else {
-            println!("   📥 Bootstrapping index from {url}...");
+            println!("   Bootstrapping index from {url}...");
             match client.get(url).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let bytes = resp.bytes().await?;
                         fs::write(index_path, bytes)?;
                         println!(
-                            "   ✓ Bootstrap successful ({} bytes)",
+                            "   OK: Bootstrap successful ({} bytes)",
                             fs::metadata(index_path)?.len()
                         );
                     } else {
-                        eprintln!("   ⚠ Bootstrap failed: HTTP {}", resp.status());
+                        eprintln!("   WARN: Bootstrap failed: HTTP {}", resp.status());
                     }
                 }
                 Err(e) => {
-                    eprintln!("   ⚠ Bootstrap failed: {e}");
+                    eprintln!("   WARN: Bootstrap failed: {e}");
                 }
             }
         }
@@ -411,7 +411,7 @@ fn cli_sign(input: &Path, output: &Path) -> Result<()> {
     let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
 
     fs::write(output, sig_b64).context("Failed to write signature file")?;
-    println!("✓ Signed {} -> {}", input.display(), output.display());
+    println!("Signed {} -> {}", input.display(), output.display());
 
     Ok(())
 }
@@ -514,7 +514,7 @@ fn cli_keygen() -> Result<()> {
 
     use rand::RngCore;
 
-    println!("🔑 Generating new Ed25519 signing keypair...");
+    println!("Generating new Ed25519 signing keypair...");
 
     let mut secret_bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut secret_bytes);
@@ -538,7 +538,7 @@ fn cli_keygen() -> Result<()> {
     if !keyfile_path.exists() {
         let mut f = fs::File::create(keyfile_path)?;
         f.write_all(secret_b64.as_bytes())?;
-        println!("✓ Secret key saved to ./apl.key (gitignore this!)");
+        println!("Secret key saved to ./apl.key (gitignore this!)");
     }
 
     Ok(())
@@ -560,9 +560,9 @@ async fn cli_verify(_client: &reqwest::Client, package_path: &Path) -> Result<()
 
     // TODO: Implement simplified verification that doesn't depend on apl_cli flow types
     // For now, just parse the package file to validate it
-    println!("  ✓ Package definition parsed successfully");
-    println!("  ✓ Binaries declared: {}", bin_list.join(", "));
-    println!("  ⚠ Full verification (download + smoke test) not yet implemented.");
+    println!("  OK: Package definition parsed successfully");
+    println!("  Binaries declared: {}", bin_list.join(", "));
+    println!("  WARN: Full verification (download + smoke test) not yet implemented.");
     println!("    Use `apl install --dry-run {pkg_name}` for full verification.");
 
     Ok(())

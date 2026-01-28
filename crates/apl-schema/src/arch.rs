@@ -46,6 +46,19 @@ impl Arch {
             Self::Universal => "universal",
         }
     }
+
+    /// Rust-convention architecture name (`aarch64` / `x86_64`).
+    ///
+    /// Distinct from [`as_str()`](Self::as_str) which uses platform names
+    /// (`arm64`). The value matches `std::env::consts::ARCH` and is
+    /// exposed to build scripts as the `$ARCH` environment variable.
+    pub fn rust_name(&self) -> &'static str {
+        match self {
+            Self::Arm64 => "aarch64",
+            Self::X86_64 => "x86_64",
+            Self::Universal => "universal",
+        }
+    }
 }
 
 impl std::fmt::Display for Arch {

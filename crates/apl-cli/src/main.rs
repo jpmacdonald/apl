@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
         // No arguments provided. Check for apl.toml
         if let Ok(cwd) = std::env::current_dir() {
             if has_manifest(&cwd) {
-                println!("🔮 Found apl.toml. Entering project shell...");
+                println!("Found apl.toml. Entering project shell...");
                 return cmd::shell::shell(false, false, None).await;
             }
         }

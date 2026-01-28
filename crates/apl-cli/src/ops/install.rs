@@ -534,6 +534,7 @@ fn perform_source_build(
             store_path,
             false,
             &log_path,
+            None, // Host architecture
         )
         .map_err(|e| InstallError::Script(e.to_string()))
 }

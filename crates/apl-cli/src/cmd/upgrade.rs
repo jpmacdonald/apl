@@ -76,21 +76,11 @@ pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> 
     let theme = crate::ui::Theme::default();
 
     println!();
-    // U.S. Graphics: count header, no table chrome
-    println!(
-        "{}",
-        format!("{} packages can be upgraded", to_upgrade.len()).dark_grey()
-    );
-    println!();
-
-    // Upgrading header
-    println!("{}", "Upgrading".dark_grey());
-    println!();
 
     for (name, old, new) in &to_upgrade {
         let name_col = format!("{:<width$}", name, width = theme.layout.name_width);
         println!(
-            "  {} {}  →  {}",
+            "  {} {}  ->  {}",
             name_col.with(theme.colors.package_name),
             old.as_str().dark_grey(),
             new.as_str().with(theme.colors.success)

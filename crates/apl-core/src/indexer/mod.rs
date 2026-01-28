@@ -761,6 +761,7 @@ pub async fn package_to_index_ver(
             build_spec,
             &store,
             ctx.index,
+            Arch::current(),
         )
         .await
         {
@@ -1015,6 +1016,7 @@ async fn compute_hash_from_url(client: &Client, url: &str) -> Result<String> {
 ///
 /// Returns an error if the source download, extraction, dependency resolution,
 /// build execution, or artifact upload fails.
+#[allow(clippy::too_many_arguments)]
 pub async fn hydrate_from_source(
     client: &Client,
     template: &PackageTemplate,
@@ -1023,6 +1025,7 @@ pub async fn hydrate_from_source(
     build_spec: &crate::package::BuildSpec,
     store: &ArtifactStore,
     index: &PackageIndex,
+    target_arch: Arch,
 ) -> Result<VersionInfo> {
     use crate::builder::Builder;
     use crate::sysroot::Sysroot;
@@ -1066,7 +1069,7 @@ pub async fn hydrate_from_source(
         }
     };
 
-    tracing::debug!("      🔨 Hydrating from source: {source_url}");
+    tracing::debug!("      Hydrating from source: {source_url}");
 
     // 2. Prepare Directories
     let tmp_dir = tempfile::tempdir()?;
@@ -1099,21 +1102,13 @@ pub async fn hydrate_from_source(
         // Find dependency in the index
         if let Some(entry) = index.find(dep_name) {
             if let Some(latest) = entry.latest() {
-                // Find binary for current architecture
-                #[cfg(target_arch = "aarch64")]
-                let my_arch = Arch::Arm64;
-                #[cfg(target_arch = "x86_64")]
-                let my_arch = Arch::X86_64;
-                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-                let my_arch = Arch::Universal;
-
                 if let Some(bin) = latest
                     .binaries
                     .iter()
-                    .find(|b| b.arch == my_arch || b.arch == Arch::Universal)
+                    .find(|b| b.arch == target_arch || b.arch == Arch::Universal)
                 {
                     tracing::debug!(
-                        "      📦 Satisfying build dep: {} ({})",
+                        "      Satisfying build dep: {} ({})",
                         dep_name,
                         latest.version
                     );
@@ -1154,7 +1149,10 @@ pub async fn hydrate_from_source(
     // 6. Build in Sysroot
     let sysroot = Sysroot::new()?;
     let builder = Builder::new(&sysroot);
-    let log_path = crate::build_log_path(template.package.name.as_ref(), display_version);
+    let log_path = crate::build_log_path(
+        &format!("{}-{}", template.package.name, target_arch),
+        display_version,
+    );
 
     builder.build(
         &extract_dir,
@@ -1163,6 +1161,7 @@ pub async fn hydrate_from_source(
         &build_dir,
         false, // verbose
         &log_path,
+        Some(target_arch),
     )?;
 
     // 6b. Relink (make relocatable)
@@ -1183,21 +1182,13 @@ pub async fn hydrate_from_source(
     let hash_hex = format!("{:x}", hasher.finalize());
 
     let mirror_url = store.upload_chunked(&hash_hex, &bundle_data).await?;
-    tracing::debug!("      ☁️  Uploaded to mirror (chunked): {mirror_url}");
+    tracing::debug!("      Uploaded to mirror (chunked): {mirror_url}");
 
-    // 9. Determine Arch
-    #[cfg(target_arch = "aarch64")]
-    let arch = Arch::Arm64;
-    #[cfg(target_arch = "x86_64")]
-    let arch = Arch::X86_64;
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    let arch = Arch::Universal;
-
-    // 10. Return VersionInfo pointing to our hydrated binary
+    // 9. Return VersionInfo pointing to the hydrated binary
     Ok(VersionInfo {
         version: display_version.to_string(),
         binaries: vec![IndexBinary {
-            arch,
+            arch: target_arch,
             url: mirror_url,
             hash: Sha256Hash::new(hash_hex),
             hash_type: HashType::Sha256,

@@ -114,7 +114,7 @@ impl ArtifactKind {
 ///
 /// # Transitions
 ///
-/// - [`resolve()`](Self::resolve) → [`ResolvedPackage`]
+/// - [`resolve()`](Self::resolve) -> [`ResolvedPackage`]
 #[derive(Debug)]
 pub struct UnresolvedPackage {
     /// The requested package name.
@@ -130,7 +130,7 @@ pub struct UnresolvedPackage {
 ///
 /// # Transitions
 ///
-/// - [`prepare()`](Self::prepare) → [`PreparedPackage`]
+/// - [`prepare()`](Self::prepare) -> [`PreparedPackage`]
 #[derive(Debug)]
 pub struct ResolvedPackage {
     /// The resolved package name.

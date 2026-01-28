@@ -1,8 +1,7 @@
-//! Table Rendering - Milspec real-time table
+//! Table rendering using frame-based relative positioning
 //!
-//! This module handles rendering the package table using a frame-based
-//! relative positioning system. This ensures smooth updates without
-//! terminal corruption.
+//! Renders package rows with animated progress indicators.
+//! Uses `RelativeFrame` for in-place updates without terminal corruption.
 
 use super::buffer::OutputBuffer;
 use super::engine::RelativeFrame;
@@ -48,7 +47,7 @@ struct PackageRow {
 pub enum TableMode {
     /// Standard: Name | Version | Size | Status
     Standard,
-    /// Update: Name | Old Version → New Version | Status
+    /// Update: Name | Old Version -> New Version | Status
     Update,
 }
 
@@ -81,11 +80,9 @@ impl TableRenderer {
         items: &[(PackageName, Option<Version>, usize)],
     ) {
         buffer.hide_cursor();
-        // 1. Clear old state
         self.packages.clear();
         self.mode = TableMode::Standard;
 
-        // 2. Initialize package data
         for (name, version, depth) in items {
             let ver = version.as_ref().map_or("-", apl_schema::Version::as_str);
             self.packages.push(PackageRow {
@@ -97,15 +94,12 @@ impl TableRenderer {
             });
         }
 
-        // 3. U.S. Graphics Style: No headers, no separators. Clean whitespace.
         println!();
 
-        // 4. Initialize the Frame for the rows
         let mut frame = RelativeFrame::new(self.packages.len() as u16);
         let _ = frame.start();
         self.frame = Some(frame);
 
-        // 5. Initial render
         self.render_all(buffer);
     }
 
@@ -205,7 +199,7 @@ impl TableRenderer {
                     | PackageState::Installing { .. }
                     | PackageState::Extracting { .. }
                     | PackageState::Removing => (
-                        theme.colors.error, // Red icon (Milspec active)
+                        theme.colors.error,
                         theme.colors.package_name,
                         theme.colors.secondary, // Neutral status text
                     ),
@@ -226,45 +220,44 @@ impl TableRenderer {
                     ),
                 };
 
-                // Format status - all cases padded to fixed width to prevent flashing
+                // Size column: right-aligned in 8 chars
+                let size_text = if pkg.size > 0 {
+                    format!("{:>8}", super::theme::format_size(pkg.size))
+                } else {
+                    format!("{:>8}", "")
+                };
+
+                // Status text: bare words, padded to fixed width to prevent flashing
                 let status_text = match &pkg.state {
-                    PackageState::Pending => format!("{:<50}", "queued"),
+                    PackageState::Pending => format!("{:<30}", "queued"),
                     PackageState::Downloading { current, total } => {
                         super::progress::format_progress_status(*current, *total)
                     }
-                    PackageState::Extracting { current, .. } => {
-                        // Custom word for extraction
-                        let size_str = if *current > 0 {
-                            format!(" ({})", super::theme::format_size(*current))
-                        } else {
-                            String::new()
-                        };
-                        let msg = format!("unpacking...{size_str}");
-                        format!("{msg:<50}")
+                    PackageState::Extracting { .. } => {
+                        format!("{:<30}", "unpacking")
                     }
                     PackageState::Installing { .. } => {
-                        format!("{:<50}", "linking...")
+                        format!("{:<30}", "linking")
                     }
-                    PackageState::Removing => format!("{:<50}", "uninstalling..."),
+                    PackageState::Removing => format!("{:<30}", "removing"),
                     PackageState::Done { detail } | PackageState::Warn { detail } => {
-                        format!("{detail:<50}")
+                        format!("{detail:<30}")
                     }
                     PackageState::Failed { reason } => {
                         let msg = format!("FAILED: {reason}");
-                        format!("{msg:<50}")
+                        format!("{msg:<30}")
                     }
                 };
 
-                // Mission Control formatting: 2-space indent for top-level,
-                // +2 spaces and └─ for children.
+                // For Done state, the checkmark icon is sufficient -- no status word needed
+                let show_status = !matches!(pkg.state, PackageState::Done { .. });
+
                 let prefix = if pkg.depth > 0 {
                     format!("{:indent$}└─ ", "", indent = pkg.depth * 2)
                 } else {
                     String::new()
                 };
 
-                // Calculate visible length for padding (assuming 1-char icons/ascii)
-                // "  " (2) + prefix + icon + " " (1) + name
                 let visible_len = 2
                     + prefix.chars().count()
                     + icon_str.chars().count()
@@ -279,18 +272,30 @@ impl TableRenderer {
                     width = theme.layout.version_width
                 );
 
-                // Build line with distinct colors
-                // Note: The icon is now colored separately from the name!
-                let line = format!(
-                    "  {}{}{}{}{} {} {}",
-                    prefix,
-                    icon_str.with(icon_color),
-                    " ",
-                    pkg.name.with(name_color),
-                    padding,
-                    version_part.with(theme.colors.version),
-                    status_text.with(status_color)
-                );
+                let line = if show_status {
+                    format!(
+                        "  {}{}{}{}{} {} {} {}",
+                        prefix,
+                        icon_str.with(icon_color),
+                        " ",
+                        pkg.name.with(name_color),
+                        padding,
+                        version_part.with(theme.colors.version),
+                        size_text.with(theme.colors.secondary),
+                        status_text.with(status_color)
+                    )
+                } else {
+                    format!(
+                        "  {}{}{}{}{} {} {}",
+                        prefix,
+                        icon_str.with(icon_color),
+                        " ",
+                        pkg.name.with(name_color),
+                        padding,
+                        version_part.with(theme.colors.version),
+                        size_text.with(theme.colors.secondary),
+                    )
+                };
 
                 write!(stdout, "{line}")?;
                 Ok(())
@@ -308,7 +313,6 @@ impl TableRenderer {
         }
         buffer.show_cursor();
 
-        // U.S. Graphics: No separator, just clean whitespace
         println!();
 
         match severity {

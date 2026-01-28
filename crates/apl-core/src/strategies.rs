@@ -465,38 +465,6 @@ impl Strategy for NodeStrategy {
     }
 }
 
-/// Strategy for discovering artifacts from GitHub releases of a specific
-/// repository.
-#[derive(Debug)]
-pub struct GitHubStrategy {
-    #[allow(dead_code)]
-    owner: String,
-    #[allow(dead_code)]
-    repo: String,
-}
-
-impl GitHubStrategy {
-    /// Create a new `GitHubStrategy` targeting the given GitHub `owner` and
-    /// `repo`.
-    pub fn new(owner: String, repo: String) -> Self {
-        Self { owner, repo }
-    }
-}
-
-// ... GitHub Implementation ...
-
-#[async_trait]
-impl Strategy for GitHubStrategy {
-    async fn fetch_artifacts(
-        &self,
-        _known_versions: &HashSet<String>,
-        _cache: &mut StrategyCache,
-    ) -> Result<Vec<Artifact>> {
-        // Placeholder
-        Ok(vec![])
-    }
-}
-
 /// Strategy for discovering AWS CLI v2 artifacts by parsing the upstream
 /// changelog and downloading macOS `.pkg` installers to compute their
 /// SHA-256 checksums.

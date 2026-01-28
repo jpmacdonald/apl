@@ -14,12 +14,12 @@ use tokio::fs;
 
 pub use apl_core::Strategy;
 pub use apl_core::strategies::{
-    AwsStrategy, BuildStrategy, GitHubStrategy, GolangStrategy, HashiCorpStrategy, NodeStrategy,
+    AwsStrategy, BuildStrategy, GolangStrategy, HashiCorpStrategy, NodeStrategy,
 };
 
 use apl_core::indexer::hydrate_from_source;
 use apl_core::package::{PackageInfoTemplate, PackageTemplate};
-use apl_schema::index::VersionInfo;
+use apl_schema::Arch;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -39,37 +39,74 @@ struct Args {
     /// Dry run mode (don't upload to R2)
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+
+    /// Restrict builds to a single architecture (arm64 or x86_64).
+    /// By default, builds for all supported architectures on the host.
+    #[arg(long)]
+    arch: Option<Arch>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // Determine which architectures to build for.
+    let target_archs: Vec<Arch> = if let Some(arch) = args.arch {
+        vec![arch]
+    } else {
+        let mut archs = vec![Arch::current()];
+        // On Apple Silicon, probe Rosetta 2 for x86_64 cross-compilation.
+        if Arch::current() == Arch::Arm64 {
+            let rosetta_ok = std::process::Command::new("arch")
+                .args(["-x86_64", "/usr/bin/true"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if rosetta_ok {
+                archs.push(Arch::X86_64);
+                println!("Rosetta 2 detected -- enabling x86_64 cross-builds.");
+            } else {
+                println!("Rosetta 2 not available -- building arm64 only.");
+            }
+        }
+        archs
+    };
+    println!(
+        "Target architectures: {}",
+        target_archs
+            .iter()
+            .map(Arch::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
     // Create output directory
     fs::create_dir_all(&args.output_dir).await?;
 
-    // Initialize R2 Operator
+    // Initialize R2 operator. In dry-run mode the store is optional since
+    // no uploads or remote reads are performed.
     let mut builder = S3::default();
 
-    // Use env vars if present, otherwise fall back to internal defaults (or empty)
-    if let Ok(bucket) = std::env::var("APL_ARTIFACT_STORE_BUCKET") {
-        builder.bucket(&bucket);
-    } else {
-        builder.bucket("apl-store");
-    }
-
-    if let Ok(endpoint) = std::env::var("APL_ARTIFACT_STORE_ENDPOINT") {
-        builder.endpoint(&endpoint);
-    } else {
-        builder.endpoint("https://b32f5efef56e1b61c8ef5a2c77f07fbb.r2.cloudflarestorage.com");
-    }
-
-    if let Ok(access_key) = std::env::var("APL_ARTIFACT_STORE_ACCESS_KEY") {
-        builder.access_key_id(&access_key);
-    }
-
-    if let Ok(secret_key) = std::env::var("APL_ARTIFACT_STORE_SECRET_KEY") {
-        builder.secret_access_key(&secret_key);
+    if !args.dry_run {
+        builder.bucket(
+            &std::env::var("APL_ARTIFACT_STORE_BUCKET")
+                .context("APL_ARTIFACT_STORE_BUCKET must be set")?,
+        );
+        builder.endpoint(
+            &std::env::var("APL_ARTIFACT_STORE_ENDPOINT")
+                .context("APL_ARTIFACT_STORE_ENDPOINT must be set")?,
+        );
+        builder.access_key_id(
+            &std::env::var("APL_ARTIFACT_STORE_ACCESS_KEY")
+                .context("APL_ARTIFACT_STORE_ACCESS_KEY must be set")?,
+        );
+        builder.secret_access_key(
+            &std::env::var("APL_ARTIFACT_STORE_SECRET_KEY")
+                .context("APL_ARTIFACT_STORE_SECRET_KEY must be set")?,
+        );
     }
 
     builder.region("auto");
@@ -162,7 +199,7 @@ async fn main() -> Result<()> {
 
             println!("\n[Layer] Processing port: {port_name}");
 
-            if let Err(e) = process_port(&args, &op, manifest, &index).await {
+            if let Err(e) = process_port(&args, &op, manifest, &index, &target_archs).await {
                 eprintln!("  ERROR processing {port_name}: {e:#}");
                 failed_ports.push(port_name.to_string());
             }
@@ -180,14 +217,15 @@ async fn process_port(
     op: &Operator,
     manifest: &PortManifest,
     index: &apl_schema::PackageIndex,
+    target_archs: &[Arch],
 ) -> Result<()> {
     let port_name = &manifest.package.name;
 
     // Instantiate the discovery strategy from the manifest config.
     let strategy: Box<dyn Strategy> = match &manifest.package.config {
         PortConfig::HashiCorp { product } => Box::new(HashiCorpStrategy::new(product.clone())),
-        PortConfig::GitHub { owner, repo } => {
-            Box::new(GitHubStrategy::new(owner.clone(), repo.clone()))
+        PortConfig::GitHub { .. } => {
+            anyhow::bail!("GitHub port strategy is not implemented -- use a Build port instead");
         }
         PortConfig::Golang => Box::new(GolangStrategy),
         PortConfig::Node => Box::new(NodeStrategy),
@@ -203,7 +241,7 @@ async fn process_port(
         }
     };
 
-    // -- 1. Fetch existing index for incremental updates ---------------
+    // Fetch existing index for incremental updates
     let r2_path = format!("ports/{port_name}/index.json");
     let cache_path = format!("ports/{port_name}/cache.json");
 
@@ -218,17 +256,17 @@ async fn process_port(
         Vec::new()
     };
 
-    // -- 1b. Load cache ------------------------------------------------
+    // Load strategy cache
     let mut cache: apl_core::strategies::StrategyCache =
         fetch_cache(op, &cache_path).await.unwrap_or_default();
 
-    // -- 2. Build known versions set -----------------------------------
+    // Build known versions set
     let known_versions: std::collections::HashSet<String> = existing_artifacts
         .iter()
         .map(|a| a.version.clone())
         .collect();
 
-    // -- 3. Execute strategy with known versions and cache -------------
+    // Execute strategy with known versions and cache
     let raw_artifacts = strategy
         .fetch_artifacts(&known_versions, &mut cache)
         .await?;
@@ -242,11 +280,6 @@ async fn process_port(
 
     for art in raw_artifacts {
         if art.arch == "source" {
-            println!(
-                "  [BFS] Building {} v{} from source...",
-                art.name, art.version
-            );
-
             let mut template = PackageTemplate {
                 package: PackageInfoTemplate {
                     name: apl_core::types::PackageName::from(art.name.as_str()),
@@ -278,32 +311,55 @@ async fn process_port(
                 template.dependencies.build.clone_from(&spec.dependencies);
             }
 
-            let version_info: VersionInfo = hydrate_from_source(
-                &client,
-                &template,
-                &art.version,
-                &art.version,
-                template.build.as_ref().unwrap(),
-                &store,
-                index,
-            )
-            .await?;
+            // Build for each target architecture independently.
+            // Per-arch failures are logged but do not block other archs.
+            for &arch in target_archs {
+                println!(
+                    "  [BFS] Building {} v{} ({})...",
+                    art.name,
+                    art.version,
+                    arch.as_str()
+                );
 
-            for bin in version_info.binaries {
-                artifacts.push(Artifact {
-                    name: art.name.clone(),
-                    version: art.version.clone(),
-                    arch: bin.arch.to_string(),
-                    url: bin.url,
-                    sha256: bin.hash.to_string(),
-                });
+                match hydrate_from_source(
+                    &client,
+                    &template,
+                    &art.version,
+                    &art.version,
+                    template.build.as_ref().unwrap(),
+                    &store,
+                    index,
+                    arch,
+                )
+                .await
+                {
+                    Ok(version_info) => {
+                        for bin in version_info.binaries {
+                            artifacts.push(Artifact {
+                                name: art.name.clone(),
+                                version: art.version.clone(),
+                                arch: bin.arch.to_string(),
+                                url: bin.url,
+                                sha256: bin.hash.to_string(),
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  WARN: {} v{} ({}) build failed: {e:#}",
+                            art.name,
+                            art.version,
+                            arch.as_str()
+                        );
+                    }
+                }
             }
         } else {
             artifacts.push(art);
         }
     }
 
-    // -- 4. Validate new artifacts -------------------------------------
+    // Validate new artifacts
     let mut error_count = 0;
     for artifact in &artifacts {
         if let Err(e) = artifact.validate() {
@@ -334,7 +390,7 @@ async fn process_port(
         );
     }
 
-    // -- 5. Merge & deduplicate ----------------------------------------
+    // Merge and deduplicate
     // Key: (version, arch, sha256). New artifacts win on collision.
     let mut merged_map = std::collections::HashMap::new();
 
@@ -355,7 +411,7 @@ async fn process_port(
         final_artifacts.len()
     );
 
-    // -- 6. Serialize and upload ---------------------------------------
+    // Serialize and upload
     let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
     let cache_json = serde_json::to_vec_pretty(&cache)?;
 

@@ -27,7 +27,7 @@ pub async fn remove(
             use std::io::Write;
             println!();
             print!(
-                "  ⚠ {} This will remove all installed packages. Continue? (y/N) ",
+                "  {} This will remove all installed packages. Continue? (y/N) ",
                 "WARNING:".bold().red()
             );
             std::io::stdout().flush()?;

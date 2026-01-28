@@ -37,6 +37,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
 
+use apl_schema::Arch;
+
 use crate::sysroot::Sysroot;
 
 /// Minimum macOS version we target. Ventura (13.0) is the baseline: it is the
@@ -114,6 +116,7 @@ impl<'a> Builder<'a> {
     /// Returns an error if any mount operation fails, the build script
     /// exits with a non-zero status, or the output cannot be moved to
     /// `output_path`.
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         &self,
         source_path: &Path,
@@ -122,13 +125,14 @@ impl<'a> Builder<'a> {
         output_path: &Path,
         verbose: bool,
         log_path: &Path,
+        target_arch: Option<Arch>,
     ) -> Result<()> {
         let sysroot_path = self.sysroot.path().canonicalize()?;
 
-        // -- 1. Mount source tree ------------------------------------------
+        // Mount source tree
         self.sysroot.mount(source_path, Path::new("src"))?;
 
-        // -- 2. Mount dependencies & collect search paths -------------------
+        // Mount dependencies and collect compiler/linker search paths
         let deps_dir = sysroot_path.join("deps");
         let mut include_paths: Vec<String> = Vec::new();
         let mut library_paths: Vec<String> = Vec::new();
@@ -162,16 +166,16 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // -- 3. Prepare install destination --------------------------------
+        // Prepare install destination
         let install_abs = sysroot_path.join("usr/local");
         std::fs::create_dir_all(&install_abs)?;
 
-        // -- 4. Ensure log directory exists --------------------------------
+        // Ensure log directory exists
         if let Some(parent) = log_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        // -- 5. Construct hermetic PATH ------------------------------------
+        // Construct hermetic PATH
         // Only system toolchain directories. Xcode CLT is added when present
         // so that `xcrun`, `dsymutil`, and similar Apple tools are available.
         let mut path_dirs = vec![
@@ -193,18 +197,35 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // -- 6. Build the command ------------------------------------------
-        // On macOS, we wrap the execution in `sandbox-exec` to ensure
-        // process-level hermeticity (no network, restricted FS access).
+        // Default to host architecture when no explicit target is given.
+        let resolved_arch = target_arch.unwrap_or_else(Arch::current);
+
+        // Cross-compilation: Arm64 host targeting x86_64 via Rosetta 2.
+        let cross_x86 = cfg!(target_arch = "aarch64") && resolved_arch == Arch::X86_64;
+
+        // Build the command
+        // On macOS, wrap in `sandbox-exec` for process-level hermeticity.
+        // For cross-compilation, prepend `arch -x86_64` so Rosetta 2
+        // translates the build process and all spawned children.
         let mut cmd = if cfg!(target_os = "macos") {
             let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
             let profile = SANDBOX_PROFILE
                 .replace("{SYSROOT}", &sysroot_path.to_string_lossy())
                 .replace("{USER}", &current_user);
 
-            let mut c = Command::new("sandbox-exec");
-            c.arg("-p").arg(profile).arg("/bin/sh");
-            c
+            if cross_x86 {
+                let mut c = Command::new("arch");
+                c.arg("-x86_64")
+                    .arg("sandbox-exec")
+                    .arg("-p")
+                    .arg(profile)
+                    .arg("/bin/sh");
+                c
+            } else {
+                let mut c = Command::new("sandbox-exec");
+                c.arg("-p").arg(profile).arg("/bin/sh");
+                c
+            }
         } else {
             Command::new("/bin/sh")
         };
@@ -223,7 +244,7 @@ impl<'a> Builder<'a> {
             // Toolchain
             .env("CC", "clang")
             .env("CXX", "clang++")
-            .env("ARCH", std::env::consts::ARCH)
+            .env("ARCH", resolved_arch.rust_name())
             // Install paths
             .env("PREFIX", &install_abs)
             .env("OUTPUT", &install_abs)
@@ -307,7 +328,7 @@ impl<'a> Builder<'a> {
             anyhow::bail!("Build script failed with exit code: {:?}", status.code());
         }
 
-        // -- 7. Extract output ---------------------------------------------
+        // Extract output
         if output_path.exists() {
             std::fs::remove_dir_all(output_path)?;
         }
@@ -317,7 +338,7 @@ impl<'a> Builder<'a> {
             copy_dir_all(&install_abs, output_path)?;
         }
 
-        // -- 8. Fix absolute symlinks -----------------------------------------
+        // Fix absolute symlinks
         // Build scripts (e.g. bzip2, openssl) often create absolute symlinks
         // pointing into $PREFIX. After the rename/copy above, these point to the
         // old sysroot path and are dangling. Convert them to portable relative
@@ -496,6 +517,7 @@ mod tests {
             out_tmp.path(),
             false,
             &log_tmp,
+            None,
         );
 
         // Verify that dependency was mounted correctly

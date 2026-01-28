@@ -114,25 +114,23 @@ pub struct Layout {
     pub version_width: usize,
     /// Width allocated for size column
     pub size_width: usize,
-    /// Rigid padding for Mission Control phases (col 41 starts at +40)
+    /// Rigid padding for phase label alignment
     pub phase_padding: usize,
 }
 
 impl Default for Layout {
     fn default() -> Self {
-        // Mission Control Style: Cold, hardened precision.
-        // Rigid Column 41 alignment for values.
         Self {
             col_status: 0,
             col_name: 4,
-            col_version: 30,
-            col_size: 41,
-            col_progress: 52,
-            table_width: 100,
-            name_width: 28,
+            col_version: 24,
+            col_size: 35,
+            col_progress: 46,
+            table_width: 80,
+            name_width: 20,
             version_width: 12,
             size_width: 10,
-            phase_padding: 40,
+            phase_padding: 34,
         }
     }
 }
@@ -186,6 +184,6 @@ mod tests {
         let theme = Theme::default();
         assert_eq!(theme.icons.success, "✓");
         assert_eq!(theme.icons.error, "✗");
-        assert_eq!(theme.layout.table_width, 100);
+        assert_eq!(theme.layout.table_width, 80);
     }
 }

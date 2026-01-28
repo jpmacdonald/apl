@@ -298,8 +298,8 @@ fn process_event(
             action,
             elapsed_secs,
         } => {
-            let operation = action.to_uppercase();
-            let msg = format!("{operation} COMPLETE {count}, elapsed {elapsed_secs:.1}s");
+            let plural = if count == 1 { "" } else { "s" };
+            let msg = format!("  {count} package{plural} {action} in {elapsed_secs:.1}s");
             table.print_plain(buffer, &msg);
         }
         UiEvent::Sync(tx) => {
