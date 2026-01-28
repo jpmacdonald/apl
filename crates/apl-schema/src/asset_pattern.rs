@@ -69,16 +69,21 @@ impl AssetPattern {
     pub fn from_filename(filename: &str) -> Self {
         let f = filename.to_lowercase();
 
-        let os = if f.contains("macos") || f.contains("apple") || f.contains("-mac") || f.contains("_mac") || f.ends_with("mac") {
+        let os = if f.contains("macos")
+            || f.contains("apple")
+            || f.contains("-mac")
+            || f.contains("_mac")
+            || f.ends_with("mac")
+        {
             Some(OsVariant::MacOS)
         } else if f.contains("darwin") {
             Some(OsVariant::Darwin)
         } else if f.contains("osx") {
             Some(OsVariant::Osx)
         } else if f.contains("linux") {
-             Some(OsVariant::Linux)
+            Some(OsVariant::Linux)
         } else if f.contains("windows") || f.contains("win") {
-             Some(OsVariant::Windows)
+            Some(OsVariant::Windows)
         } else {
             None
         };
@@ -116,7 +121,7 @@ impl AssetPattern {
     /// Construct a pattern from a target triple string (e.g. "arm64-macos").
     pub fn from_target(target: &str) -> Self {
         let t = target.to_lowercase();
-        
+
         let os = if t.contains("macos") || t.contains("darwin") {
             Some(OsVariant::MacOS)
         } else if t.contains("linux") {
@@ -135,7 +140,11 @@ impl AssetPattern {
             None
         };
 
-        Self { os, arch, ext: None }
+        Self {
+            os,
+            arch,
+            ext: None,
+        }
     }
 
     /// Check if this pattern is semantically equivalent to another.
@@ -146,9 +155,9 @@ impl AssetPattern {
             (Some(o1), Some(o2)) => matches!(
                 (o1, o2),
                 (
-                        OsVariant::MacOS | OsVariant::Darwin | OsVariant::Osx,
-                        OsVariant::MacOS | OsVariant::Darwin | OsVariant::Osx,
-                    ) | (OsVariant::Linux, OsVariant::Linux)
+                    OsVariant::MacOS | OsVariant::Darwin | OsVariant::Osx,
+                    OsVariant::MacOS | OsVariant::Darwin | OsVariant::Osx,
+                ) | (OsVariant::Linux, OsVariant::Linux)
                     | (OsVariant::Windows, OsVariant::Windows)
             ),
             (None, None) => true,
@@ -161,12 +170,12 @@ impl AssetPattern {
             (Some(a1), Some(a2)) => matches!(
                 (a1, a2),
                 (
-                        ArchVariant::Arm64 | ArchVariant::Aarch64,
-                        ArchVariant::Arm64 | ArchVariant::Aarch64,
-                    ) | (
-                        ArchVariant::X86_64 | ArchVariant::Amd64,
-                        ArchVariant::X86_64 | ArchVariant::Amd64,
-                    )
+                    ArchVariant::Arm64 | ArchVariant::Aarch64,
+                    ArchVariant::Arm64 | ArchVariant::Aarch64,
+                ) | (
+                    ArchVariant::X86_64 | ArchVariant::Amd64,
+                    ArchVariant::X86_64 | ArchVariant::Amd64,
+                )
             ),
             (Some(_) | None, None) => true, // Treat missing arch in candidate as Universal match
             _ => false,

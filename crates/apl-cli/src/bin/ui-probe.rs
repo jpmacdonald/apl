@@ -2,7 +2,7 @@
 #![allow(missing_docs)]
 
 use apl_cli::ui::buffer::OutputBuffer;
-use apl_cli::ui::list::{print_list_header, print_list_row, print_list_footer};
+use apl_cli::ui::list::{print_list_footer, print_list_header, print_list_row};
 
 fn main() {
     let mut buffer = OutputBuffer::default();

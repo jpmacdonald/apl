@@ -126,7 +126,6 @@ mod tests {
         let url = "https://github.com/sharkdp/fd/releases/download/v10.2.0/fd-v10.2.0.tar.gz";
         let (_, assets) = analyze_upstream_url(url).unwrap();
 
-
         assert!(assets.select.contains_key("arm64-macos"));
         assert!(assets.select.contains_key("x86_64-macos"));
     }

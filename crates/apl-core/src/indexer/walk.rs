@@ -15,10 +15,12 @@ use std::path::{Path, PathBuf};
 pub fn walk_registry_toml_files(registry_dir: &Path) -> Result<Box<dyn Iterator<Item = PathBuf>>> {
     // Check for sharded layout (directories like "1", "aa", "ab", etc.)
     let is_sharded = registry_dir.join("1").exists()
-        || fs::read_dir(registry_dir)?.filter_map(std::result::Result::ok).any(|e| {
-            let path = e.path();
-            path.is_dir() && path.file_name().is_some_and(|n| n.len() == 2)
-        });
+        || fs::read_dir(registry_dir)?
+            .filter_map(std::result::Result::ok)
+            .any(|e| {
+                let path = e.path();
+                path.is_dir() && path.file_name().is_some_and(|n| n.len() == 2)
+            });
 
     if is_sharded {
         let registry_dir = registry_dir.to_path_buf();

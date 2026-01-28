@@ -1,7 +1,7 @@
 //! History command
 
-use anyhow::{Context, Result};
 use crate::db::StateDb;
+use anyhow::{Context, Result};
 use chrono::DateTime;
 
 pub fn history(pkg_name: &str) -> Result<()> {

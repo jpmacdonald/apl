@@ -1,7 +1,7 @@
 //! Status command to check for updates and health
-use apl_core::paths::apl_home;
 use crate::db::StateDb;
 use anyhow::{Context, Result};
+use apl_core::paths::apl_home;
 use apl_schema::index::PackageIndex;
 use apl_schema::types::{PackageName, Version};
 
@@ -18,16 +18,14 @@ pub fn status() -> Result<()> {
     // 2. Index info
     let index_path = apl_home().join("index");
     let index_meta = std::fs::metadata(&index_path).ok();
-    let index_date = index_meta
-        .and_then(|m| m.modified().ok())
-        .map_or_else(
-            || "unknown".to_string(),
-            |t| {
-                chrono::DateTime::<chrono::Local>::from(t)
-                    .format("%Y-%m-%d")
-                    .to_string()
-            },
-        );
+    let index_date = index_meta.and_then(|m| m.modified().ok()).map_or_else(
+        || "unknown".to_string(),
+        |t| {
+            chrono::DateTime::<chrono::Local>::from(t)
+                .format("%Y-%m-%d")
+                .to_string()
+        },
+    );
 
     let index = if index_path.exists() {
         PackageIndex::load(&index_path).ok()

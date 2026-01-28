@@ -1,9 +1,9 @@
 //! Upgrade command - upgrade installed packages to latest versions
 
+use crate::index::PackageIndex;
 use anyhow::Result;
 use apl_core::paths::apl_home;
 use apl_schema::version::is_newer;
-use crate::index::PackageIndex;
 
 /// Upgrade installed packages
 pub async fn upgrade(packages: &[String], skip_confirm: bool, dry_run: bool) -> Result<()> {

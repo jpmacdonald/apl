@@ -3,9 +3,9 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 
-use apl_core::paths::apl_home;
 use crate::ops::flow::UnresolvedPackage;
 use crate::ui::Output;
+use apl_core::paths::apl_home;
 use apl_schema::types::PackageName;
 
 /// Run a package transiently without global installation

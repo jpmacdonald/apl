@@ -1,7 +1,7 @@
 //! Clean command (garbage collection)
 
-use anyhow::Result;
 use crate::ui::Output;
+use anyhow::Result;
 
 /// Garbage collect orphaned files
 pub fn clean(dry_run: bool) -> Result<()> {

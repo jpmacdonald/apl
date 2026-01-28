@@ -25,13 +25,7 @@ pub fn print_list_header(buffer: &mut OutputBuffer) {
 }
 
 /// Print a single row for `apl list`
-pub fn print_list_row(
-    buffer: &mut OutputBuffer,
-    name: &str,
-    version: &str,
-    size: u64,
-    date: &str,
-) {
+pub fn print_list_row(buffer: &mut OutputBuffer, name: &str, version: &str, size: u64, date: &str) {
     let theme = Theme::default();
 
     let name_part = format!("{:<width$}", name, width = theme.layout.name_width);
@@ -79,12 +73,7 @@ pub fn print_search_header(buffer: &mut OutputBuffer) {
 }
 
 /// Print a single row for `apl search`
-pub fn print_search_row(
-    buffer: &mut OutputBuffer,
-    name: &str,
-    version: &str,
-    description: &str,
-) {
+pub fn print_search_row(buffer: &mut OutputBuffer, name: &str, version: &str, description: &str) {
     let theme = Theme::default();
 
     let name_part = format!("{:<width$}", name, width = theme.layout.name_width);

@@ -1,7 +1,7 @@
 //! Rollback command
 
-use anyhow::{Context, Result, bail};
 use crate::db::StateDb;
+use anyhow::{Context, Result, bail};
 // use crate::ui::Output; // Not needed if switch handles output
 
 /// Rollback a package to its previous state

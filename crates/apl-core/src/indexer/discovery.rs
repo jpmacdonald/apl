@@ -44,8 +44,8 @@ pub async fn resolve_digest(
         }
     }
 
-    let re = SHA256_REGEX
-        .get_or_init(|| regex::Regex::new(r"[0-9a-fA-F]{64}").expect("Invalid regex"));
+    let re =
+        SHA256_REGEX.get_or_init(|| regex::Regex::new(r"[0-9a-fA-F]{64}").expect("Invalid regex"));
 
     // Look for checksum assets in the release
     for asset in &release.assets {
@@ -265,11 +265,7 @@ pub fn auto_parse_version(tag: &str) -> Option<String> {
 
     // Try Sequential (r40, build-123 - has a leading non-digit prefix)
     // Only use if the tag starts with non-digit characters
-    if tag
-        .chars()
-        .next()
-        .is_some_and(|c| !c.is_ascii_digit())
-    {
+    if tag.chars().next().is_some_and(|c| !c.is_ascii_digit()) {
         if let Some(v) = parse_version_by_type(tag, &VersionType::Sequential) {
             return Some(v);
         }

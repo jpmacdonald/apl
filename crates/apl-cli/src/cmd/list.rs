@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
 use crate::db::StateDb;
-use apl_schema::types::{PackageName, Version};
 use crate::ui::list::{print_list_footer, print_list_header, print_list_row};
+use anyhow::{Context, Result};
+use apl_schema::types::{PackageName, Version};
 
 /// List all installed packages
 pub fn list() -> Result<()> {

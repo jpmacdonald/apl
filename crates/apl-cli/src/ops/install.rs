@@ -546,8 +546,10 @@ fn perform_app_install(pkg: PreparedPackage) -> Result<InstallInfo, InstallError
         InstallError::Validation("type='app' requires [install] app='Name.app'".to_string())
     })?;
 
-    let applications_dir = dirs::home_dir()
-        .map_or_else(|| PathBuf::from("/Applications"), |h| h.join("Applications"));
+    let applications_dir = dirs::home_dir().map_or_else(
+        || PathBuf::from("/Applications"),
+        |h| h.join("Applications"),
+    );
     std::fs::create_dir_all(&applications_dir).map_err(InstallError::Io)?;
 
     let (_mount, search_path) = if pkg

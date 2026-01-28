@@ -93,10 +93,10 @@ pub async fn self_update(dry_run: bool) -> Result<()> {
         .context("No compatible binary found for your platform")?;
 
     // Prefer mirror URL (CAS)
-    let download_url = index
-        .mirror_base_url
-        .as_ref()
-        .map_or_else(|| binary.url.clone(), |base| format!("{}/cas/{}", base, binary.hash));
+    let download_url = index.mirror_base_url.as_ref().map_or_else(
+        || binary.url.clone(),
+        |base| format!("{}/cas/{}", base, binary.hash),
+    );
 
     // Download the binary to a temporary file
     let tmp_dir = tempfile::tempdir().context("Failed to create temporary directory")?;

@@ -1,11 +1,11 @@
 //! Info command
 
-use anyhow::{Context, Result, bail};
-use apl_core::paths::apl_home;
 use crate::db::StateDb;
 use crate::index::PackageIndex;
-use apl_schema::types::PackageName;
 use crate::ui::theme::format_size;
+use anyhow::{Context, Result, bail};
+use apl_core::paths::apl_home;
+use apl_schema::types::PackageName;
 use crossterm::style::Stylize;
 
 /// Show info about a specific package

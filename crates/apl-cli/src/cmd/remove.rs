@@ -1,7 +1,7 @@
 //! Remove command
-use anyhow::{Context, Result};
 use crate::db::StateDb;
 use crate::ui::Output;
+use anyhow::{Context, Result};
 use crossterm::style::Stylize;
 
 /// Remove one or more packages
