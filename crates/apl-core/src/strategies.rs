@@ -351,8 +351,7 @@ impl Strategy for GolangStrategy {
                 if valid {
                     if file.sha256.is_empty() {
                         eprintln!(
-                            "    [WARN] Skipping {} v{} ({}) - Missing SHA256",
-                            "go", version, apl_arch
+                            "    [WARN] Skipping go v{version} ({apl_arch}) - Missing SHA256"
                         );
                         continue;
                     }
@@ -728,6 +727,11 @@ impl BuildStrategy {
     /// `source_url` (must be a GitHub URL), optional `tag_pattern` for
     /// extracting version strings from tags, and a `BuildSpec` describing
     /// how to compile the package.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `GITHUB_TOKEN` environment variable contains characters
+    /// that cannot be represented as an HTTP header value.
     pub fn new(
         name: String,
         source_url: String,
@@ -738,7 +742,7 @@ impl BuildStrategy {
         if let Ok(token) = std::env::var("GITHUB_TOKEN") {
             headers.insert(
                 reqwest::header::AUTHORIZATION,
-                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {token}")).unwrap(),
             );
         }
 

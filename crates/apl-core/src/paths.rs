@@ -12,9 +12,11 @@ pub fn try_apl_home() -> Option<PathBuf> {
 /// Returns the canonical APL home directory (`~/.apl`).
 ///
 /// # Panics
-/// Panics if the home directory cannot be determined.
+///
+/// Panics if neither `APL_HOME` is set nor the user's home directory can be
+/// resolved. On macOS this should never happen in normal use.
 pub fn apl_home() -> PathBuf {
-    try_apl_home().expect("Could not determine home directory")
+    try_apl_home().expect("Could not determine home directory. Set APL_HOME to override.")
 }
 
 /// `SQLite` database path: ~/.apl/state.db

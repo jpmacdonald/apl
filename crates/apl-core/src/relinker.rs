@@ -163,9 +163,8 @@ impl Relinker {
     /// Checks if a file is a Mach-O binary (magic bytes).
     fn is_macho(path: &Path) -> bool {
         use std::io::Read;
-        let mut f = match std::fs::File::open(path) {
-            Ok(f) => f,
-            Err(_) => return false,
+        let Ok(mut f) = std::fs::File::open(path) else {
+            return false;
         };
         let mut magic = [0u8; 4];
         if f.read_exact(&mut magic).is_err() {
@@ -174,10 +173,8 @@ impl Relinker {
         // feedface, feedfacf, cafebabe (universal) - and their LE/BE variants
         matches!(
             magic,
-            [0xfe, 0xed, 0xfa, 0xce]
-                | [0xfe, 0xed, 0xfa, 0xcf]
-                | [0xcf, 0xfa, 0xed, 0xfe]
-                | [0xce, 0xfa, 0xed, 0xfe]
+            [0xfe, 0xed, 0xfa, 0xce | 0xcf]
+                | [0xcf | 0xce, 0xfa, 0xed, 0xfe]
                 | [0xca, 0xfe, 0xba, 0xbe]
         )
     }

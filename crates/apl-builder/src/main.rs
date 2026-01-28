@@ -40,7 +40,7 @@ struct Args {
     #[arg(long, default_value_t = false)]
     dry_run: bool,
 
-    /// Restrict builds to a single architecture (arm64 or x86_64).
+    /// Restrict builds to a single architecture (arm64 or `x86_64`).
     /// By default, builds for all supported architectures on the host.
     #[arg(long)]
     arch: Option<Arch>,
@@ -144,7 +144,7 @@ async fn main() -> Result<()> {
         if let PortConfig::Build { spec, .. } = &manifest.package.config {
             println!("  Port: {}, Deps: {:?}", name, spec.dependencies);
         } else {
-            println!("  Port: {} (not a build strategy)", name);
+            println!("  Port: {name} (not a build strategy)");
         }
     }
 
