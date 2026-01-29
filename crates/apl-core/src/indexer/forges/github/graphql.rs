@@ -148,7 +148,7 @@ pub async fn fetch_batch_releases(
                     // Check for "couldn't respond in time" in the body even if status is 200 (GraphQL quirk)
                     if text.contains("couldn't respond to your request in time") {
                         if attempt < 3 {
-                            println!("   WARN: GitHub timeout, retrying ({attempt}/3)...");
+                            eprintln!("    github timeout, retrying ({attempt}/3)");
                             tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt))
                                 .await;
                             continue;
@@ -166,7 +166,7 @@ pub async fn fetch_batch_releases(
                     if let Some(ref errors) = raw_body.errors {
                         if !errors.is_empty() {
                             for err in errors {
-                                println!("   WARN: GraphQL Error: {}", err.message);
+                                eprintln!("    graphql error: {}", err.message);
                             }
                         }
                     }
@@ -210,12 +210,12 @@ pub async fn fetch_batch_releases(
                             }
                             Some(None) => {
                                 eprintln!(
-                                    "   WARN: Repo found but data is null: {key} (alias: {alias})"
+                                    "    repo found but data is null: {key} (alias: {alias})"
                                 );
                             }
                             None => {
                                 eprintln!(
-                                    "   WARN: Repo missing from response: {key} (alias: {alias})"
+                                    "    repo missing from response: {key} (alias: {alias})"
                                 );
                             }
                         }
@@ -223,7 +223,7 @@ pub async fn fetch_batch_releases(
                     return Ok(result);
                 } else if resp.status().is_server_error() && attempt < 3 {
                     eprintln!(
-                        "   WARN: GitHub server error {}, retrying ({attempt}/3)...",
+                        "    github server error {}, retrying ({attempt}/3)",
                         resp.status()
                     );
                     tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt)).await;
@@ -236,7 +236,7 @@ pub async fn fetch_batch_releases(
             }
             Err(e) => {
                 if attempt < 3 {
-                    eprintln!("   WARN: Network error: {e}, retrying ({attempt}/3)...");
+                    eprintln!("    network error: {e}, retrying ({attempt}/3)");
                     tokio::time::sleep(tokio::time::Duration::from_millis(1000 * attempt)).await;
                     continue;
                 }

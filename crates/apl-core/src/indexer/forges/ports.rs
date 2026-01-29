@@ -46,9 +46,8 @@ pub async fn fetch_releases(
 
     let entries: Vec<Artifact> = resp.json().await?;
     println!(
-        "   [INFO] Found {} remote port entries for {}",
-        entries.len(),
-        package_name
+        "    {} port entries for {package_name}",
+        entries.len()
     );
 
     // Group by version

@@ -39,10 +39,10 @@ pub async fn import_homebrew_packages(packages: &[String], registry_dir: &Path) 
     let client = reqwest::Client::new();
 
     for pkg_name in packages {
-        println!("Importing {pkg_name} from Homebrew...");
+        println!("  importing {pkg_name} from homebrew");
         match import_single_package(&client, pkg_name, registry_dir).await {
-            Ok(()) => println!("   OK: Imported {pkg_name}"),
-            Err(e) => eprintln!("   FAIL: Failed to import {pkg_name}: {e}"),
+            Ok(()) => println!("    imported {pkg_name}"),
+            Err(e) => eprintln!("    failed {pkg_name}: {e}"),
         }
     }
 

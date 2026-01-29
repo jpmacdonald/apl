@@ -275,7 +275,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     let owner = &captures[1];
     let repo_name = captures[2].trim_end_matches(".git");
 
-    println!("   Checking {name} ({owner}/{repo_name})...");
+    println!("  checking {name} ({owner}/{repo_name})");
 
     let release = fetch_latest_release(client, owner, repo_name).await?;
     let latest_tag_raw = &release.tag_name;
@@ -285,12 +285,12 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
         return Ok(false);
     }
 
-    println!("      New version found: {current_version} -> {latest_tag}");
+    println!("    new version: {current_version} -> {latest_tag}");
 
     let asset_discovery = find_best_asset(&release, name);
 
     if let Some((asset, _is_archive)) = asset_discovery {
-        println!("      Downloading {}...", asset.browser_download_url);
+        println!("    downloading {}", asset.browser_download_url);
         let bytes = client
             .get(&asset.browser_download_url)
             .send()
@@ -320,12 +320,12 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
             .and_then(|u| u.as_str())
         {
             if src_url.contains("/archive/refs/tags/") {
-                println!("      Source-only update detected (no binary asset found)");
+                println!("    source-only update (no binary asset found)");
                 let new_url = src_url
                     .replace(&current_version, &latest_tag)
                     .replace(&release.tag_name, latest_tag_raw); // just in case
 
-                println!("      Downloading source archive {new_url}...");
+                println!("    downloading source archive {new_url}");
                 let bytes = client.get(&new_url).send().await?.bytes().await?;
                 let hash = hex::encode(sha2::Sha256::digest(&bytes));
 
@@ -345,7 +345,7 @@ pub async fn update_package_definition(client: &reqwest::Client, path: &Path) ->
     }
 
     fs::write(path, doc.to_string())?;
-    println!("      Updated {}", path.display());
+    println!("    updated {}", path.display());
 
     Ok(true)
 }

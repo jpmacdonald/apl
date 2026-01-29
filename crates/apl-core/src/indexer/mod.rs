@@ -58,7 +58,7 @@ pub async fn generate_index_from_registry(
     let artifact_store: Option<Arc<ArtifactStore>> = get_artifact_store().await;
 
     if artifact_store.is_some() {
-        println!("   Artifact Store enabled (will mirror to R2)");
+        println!("  artifact store enabled (mirroring to r2)");
     }
 
     // Phase 0: Load existing index (if not forcing full rebuild)
@@ -67,19 +67,19 @@ pub async fn generate_index_from_registry(
         match PackageIndex::load(&index_path) {
             Ok(existing) => {
                 println!(
-                    "   Loaded existing index ({} packages)",
+                    "  loaded existing index ({} packages)",
                     existing.packages.len()
                 );
                 existing
             }
             Err(e) => {
-                eprintln!("   Failed to load existing index: {e}. Rebuilding from scratch.");
+                eprintln!("  failed to load existing index: {e}, rebuilding from scratch");
                 PackageIndex::new()
             }
         }
     } else {
         if force_full {
-            println!("   Force full rebuild requested.");
+            println!("  force full rebuild requested");
         }
         PackageIndex::new()
     };
@@ -93,14 +93,13 @@ pub async fn generate_index_from_registry(
 
     // Print header
     println!();
-    println!("REGENERATING INDEX");
+    println!("  regenerating index");
     if force_full {
-        println!("FORCE FULL REBUILD");
+        println!("  force full rebuild");
     }
     println!();
 
-    // Phases for Mission Control
-    println!("Phase 1: Discovering sources...");
+    println!("  discovering sources");
 
     // Phase 1: Discovery
     let toml_files: Vec<_> = walk_registry_toml_files(registry_dir)?.collect();
@@ -171,7 +170,7 @@ pub async fn generate_index_from_registry(
         templates.push((template_path, template));
     }
     println!(
-        "Phase 1: Complete - {} github sources, {} ports found",
+        "  {} github sources, {} ports",
         github_repos.len(),
         ports_repos.len()
     );
@@ -243,10 +242,10 @@ pub async fn generate_index_from_registry(
         dirty_repos.clone_from(&github_repos);
     }
 
-    // Phase 2: Metadata Fetching (parallelized)
+    // Metadata fetching (parallelized)
     let mut master_release_cache: HashMap<String, Vec<ReleaseInfo>> = HashMap::new();
     let total_dirty = dirty_repos.len();
-    println!("Phase 2: Fetching metadata for {total_dirty} repositories...");
+    println!("  fetching metadata for {total_dirty} repositories");
 
     if !dirty_repos.is_empty() {
         let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
@@ -255,32 +254,21 @@ pub async fn generate_index_from_registry(
         // Create chunks and process them concurrently
         let chunks: Vec<Vec<RepoKey>> = dirty_repos.chunks(4).map(<[RepoKey]>::to_vec).collect();
 
-        let total_chunks = chunks.len();
-        let processed_chunks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-
         let results: Vec<
             Result<HashMap<RepoKey, Vec<forges::github::GithubRelease>>, anyhow::Error>,
-        > = fstream::iter(chunks.into_iter().enumerate())
-            .map(|(_chunk_idx, chunk)| {
+        > = fstream::iter(chunks)
+            .map(|chunk| {
                 let client = client.clone();
                 let token = token.clone();
-                let processed = processed_chunks.clone();
                 async move {
                     let result =
                         forges::github::graphql::fetch_batch_releases(&client, &token, &chunk)
                             .await;
-                    let done = processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                    // Print progress for each completed batch
                     let repos_str: Vec<_> = chunk
                         .iter()
                         .map(|k| format!("{}/{}", k.owner, k.repo))
                         .collect();
-                    println!(
-                        "   [{}/{}] Fetched: {}",
-                        done,
-                        total_chunks,
-                        repos_str.join(", ")
-                    );
+                    println!("    {}", repos_str.join(", "));
                     result
                 }
             })
@@ -332,18 +320,17 @@ pub async fn generate_index_from_registry(
         }
     }
     println!(
-        "Phase 2: Complete - {} repositories updated",
+        "  {} repositories updated",
         master_release_cache.len()
     );
 
-    // Phase 2b: Fetch Ports Metadata (Serial for now, low volume)
+    // Fetch ports metadata
     if !ports_repos.is_empty() {
         let bucket_url =
             std::env::var("APL_R2_BUCKET_URL").unwrap_or_else(|_| "https://apl.pub".to_string());
         println!(
-            "Phase 2b: Fetching metadata for {} ports from {}...",
-            ports_repos.len(),
-            bucket_url
+            "  fetching metadata for {} ports from {bucket_url}",
+            ports_repos.len()
         );
 
         for port_name in &ports_repos {
@@ -353,7 +340,7 @@ pub async fn generate_index_from_registry(
                     master_release_cache.insert(source_key, releases);
                 }
                 Err(e) => {
-                    println!("   Failed to fetch port {port_name}: {e}");
+                    println!("    failed to fetch port {port_name}: {e}");
                 }
             }
         }
@@ -399,8 +386,7 @@ pub async fn generate_index_from_registry(
         .map(|(p, t)| (t.package.name.clone(), (p.clone(), t.clone())))
         .collect();
 
-    // Phase 3: Processing
-    println!("Phase 3: Processing packages...");
+    println!("  processing packages");
 
     let pkg_source_map = Arc::new(pkg_source_map);
     let master_release_cache = Arc::new(master_release_cache);
@@ -605,22 +591,15 @@ pub async fn generate_index_from_registry(
                 });
             }
 
-            // Always print per-package progress
-            // Aligned UI Output: [S/T] pkg_name  (status)
-            let status_msg = if !errors.is_empty() && success_count == 0 {
-                let human_err = humanize_error(&errors[0].to_string());
-                if human_err.contains("Skipped:") {
-                    format!("({human_err})")
-                } else {
-                    format!("(Skipped: {human_err})")
-                }
-            } else if !errors.is_empty() {
-                "(partial)".to_string()
+            // Print per-package result: success is silent, problems surface with reason
+            if errors.is_empty() {
+                println!("    {pkg_name}");
+            } else if success_count > 0 {
+                println!("    {pkg_name:<25} {success_count}/{total_versions} partial");
             } else {
-                String::new()
-            };
-
-            println!("   [{success_count}/{total_versions}] {pkg_name:<25} {status_msg}");
+                let reason = humanize_error(&errors[0].to_string());
+                println!("    {pkg_name:<25} skipped: {reason}");
+            }
 
             if errors.is_empty() {
                 fully_indexed += 1;
@@ -639,7 +618,7 @@ pub async fn generate_index_from_registry(
         index.packages.retain(|p| valid_packages.contains(&p.name));
         let pruned = initial_count - index.packages.len();
         if pruned > 0 {
-            println!("   Pruned {pruned} stale packages from index.");
+            println!("    pruned {pruned} stale packages");
         }
     }
 
@@ -648,27 +627,26 @@ pub async fn generate_index_from_registry(
 
     hash_cache.lock().await.save()?;
 
-    // Final Summary (uppercase per spec)
     let total_packages = fully_indexed + partial + failed;
     println!();
-    println!("INDEX COMPLETE   {total_packages} packages");
+    println!("  index complete, {total_packages} packages");
 
     Ok(index)
 }
 
 fn humanize_error(e: &str) -> String {
     if e.contains("No supported binaries found") {
-        "Skipped: missing macOS binary assets".to_string()
+        "missing macOS binary assets".to_string()
     } else if e.contains("Could not resolve checksum") {
-        "Skipped: checksums not available (set skip_checksums = true)".to_string()
+        "checksums not available".to_string()
     } else if e.contains("no versions found") {
-        "No releases found in repository".to_string()
+        "no releases found".to_string()
     } else if e.contains("error decoding response body") {
-        "Skipped: network error or rate limit".to_string()
+        "network error or rate limit".to_string()
     } else if e.contains("Asset") && e.contains("not found in GitHub release") {
-        "Skipped: expected asset not found".to_string()
+        "expected asset not found".to_string()
     } else {
-        format!("Skipped: {}", e.split('.').next().unwrap_or(e))
+        e.split('.').next().unwrap_or(e).to_lowercase()
     }
 }
 
