@@ -198,7 +198,8 @@ async fn main() -> Result<()> {
             println!();
             println!("  processing {port_name}");
 
-            if let Err(e) = process_port(&args, op.as_ref(), manifest, &index, &target_archs).await {
+            if let Err(e) = process_port(&args, op.as_ref(), manifest, &index, &target_archs).await
+            {
                 eprintln!("    error: {port_name}: {e:#}");
                 failed_ports.push(port_name.to_string());
             }
