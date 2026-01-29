@@ -10,7 +10,7 @@ use crossterm::style::Stylize;
 pub fn print_list_header(buffer: &mut OutputBuffer) {
     let theme = Theme::default();
 
-    buffer.write_line("", theme.colors.header);
+    println!();
 
     let header = format!(
         "  {:<nw$} {:<vw$} {:>8}   {}",
@@ -50,7 +50,7 @@ pub fn print_list_row(buffer: &mut OutputBuffer, name: &str, version: &str, size
 pub fn print_list_footer(buffer: &mut OutputBuffer, count: usize, total_size: u64) {
     let theme = Theme::default();
 
-    buffer.write_line("", theme.colors.border);
+    println!();
 
     let size_str = super::theme::format_size(total_size);
     let msg = format!("  {count} packages, {size_str}");

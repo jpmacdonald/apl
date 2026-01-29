@@ -308,10 +308,11 @@ impl TableRenderer {
         // Render one last time to show final state (e.g. Done instead of Pending)
         self.render_all(buffer);
 
+        // Only show cursor if we had an active frame (i.e. an animated table)
         if let Some(mut frame) = self.frame.take() {
             let _ = frame.finish();
+            buffer.show_cursor();
         }
-        buffer.show_cursor();
 
         println!();
 
@@ -331,10 +332,11 @@ impl TableRenderer {
         // Render one last time to show final state
         self.render_all(buffer);
 
+        // Only show cursor if we had an active frame
         if let Some(mut frame) = self.frame.take() {
             let _ = frame.finish();
+            buffer.show_cursor();
         }
-        buffer.show_cursor();
 
         println!();
         println!("{}", message.green());

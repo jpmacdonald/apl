@@ -40,10 +40,10 @@ impl OutputBuffer {
     }
 
     /// Write text on a new line with color
-    pub fn write_line(&mut self, text: &str, color: Color) {
-        let _ = self.stdout.queue(SetForegroundColor(color));
+    pub fn write_line(&mut self, text: &str, _color: Color) {
+        // Text is typically already styled via crossterm's Stylize trait.
+        // Just write it directly without additional color wrapping.
         let _ = writeln!(self.stdout, "{text}");
-        let _ = self.stdout.queue(SetForegroundColor(Color::Reset));
     }
 
     /// Write text without newline
