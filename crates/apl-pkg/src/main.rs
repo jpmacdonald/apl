@@ -95,9 +95,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Add { repos } => {
             for repo in repos {
-                println!("Adding {repo}...");
+                println!("  adding {repo}");
                 if let Err(e) = add_package(&client, &repo, &registry_dir).await {
-                    eprintln!("   Failed: {e}");
+                    eprintln!("  error: {e}");
                 }
             }
         }
@@ -113,11 +113,10 @@ async fn main() -> Result<()> {
                 Failed(String),
             }
 
-            println!("Syncing packages...");
+            println!("  syncing packages");
 
             let mut results = Vec::new();
 
-            // Walk registry (sharded or flat)
             let toml_files = apl_core::indexer::walk_registry_toml_files(&registry_dir)?;
 
             for path in toml_files {
@@ -143,7 +142,7 @@ async fn main() -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        eprintln!("   Failed to update {file_name}: {e}");
+                        eprintln!("  error: {file_name}: {e}");
                         results.push(UpdateResult {
                             name: file_name,
                             status: UpdateStatus::Failed(e.to_string()),
@@ -175,38 +174,35 @@ async fn main() -> Result<()> {
                 .await?;
             }
 
-            // Print Summary
             if failed_count > 0 || updated_count > 0 {
-                println!("\n{:=^40}", " Update Summary ");
-
+                println!();
                 if updated_count > 0 {
-                    println!("\nUpdated ({updated_count})");
                     for r in results
                         .iter()
                         .filter(|r| matches!(r.status, UpdateStatus::Updated))
                     {
-                        println!("  OK: {}", r.name);
+                        println!("  updated {}", r.name);
                     }
                 }
 
                 if failed_count > 0 {
-                    println!("\nFailed ({failed_count})");
                     for r in results
                         .iter()
                         .filter(|r| matches!(r.status, UpdateStatus::Failed(_)))
                     {
                         if let UpdateStatus::Failed(msg) = &r.status {
-                            println!("  FAIL: {}: {}", r.name, msg);
+                            println!("  failed {}: {}", r.name, msg);
                         }
                     }
                 }
-                println!("\n{:=^40}\n", "");
+                println!();
+                println!("  {updated_count} updated, {failed_count} failed");
             } else {
-                println!("All packages up to date.");
+                println!("  all packages up to date");
             }
         }
         Commands::Check => {
-            println!("Validating registry integrity...");
+            println!("  validating registry");
             let mut errors = 0;
             let mut warnings = 0;
 
@@ -215,7 +211,6 @@ async fn main() -> Result<()> {
             let mut known_packages = std::collections::HashSet::new();
             let mut templates = Vec::new();
 
-            // Pass 1: Collect names
             for path in &toml_files {
                 let content = fs::read_to_string(path)?;
                 if let Ok(template) = apl_core::package::PackageTemplate::parse(&content) {
@@ -226,11 +221,9 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Pass 2: Validate
             for (path, template) in templates {
                 let pkg_name = &template.package.name;
 
-                // Check dependencies
                 for dep_str in template
                     .dependencies
                     .runtime
@@ -241,7 +234,7 @@ async fn main() -> Result<()> {
                     let dep = apl_schema::types::PackageName::new(dep_str);
                     if !known_packages.contains(&dep) {
                         eprintln!(
-                            "   [ERR] {}: Missing dependency '{}' (path: {})",
+                            "  error: {}: missing dependency '{}' ({})",
                             pkg_name,
                             dep_str,
                             path.display()
@@ -250,32 +243,33 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // Check Metadata
                 if template.package.description.trim().is_empty() {
-                    println!("   [WARN] {pkg_name}: Missing description");
+                    println!("  warn: {pkg_name}: missing description");
                     warnings += 1;
                 }
                 if template.package.license.trim().is_empty() {
-                    println!("   [WARN] {pkg_name}: Missing license");
+                    println!("  warn: {pkg_name}: missing license");
                     warnings += 1;
                 }
 
-                // Check Checksum Policy
                 if template.assets.skip_checksums {
-                    println!("   [WARN] {pkg_name}: Skips checksum verification");
+                    println!("  warn: {pkg_name}: skips checksum verification");
                     warnings += 1;
                 }
             }
 
-            println!("\nSummary:");
-            println!("  Packages: {}", known_packages.len());
-            println!("  Errors:   {errors}");
-            println!("  Warnings: {warnings}");
+            println!();
+            println!(
+                "  {} packages, {} errors, {} warnings",
+                known_packages.len(),
+                errors,
+                warnings
+            );
 
             if errors > 0 {
-                anyhow::bail!("Registry check failed with {errors} errors.");
+                anyhow::bail!("check failed with {errors} errors");
             }
-            println!("Registry integrity verified.");
+            println!("  registry ok");
         }
         Commands::Index {
             package,
@@ -325,30 +319,27 @@ async fn cli_index(
 ) -> Result<()> {
     if let Some(url) = bootstrap_url {
         if index_path.exists() {
-            println!("   Local index exists, skipping bootstrap.");
+            println!("  index exists, skipping bootstrap");
         } else {
-            println!("   Bootstrapping index from {url}...");
+            println!("  bootstrapping from {url}");
             match client.get(url).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let bytes = resp.bytes().await?;
                         fs::write(index_path, bytes)?;
-                        println!(
-                            "   OK: Bootstrap successful ({} bytes)",
-                            fs::metadata(index_path)?.len()
-                        );
+                        println!("  bootstrap ok ({} bytes)", fs::metadata(index_path)?.len());
                     } else {
-                        eprintln!("   WARN: Bootstrap failed: HTTP {}", resp.status());
+                        eprintln!("  warn: bootstrap failed: HTTP {}", resp.status());
                     }
                 }
                 Err(e) => {
-                    eprintln!("   WARN: Bootstrap failed: {e}");
+                    eprintln!("  warn: bootstrap failed: {e}");
                 }
             }
         }
     }
 
-    println!("Regenerating index...");
+    println!("  regenerating index");
 
     // Use NullReporter for indexing (no live UI output needed for CI)
     let reporter = std::sync::Arc::new(apl_core::NullReporter);
@@ -378,10 +369,9 @@ async fn cli_index(
                 urls.insert(key.to_string(), serde_json::Value::String(bin.url.clone()));
             }
 
-            // Write latest.json with simple key-value pairs for install.sh
             let manifest_path = index_path.with_file_name("latest.json");
             fs::write(&manifest_path, serde_json::to_string_pretty(&urls)?)?;
-            println!("   Generated latest.json: {}", manifest_path.display());
+            println!("  wrote {}", manifest_path.display());
         }
     }
 
@@ -411,7 +401,7 @@ fn cli_sign(input: &Path, output: &Path) -> Result<()> {
     let sig_b64 = base64::engine::general_purpose::STANDARD.encode(signature.to_bytes());
 
     fs::write(output, sig_b64).context("Failed to write signature file")?;
-    println!("Signed {} -> {}", input.display(), output.display());
+    println!("  signed {} -> {}", input.display(), output.display());
 
     Ok(())
 }
@@ -502,7 +492,7 @@ async fn add_package(client: &reqwest::Client, repo: &str, out_dir: &Path) -> Re
     let template_toml = toml::to_string_pretty(&template)?;
     fs::write(&target_path, template_toml)?;
 
-    println!("   Created template: {}", target_path.display());
+    println!("    wrote {}", target_path.display());
     Ok(())
 }
 
@@ -514,56 +504,50 @@ fn cli_keygen() -> Result<()> {
 
     use rand::RngCore;
 
-    println!("Generating new Ed25519 signing keypair...");
+    println!("  generating ed25519 keypair");
 
     let mut secret_bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut secret_bytes);
     let signing_key = SigningKey::from_bytes(&secret_bytes);
     let verify_key = signing_key.verifying_key();
 
-    // Encode as Base64 (Standard engine)
     let secret_b64 = base64::engine::general_purpose::STANDARD.encode(signing_key.to_bytes());
     let public_b64 = base64::engine::general_purpose::STANDARD.encode(verify_key.to_bytes());
 
-    println!("\n{:=^60}", " SECRET KEY (Keep this safe!) ");
-    println!("{secret_b64}");
-    println!("{:=^60}\n", "");
+    println!();
+    println!("  secret (keep safe):");
+    println!("  {secret_b64}");
+    println!();
+    println!("  public (embed in app):");
+    println!("  {public_b64}");
+    println!();
 
-    println!("{:=^60}", " PUBLIC KEY (Embed in app) ");
-    println!("{public_b64}");
-    println!("{:=^60}\n", "");
-
-    // Save to keyfile for convenience
     let keyfile_path = Path::new("apl.key");
     if !keyfile_path.exists() {
         let mut f = fs::File::create(keyfile_path)?;
         f.write_all(secret_b64.as_bytes())?;
-        println!("Secret key saved to ./apl.key (gitignore this!)");
+        println!("  wrote ./apl.key");
     }
 
     Ok(())
 }
 
 /// Verify a package by parsing and validating its definition.
-#[allow(clippy::unused_async)] // Kept async for consistency with other CLI command handlers
+#[allow(clippy::unused_async)]
 async fn cli_verify(_client: &reqwest::Client, package_path: &Path) -> Result<()> {
-    println!("Verifying {}...", package_path.display());
+    println!("  verifying {}", package_path.display());
 
-    // Parse the package definition
     let pkg = Package::from_file(package_path)?;
     let pkg_name = pkg.package.name.clone();
     let bin_list = pkg.install.effective_bin(&pkg_name);
 
     if bin_list.is_empty() {
-        anyhow::bail!("Package defines no binaries to verify");
+        anyhow::bail!("package defines no binaries");
     }
 
-    // TODO: Implement simplified verification that doesn't depend on apl_cli flow types
-    // For now, just parse the package file to validate it
-    println!("  OK: Package definition parsed successfully");
-    println!("  Binaries declared: {}", bin_list.join(", "));
-    println!("  WARN: Full verification (download + smoke test) not yet implemented.");
-    println!("    Use `apl install --dry-run {pkg_name}` for full verification.");
+    println!("    parsed ok");
+    println!("    binaries: {}", bin_list.join(", "));
+    println!("    note: use 'apl install --dry-run {pkg_name}' for full verification");
 
     Ok(())
 }

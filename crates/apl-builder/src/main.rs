@@ -67,15 +67,15 @@ async fn main() -> Result<()> {
 
             if rosetta_ok {
                 archs.push(Arch::X86_64);
-                println!("Rosetta 2 detected -- enabling x86_64 cross-builds.");
+                println!("  rosetta detected, x86_64 cross-builds enabled");
             } else {
-                println!("Rosetta 2 not available -- building arm64 only.");
+                println!("  rosetta unavailable, arm64 only");
             }
         }
         archs
     };
     println!(
-        "Target architectures: {}",
+        "  targets: {}",
         target_archs
             .iter()
             .map(Arch::as_str)
@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
     let pattern_str = pattern.to_str().context("Invalid path pattern")?;
     let mut manifests = std::collections::HashMap::new();
 
-    println!("Discovering ports in {}...", args.ports_dir.display());
+    println!("  discovering ports in {}", args.ports_dir.display());
     for entry in glob(pattern_str)? {
         let path = entry?;
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -130,7 +130,7 @@ async fn main() -> Result<()> {
         let manifest: PortManifest = match toml::from_str(&content) {
             Ok(m) => m,
             Err(_) if !content.contains("[package]") => continue,
-            Err(e) => return Err(e).with_context(|| format!("Failed to parse {}", path.display())),
+            Err(e) => return Err(e).with_context(|| format!("failed to parse {}", path.display())),
         };
 
         manifests.insert(
@@ -139,12 +139,12 @@ async fn main() -> Result<()> {
         );
     }
 
-    println!("Found {} port manifests.", manifests.len());
+    println!("  found {} ports", manifests.len());
     for (name, manifest) in &manifests {
         if let PortConfig::Build { spec, .. } = &manifest.package.config {
-            println!("  Port: {}, Deps: {:?}", name, spec.dependencies);
+            println!("    {} deps: {:?}", name, spec.dependencies);
         } else {
-            println!("  Port: {name} (not a build strategy)");
+            println!("    {name} (prebuilt)");
         }
     }
 
@@ -175,10 +175,10 @@ async fn main() -> Result<()> {
     let layers = apl_core::resolver::resolve_build_plan(&index)
         .context("Failed to resolve topological build order")?;
 
-    println!("Build Plan: {} layers", layers.len());
+    println!("  build plan: {} layers", layers.len());
     for (i, layer) in layers.iter().enumerate() {
         let layer_names: Vec<String> = layer.iter().map(std::string::ToString::to_string).collect();
-        println!("  Layer {}: {}", i, layer_names.join(", "));
+        println!("    {}: {}", i, layer_names.join(", "));
     }
 
     let mut failed_ports = Vec::new();
@@ -197,10 +197,11 @@ async fn main() -> Result<()> {
                 continue;
             };
 
-            println!("\n[Layer] Processing port: {port_name}");
+            println!();
+            println!("  processing {port_name}");
 
             if let Err(e) = process_port(&args, &op, manifest, &index, &target_archs).await {
-                eprintln!("  ERROR processing {port_name}: {e:#}");
+                eprintln!("    error: {port_name}: {e:#}");
                 failed_ports.push(port_name.to_string());
             }
         }
@@ -246,13 +247,10 @@ async fn process_port(
     let cache_path = format!("ports/{port_name}/cache.json");
 
     let existing_artifacts = if let Ok(arts) = fetch_existing_index(op, &r2_path).await {
-        println!(
-            "  [Incremental] Loaded {} existing artifacts from R2",
-            arts.len()
-        );
+        println!("    loaded {} existing artifacts", arts.len());
         arts
     } else {
-        println!("  [Incremental] No existing index found, starting fresh.");
+        println!("    no existing index, starting fresh");
         Vec::new()
     };
 
@@ -266,11 +264,10 @@ async fn process_port(
         .map(|a| a.version.clone())
         .collect();
 
-    // Execute strategy with known versions and cache
     let raw_artifacts = strategy
         .fetch_artifacts(&known_versions, &mut cache)
         .await?;
-    println!("  Found {} new artifact candidates.", raw_artifacts.len());
+    println!("    {} new candidates", raw_artifacts.len());
 
     let mut artifacts = Vec::new();
     let client = reqwest::Client::new();
@@ -311,11 +308,9 @@ async fn process_port(
                 template.dependencies.build.clone_from(&spec.dependencies);
             }
 
-            // Build for each target architecture independently.
-            // Per-arch failures are logged but do not block other archs.
             for &arch in target_archs {
                 println!(
-                    "  [BFS] Building {} v{} ({})...",
+                    "    building {} {} ({})",
                     art.name,
                     art.version,
                     arch.as_str()
@@ -346,7 +341,7 @@ async fn process_port(
                     }
                     Err(e) => {
                         eprintln!(
-                            "  WARN: {} v{} ({}) build failed: {e:#}",
+                            "    warn: {} {} ({}) failed: {e:#}",
                             art.name,
                             art.version,
                             arch.as_str()
@@ -359,15 +354,14 @@ async fn process_port(
         }
     }
 
-    // Validate new artifacts
     let mut error_count = 0;
     for artifact in &artifacts {
         if let Err(e) = artifact.validate() {
             error_count += 1;
             if error_count <= 5 {
-                eprintln!("  SKIP: {} v{} - {}", artifact.name, artifact.version, e);
+                eprintln!("    skip: {} {} - {}", artifact.name, artifact.version, e);
             } else if error_count == 6 {
-                eprintln!("  ... (suppressing further validation errors)");
+                eprintln!("    ... (suppressing further errors)");
             }
         }
     }
@@ -379,15 +373,12 @@ async fn process_port(
 
     if error_count > 0 {
         println!(
-            "  {} valid new, {} skipped (missing checksums)",
+            "    {} valid, {} skipped",
             valid_new_artifacts.len(),
             error_count
         );
     } else {
-        println!(
-            "  {} valid new artifacts ready for index.",
-            valid_new_artifacts.len()
-        );
+        println!("    {} valid artifacts", valid_new_artifacts.len());
     }
 
     // Merge and deduplicate
@@ -406,10 +397,7 @@ async fn process_port(
     let mut final_artifacts: Vec<_> = merged_map.into_values().collect();
     final_artifacts.sort_by(|a, b| b.version.cmp(&a.version));
 
-    println!(
-        "  [Incremental] Final index contains {} artifacts.",
-        final_artifacts.len()
-    );
+    println!("    final index: {} artifacts", final_artifacts.len());
 
     // Serialize and upload
     let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
@@ -423,11 +411,12 @@ async fn process_port(
     }
     fs::write(&local_path, &index_json).await?;
     fs::write(&local_cache_path, &cache_json).await?;
-    println!("  Written to local: {}", local_path.display());
+    println!("    wrote {}", local_path.display());
 
     if args.dry_run {
         println!(
-            "  [Dry Run] Would upload ports/{port_name}/index.json ({} bytes)",
+            "    dry run: would upload {} ({} bytes)",
+            r2_path,
             index_json.len()
         );
         return Ok(());
@@ -435,7 +424,7 @@ async fn process_port(
 
     op.write(&r2_path, index_json).await?;
     op.write(&cache_path, cache_json).await?;
-    println!("  Uploaded to {r2_path} and {cache_path}");
+    println!("    uploaded {r2_path}");
 
     Ok(())
 }
