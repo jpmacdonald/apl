@@ -122,7 +122,7 @@ pub enum InstallStrategy {
 ///
 /// Each variant corresponds to a discovery/download strategy that the
 /// build engine uses to resolve versions and fetch artifacts.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "strategy", rename_all = "lowercase")]
 pub enum PortConfig {
     /// `HashiCorp` releases API strategy (Terraform, Vault, Consul, etc.).
@@ -197,14 +197,14 @@ pub struct BuildSpec {
 }
 
 /// Top-level structure for `port.toml`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortManifest {
     /// The `[package]` table containing name, strategy, and optional URL.
     pub package: PackageMeta,
 }
 
 /// Metadata about a package as declared in the `[package]` section of `port.toml`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageMeta {
     /// Package name as it appears in the registry (e.g. `terraform`).
     pub name: String,

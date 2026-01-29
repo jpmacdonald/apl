@@ -7,9 +7,13 @@ use anyhow::{Context, Result};
 use apl_schema::Artifact;
 use apl_schema::{PortConfig, PortManifest};
 use clap::Parser;
+use futures::future::join_all;
 use glob::glob;
 use opendal::{Operator, services::S3};
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::fs;
 
 pub use apl_core::Strategy;
@@ -22,7 +26,7 @@ use apl_core::package::{PackageInfoTemplate, PackageTemplate};
 use apl_schema::Arch;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "Algorithmic Harvester for APL Ports", long_about = None)]
 struct Args {
     /// Path to the ports directory (defaults to "ports")
     #[arg(short, long, default_value = "ports")]
@@ -44,11 +48,29 @@ struct Args {
     /// By default, builds for all supported architectures on the host.
     #[arg(long)]
     arch: Option<Arch>,
+
+    /// Maximum parallel builds per layer (default: 4)
+    #[arg(long, default_value_t = 4)]
+    parallel: usize,
+}
+
+/// Result of processing a single port
+struct PortResult {
+    name: String,
+    status: PortStatus,
+    duration: Duration,
+}
+
+enum PortStatus {
+    Built { artifacts: usize },
+    Skipped,
+    Failed,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    let start_time = Instant::now();
 
     // Determine which architectures to build for.
     let target_archs: Vec<Arch> = if let Some(arch) = args.arch {
@@ -87,7 +109,7 @@ async fn main() -> Result<()> {
     fs::create_dir_all(&args.output_dir).await?;
 
     // Initialize R2 operator only when not in dry-run mode.
-    let op: Option<Operator> = if args.dry_run {
+    let op: Option<Arc<Operator>> = if args.dry_run {
         None
     } else {
         let mut builder = S3::default();
@@ -108,13 +130,13 @@ async fn main() -> Result<()> {
                 .context("APL_ARTIFACT_STORE_SECRET_KEY must be set")?,
         );
         builder.region("auto");
-        Some(Operator::new(builder)?.finish())
+        Some(Arc::new(Operator::new(builder)?.finish()))
     };
 
-    // 1. Discover and load all port manifests
+    // Discover and load all port manifests
     let pattern = args.ports_dir.join("*").join("*.toml");
     let pattern_str = pattern.to_str().context("Invalid path pattern")?;
-    let mut manifests = std::collections::HashMap::new();
+    let mut manifests = HashMap::new();
 
     println!("  discovering ports in {}", args.ports_dir.display());
     for entry in glob(pattern_str)? {
@@ -140,13 +162,13 @@ async fn main() -> Result<()> {
     println!("  found {} ports", manifests.len());
     for (name, manifest) in &manifests {
         if let PortConfig::Build { spec, .. } = &manifest.package.config {
-            println!("    {} deps: {:?}", name, spec.dependencies);
+            println!("    {name} deps: {:?}", spec.dependencies);
         } else {
             println!("    {name} (prebuilt)");
         }
     }
 
-    // 2. Build a temporary index for dependency resolution
+    // Build a temporary index for dependency resolution
     let mut index = apl_schema::PackageIndex::new();
     for manifest in manifests.values() {
         let mut entry = apl_schema::index::IndexEntry {
@@ -154,71 +176,174 @@ async fn main() -> Result<()> {
             ..Default::default()
         };
 
-        // We only need the dependency info for resolution
         let mut release = apl_schema::index::VersionInfo {
-            version: "0.0.0".to_string(), // Dummy version for resolution
+            version: "0.0.0".to_string(),
             ..Default::default()
         };
 
         if let PortConfig::Build { spec, .. } = &manifest.package.config {
             release.deps.clone_from(&spec.dependencies);
-            release.build_deps.clone_from(&spec.dependencies); // In ports, deps are usually build-time deps
+            release.build_deps.clone_from(&spec.dependencies);
         }
 
         entry.releases.push(release);
         index.upsert(entry);
     }
 
-    // 3. Resolve build plan (topological layers)
+    // Resolve build plan (topological layers)
     let layers = apl_core::resolver::resolve_build_plan(&index)
         .context("Failed to resolve topological build order")?;
 
     println!("  build plan: {} layers", layers.len());
     for (i, layer) in layers.iter().enumerate() {
         let layer_names: Vec<String> = layer.iter().map(std::string::ToString::to_string).collect();
-        println!("    {}: {}", i, layer_names.join(", "));
+        println!("    {i}: {}", layer_names.join(", "));
     }
 
-    let mut failed_ports = Vec::new();
+    let mut all_results: Vec<PortResult> = Vec::new();
+    let index = Arc::new(index);
+    let manifests = Arc::new(manifests);
 
-    // 4. Execute build plan layer by layer
+    // Execute build plan layer by layer, with parallelism within each layer
     for layer in layers {
-        for port_name in layer {
-            // Respect filter if provided
-            if let Some(filter) = &args.filter {
-                if port_name.as_str() != filter {
-                    continue;
+        let ports_to_build: Vec<_> = layer
+            .into_iter()
+            .filter(|port_name| {
+                if let Some(filter) = &args.filter {
+                    port_name.as_str() == filter
+                } else {
+                    true
                 }
-            }
+            })
+            .filter(|port_name| manifests.contains_key(port_name))
+            .collect();
 
-            let Some(manifest) = manifests.get(&port_name) else {
-                continue;
-            };
+        if ports_to_build.is_empty() {
+            continue;
+        }
 
-            println!();
-            println!("  processing {port_name}");
+        // Process ports in parallel chunks
+        for chunk in ports_to_build.chunks(args.parallel) {
+            let futures: Vec<_> = chunk
+                .iter()
+                .map(|port_name| {
+                    let port_name = port_name.clone();
+                    let manifest = manifests.get(&port_name).unwrap().clone();
+                    let op = op.clone();
+                    let index = index.clone();
+                    let target_archs = target_archs.clone();
+                    let output_dir = args.output_dir.clone();
+                    let dry_run = args.dry_run;
 
-            if let Err(e) = process_port(&args, op.as_ref(), manifest, &index, &target_archs).await
-            {
-                eprintln!("    error: {port_name}: {e:#}");
-                failed_ports.push(port_name.to_string());
+                    async move {
+                        let port_start = Instant::now();
+                        println!();
+                        println!("  processing {port_name}");
+
+                        let result = process_port(
+                            &output_dir,
+                            dry_run,
+                            op.as_deref(),
+                            &manifest,
+                            &index,
+                            &target_archs,
+                        )
+                        .await;
+
+                        let duration = port_start.elapsed();
+
+                        match result {
+                            Ok(artifact_count) => PortResult {
+                                name: port_name.to_string(),
+                                status: if artifact_count > 0 {
+                                    PortStatus::Built {
+                                        artifacts: artifact_count,
+                                    }
+                                } else {
+                                    PortStatus::Skipped
+                                },
+                                duration,
+                            },
+                            Err(e) => {
+                                eprintln!("    error: {port_name}: {e:#}");
+                                PortResult {
+                                    name: port_name.to_string(),
+                                    status: PortStatus::Failed,
+                                    duration,
+                                }
+                            }
+                        }
+                    }
+                })
+                .collect();
+
+            let results = join_all(futures).await;
+            all_results.extend(results);
+        }
+    }
+
+    // Print summary
+    let total_duration = start_time.elapsed();
+    let built: Vec<_> = all_results
+        .iter()
+        .filter(|r| matches!(r.status, PortStatus::Built { .. }))
+        .collect();
+    let skipped: Vec<_> = all_results
+        .iter()
+        .filter(|r| matches!(r.status, PortStatus::Skipped))
+        .collect();
+    let failed: Vec<_> = all_results
+        .iter()
+        .filter(|r| matches!(r.status, PortStatus::Failed))
+        .collect();
+
+    println!();
+    println!("  summary");
+
+    if !built.is_empty() {
+        for r in &built {
+            if let PortStatus::Built { artifacts } = r.status {
+                println!(
+                    "    built {} ({} artifacts, {:.1}s)",
+                    r.name,
+                    artifacts,
+                    r.duration.as_secs_f64()
+                );
             }
         }
+    }
+
+    if !failed.is_empty() {
+        for r in &failed {
+            println!("    failed {}", r.name);
+        }
+    }
+
+    println!();
+    println!(
+        "  {} built, {} skipped, {} failed in {:.1}s",
+        built.len(),
+        skipped.len(),
+        failed.len(),
+        total_duration.as_secs_f64()
+    );
+
+    if !failed.is_empty() {
+        std::process::exit(1);
     }
 
     Ok(())
 }
 
-/// Process a single port manifest end-to-end: fetch artifacts, validate,
-/// merge with existing index, and upload. Extracted so that failures are
-/// isolated per-port via the `?` operator.
+/// Process a single port manifest end-to-end. Returns the number of new artifacts built.
 async fn process_port(
-    args: &Args,
+    output_dir: &Path,
+    dry_run: bool,
     op: Option<&Operator>,
     manifest: &PortManifest,
     index: &apl_schema::PackageIndex,
     target_archs: &[Arch],
-) -> Result<()> {
+) -> Result<usize> {
     let port_name = &manifest.package.name;
 
     // Instantiate the discovery strategy from the manifest config.
@@ -265,10 +390,16 @@ async fn process_port(
         apl_core::strategies::StrategyCache::default()
     };
 
-    // Build known versions set
-    let known_versions: std::collections::HashSet<String> = existing_artifacts
+    // Build known versions set (for strategy filtering)
+    let known_versions: HashSet<String> = existing_artifacts
         .iter()
         .map(|a| a.version.clone())
+        .collect();
+
+    // Build known (version, arch) set for per-arch watermarking
+    let known_version_archs: HashSet<(String, String)> = existing_artifacts
+        .iter()
+        .map(|a| (a.version.clone(), a.arch.clone()))
         .collect();
 
     let raw_artifacts = strategy
@@ -310,12 +441,24 @@ async fn process_port(
                 hints: apl_core::package::Hints::default(),
             };
 
-            // Set dependencies from the manifest
             if let PortConfig::Build { spec, .. } = &manifest.package.config {
                 template.dependencies.build.clone_from(&spec.dependencies);
             }
 
             for &arch in target_archs {
+                // Per-arch watermark: skip if (version, arch) already exists
+                let key = (art.version.clone(), arch.to_string());
+                if known_version_archs.contains(&key) {
+                    println!(
+                        "    skipping {} {} ({}) - already built",
+                        art.name,
+                        art.version,
+                        arch.as_str()
+                    );
+                    continue;
+                }
+
+                let build_start = Instant::now();
                 println!(
                     "    building {} {} ({})",
                     art.name,
@@ -336,6 +479,14 @@ async fn process_port(
                 .await
                 {
                     Ok(version_info) => {
+                        let build_duration = build_start.elapsed();
+                        println!(
+                            "    built {} {} ({}) in {:.1}s",
+                            art.name,
+                            art.version,
+                            arch.as_str(),
+                            build_duration.as_secs_f64()
+                        );
                         for bin in version_info.binaries {
                             artifacts.push(Artifact {
                                 name: art.name.clone(),
@@ -378,19 +529,16 @@ async fn process_port(
         .filter(|a| a.validate().is_ok())
         .collect();
 
+    let new_artifact_count = valid_new_artifacts.len();
+
     if error_count > 0 {
-        println!(
-            "    {} valid, {} skipped",
-            valid_new_artifacts.len(),
-            error_count
-        );
-    } else {
-        println!("    {} valid artifacts", valid_new_artifacts.len());
+        println!("    {new_artifact_count} valid, {error_count} skipped");
+    } else if new_artifact_count > 0 {
+        println!("    {new_artifact_count} valid artifacts");
     }
 
     // Merge and deduplicate
-    // Key: (version, arch, sha256). New artifacts win on collision.
-    let mut merged_map = std::collections::HashMap::new();
+    let mut merged_map = HashMap::new();
 
     for art in existing_artifacts {
         let key = (art.version.clone(), art.arch.clone(), art.sha256.clone());
@@ -410,8 +558,8 @@ async fn process_port(
     let index_json = serde_json::to_vec_pretty(&final_artifacts)?;
     let cache_json = serde_json::to_vec_pretty(&cache)?;
 
-    let local_path = args.output_dir.join(port_name).join("index.json");
-    let local_cache_path = args.output_dir.join(port_name).join("cache.json");
+    let local_path = output_dir.join(port_name).join("index.json");
+    let local_cache_path = output_dir.join(port_name).join("cache.json");
 
     if let Some(parent) = local_path.parent() {
         fs::create_dir_all(parent).await?;
@@ -420,13 +568,13 @@ async fn process_port(
     fs::write(&local_cache_path, &cache_json).await?;
     println!("    wrote {}", local_path.display());
 
-    if args.dry_run || op.is_none() {
+    if dry_run || op.is_none() {
         println!(
             "    dry run: would upload {} ({} bytes)",
             r2_path,
             index_json.len()
         );
-        return Ok(());
+        return Ok(new_artifact_count);
     }
 
     let operator = op.expect("operator should be Some when not in dry-run");
@@ -434,7 +582,7 @@ async fn process_port(
     operator.write(&cache_path, cache_json).await?;
     println!("    uploaded {r2_path}");
 
-    Ok(())
+    Ok(new_artifact_count)
 }
 
 async fn fetch_existing_index(op: &Operator, path: &str) -> Result<Vec<Artifact>> {
