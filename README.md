@@ -1,65 +1,61 @@
-# APL: Advanced Package Layer
+# APL
 
-A modern package manager for macOS, built in Rust with a focus on hermetic installations, strict versioning, and cryptographic verification.
+A package manager for macOS.
 
-## Quick Install
+## Install
 
 ```bash
 curl -fsSL https://apl.pub/install.sh | sh
 ```
 
-## Features
-
-- **Hermetic Installations** - Packages are installed in isolation, preventing conflicts
-- **Dual Architecture** - Native support for both Apple Silicon (ARM64) and Intel (x86_64)
-- **Signed Index** - Ed25519 signature verification for the package registry
-- **Fast Updates** - ZSTD-compressed binary index for efficient synchronization
-
-## Workspace Structure
-
-| Crate | Binary | Description |
-|-------|--------|-------------|
-| `apl-schema` | - | Core types, versioning, and index serialization |
-| `apl-core` | `apl-builder` | Core library: indexer, resolver, and discovery engine |
-| `apl-cli` | `apl` | User-facing CLI and state management |
-| `apl-indexer` | `apl-pkg` | Index generation and registry maintenance |
-
-## Commands
+## Usage
 
 ```bash
-apl install <package>     # Install a package
-apl remove <package>      # Remove a package  
-apl search <query>        # Search available packages
-apl list                  # List installed packages
-apl status                # Check for updates
-apl upgrade               # Upgrade outdated packages
-apl update                # Refresh package index
+apl install ripgrep       # install a package
+apl install rg@14         # install specific version
+apl remove ripgrep        # remove a package
+apl list                  # list installed packages
+apl search jq             # search for packages
+apl info fd               # show package details
+apl update                # refresh package index
+apl upgrade               # upgrade outdated packages
 ```
+
+## How it works
+
+- Packages are prebuilt binaries downloaded from a CDN
+- Index is signed with Ed25519, artifacts verified with SHA-256
+- Installs are hermetic (isolated in `~/.apl/store/<pkg>/<version>/`)
+- Binaries are symlinked to `~/.apl/bin/`
+- Supports both ARM64 and x86_64
+
+## Repository structure
+
+```
+apl/           CLI and core libraries (this repo)
+apl-packages/  Package registry (TOML templates)
+apl-ports/     Build-from-source definitions
+```
+
+## Crates
+
+| Crate | Binary | Purpose |
+|-------|--------|---------|
+| apl-schema | - | Types, versioning, index format |
+| apl-core | apl-builder | Resolver, downloader, builder |
+| apl-cli | apl | CLI interface |
+| apl-pkg | apl-pkg | Index generation |
 
 ## Development
 
 ```bash
-# Build all crates
 cargo build --workspace
-
-# Run the CLI
-cargo run -p apl-cli -- search jq
-
-# Run tests
 cargo test --workspace
-
-# Run lints
 cargo clippy --workspace --all-targets -- -D warnings
+
+# Setup git hooks (run once)
+git config core.hooksPath .githooks
 ```
-
-## Related Repositories
-
-- **[apl-packages](../apl-packages)** - Package definitions (TOML files for GitHub-sourced packages)
-- **[apl-ports](../apl-ports)** - Port definitions (for vendor-specific sources like HashiCorp, AWS, etc.)
-
-## Architecture
-
-See [docs/architecture.md](docs/architecture.md) for details on the crate structure and data flow.
 
 ## License
 
