@@ -5,7 +5,7 @@ A package manager for macOS.
 ## Install
 
 ```bash
-curl -fsSL https://apl.pub/install.sh | sh
+curl -fsSL https://apl.pub/install | sh
 ```
 
 ## Usage

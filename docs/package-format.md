@@ -1,147 +1,132 @@
 # Package Format
 
-APL uses **Algorithmic Templates** to discover release assets dynamically.
+Packages are TOML files that tell APL how to discover and download releases.
 
-## Example: `ripgrep.toml`
+## Example
 
 ```toml
 [package]
 name = "ripgrep"
-version = "0.0.0" # Version for template compatibility
-description = "Recursively searches directories for a regex pattern"
-type = "cli"
+description = "Fast grep"
+homepage = "https://github.com/BurntSushi/ripgrep"
+license = "MIT"
 
 [discovery]
-github = "BurntSushi/ripgrep"
-tag_pattern = "{{version}}" # Discovery pattern for tags
+source = "github"
+owner = "BurntSushi"
+repo = "ripgrep"
+tag_pattern = "{{version}}"
 
-[assets]
-# GitHub is currently the only supported binary source
-
-
-[assets.targets]
-arm64 = "aarch64-apple-darwin"
-x86_64 = "x86_64-apple-darwin"
+[assets.select]
+arm64-macos = { contains = "aarch64-apple-darwin" }
+x86_64-macos = { contains = "x86_64-apple-darwin" }
 
 [checksums]
-# Construct checksum URL from template
 url_template = "https://github.com/BurntSushi/ripgrep/releases/download/{{version}}/ripgrep-{{version}}-{{target}}.tar.gz.sha256"
-vendor_type = "sha256"
 
 [install]
 bin = ["rg"]
 ```
 
----
+## Sections
 
-## `[package]` Section
-
-Metadata about the package.
+### `[package]`
 
 | Field | Description |
 |-------|-------------|
-| `name` | Unique package identifier |
-| `version` | Placeholder version (usually 0.0.0 for templates) |
+| `name` | Package identifier (lowercase, no spaces) |
 | `description` | Short summary |
-| `type` | `cli` or `app` |
+| `homepage` | Project URL |
+| `license` | SPDX license identifier |
+| `tags` | Optional list of tags for search |
 
----
+### `[discovery]`
 
-## `[discovery]` Section
-
-Tells APL how to find new versions.
+Tells APL where to find versions.
 
 ```toml
 [discovery]
-github = "owner/repo"
-tag_pattern = "v{{version}}"  # Matches tags like v1.2.3
-semver_only = true             # Only accept valid semver tags
-include_prereleases = false    # Hide beta/rc versions by default
+source = "github"
+owner = "BurntSushi"
+repo = "ripgrep"
+tag_pattern = "{{version}}"     # matches tags like 14.1.0
 ```
 
-### Discovery Types
-APL currently supports **GitHub Releases** for binary distribution. Manual version listing is supported only for packages built from source.
+For ports (prebuilt by APL):
+```toml
+[discovery]
+ports = "python"
+```
 
----
+### `[assets]`
 
-## `[assets]` Section
-
-Defines how to construct download URLs for different architectures.
-
-| Field | Description |
-|-------|-------------|
-| `universal` | If true, ignore `targets` and use same URL for all (requires `universal-macos` selector) |
-| `select` | Map of architecture to asset selector (suffix/regex) |
-
-### `[assets.targets]` Mapping
-Maps APL architectures to vendor-specific strings used in URLs.
+Maps architectures to release assets.
 
 ```toml
-[assets.targets]
-arm64 = "aarch64-apple-darwin"
-x86_64 = "x86_64-apple-darwin"
+[assets.select]
+arm64-macos = { contains = "aarch64-apple-darwin" }
+x86_64-macos = { contains = "x86_64-apple-darwin" }
 ```
 
----
+Selectors:
+- `contains = "string"` - asset filename contains string
+- `suffix = ".tar.gz"` - asset filename ends with string
+- `regex = "pattern"` - asset filename matches regex
 
-## `[checksums]` Section
+### `[checksums]`
 
-APL prioritizes vendor checksums to avoid downloading full binaries during index generation.
+Where to find SHA-256 checksums (avoids downloading full binaries during indexing).
 
 ```toml
 [checksums]
-url_template = "..."   # URL to the .sha256 or .txt checksum file
-vendor_type = "sha256" # Algorithms: sha256, blake3, sha512
-skip = false           # If true, don't verify checksums
+url_template = "https://example.com/releases/{{version}}/SHA256SUMS"
 ```
 
-> [!TIP]
-> If `url_template` is omitted or the file is missing, APL automatically falls back to downloading the binary and computing a BLAKE3 hash for the index.
+If omitted, APL downloads the binary and computes the hash.
 
----
+Set `skip_checksums = true` in `[assets]` to skip verification entirely (not recommended).
 
-### `[source]` (Optional)
+### `[install]`
 
-Defines how to fetch the source code for building.
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `url` | string | URL template for source code (e.g. `{{github}}/archive/{{tag}}.tar.gz`) |
-| `format` | string | Archive format (`tar.gz`, `zip`, etc.) |
-| `sha256` | string | (Optional) SHA256 of the source archive |
-
-### `[build]` (Optional)
-
-Defines build instructions. Presence of this section triggers **Registry Hydration**.
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `dependencies` | array | Build-time dependencies (e.g. `cmake`, `rust`) |
-| `script` | string | Multi-line shell script to run in the `Sysroot`. |
-
-**Zero Fallback Note**: If a `[build]` section is present, the registry will attempt to build and hydrate the package into the artifact store. If hydration fails, the version is skipped. Clients never build from source; they only consume the hydrated binaries.
-
----
-
-## `[install]` Section
-
-Instructions for linking the package into your system.
+What to symlink after extraction.
 
 ```toml
 [install]
-strategy = "link"          # link (cli), app (applications)
-bin = ["rg", "bin/fzf:fzf"] # symlinks: [source] or [source:target]
-app = "Firefox.app"        # name for .app bundles
+bin = ["rg"]                    # symlink rg to ~/.apl/bin/rg
+bin = ["bin/rg:rg"]             # symlink bin/rg to ~/.apl/bin/rg
 ```
 
----
+For GUI apps:
+```toml
+[install]
+strategy = "app"
+app = "Firefox.app"
+```
 
+### `[dependencies]`
 
+Runtime and build dependencies.
 
-## Location & Sharding
+```toml
+[dependencies]
+runtime = ["openssl"]
+build = ["cmake", "ninja"]
+```
 
-Templates must be stored in the `registry/` directory using two-letter sharding:
+## File location
 
-`registry/ri/ripgrep.toml`
-`registry/ba/bat.toml`
-`registry/1/1password.toml` (numbers use `1/` prefix)
+Packages are stored in `packages/` with two-letter sharding:
+
+```
+packages/ri/ripgrep.toml
+packages/fd/fd.toml
+packages/jq/jq.toml
+```
+
+## Validation
+
+Check your package before submitting:
+
+```bash
+cargo run -p apl-pkg -- check
+```

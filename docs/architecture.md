@@ -1,344 +1,163 @@
 # Architecture
 
-Technical overview of APL's internal design.
+## Repositories
 
-## Design Philosophy
+APL is split across three repos:
 
-APL is built around three principles:
+| Repo | Purpose |
+|------|---------|
+| `apl` | CLI binary and core libraries |
+| `apl-packages` | Package registry (TOML templates) |
+| `apl-ports` | Build-from-source definitions |
 
-1. **Speed** - Sub-second installs via streaming pipelines and binary indexes
-2. **Simplicity** - TOML packages, no DSLs, minimal dependencies
-3. **Safety** - SHA-256 verification, atomic installs, version history
-
----
-
-## Crate Structure
+### How they work together
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     apl-cli (bin: apl)                      │
-│              User-facing CLI, UI, State Management          │
-└───────────────────────┬─────────────────────────────────────┘
-                        │ depends on
-          ┌─────────────┴─────────────┐
-          ▼                           ▼
-┌───────────────────┐       ┌───────────────────────────────┐
-│    apl-core       │       │       apl-indexer             │
-│  (bin: apl-builder)│       │       (bin: apl-pkg)          │
-│ Indexer, Resolver │       │ Index Generation, Signing     │
-└─────────┬─────────┘       └───────────────┬───────────────┘
-          │                                 │
-          └─────────────┬───────────────────┘
-                        ▼
-          ┌─────────────────────────────┐
-          │        apl-schema           │
-          │  Types, Index, Versioning   │
-          └─────────────────────────────┘
+apl-ports         builds source packages (Python, Ruby, etc.)
+    |             uploads artifacts to R2
+    v
+apl-packages      indexes all packages (GitHub + ports)
+    |             signs index, uploads to R2
+    v
+apl               downloads index, installs packages
 ```
 
-| Crate | Binary | Description |
-|-------|--------|-------------|
-| `apl-schema` | - | Core types (`PackageName`, `Arch`, `Sha256Hash`), index format, version utilities |
-| `apl-core` | `apl-builder` | Core library: indexer, resolver, discovery engine, I/O (download/extract), builder |
-| `apl-cli` | `apl` | CLI handlers, UI actor, database state, installation flow |
-| `apl-indexer` | `apl-pkg` | Index generation, template management, Ed25519 signing |
+**apl-ports** (producer):
+- Contains build scripts for packages that need compilation
+- CI runs daily, builds new versions, uploads to `apl.pub/ports/<name>/`
+- Output: tar.zst archives + metadata JSON
 
----
+**apl-packages** (registry):
+- Contains TOML templates describing how to find packages
+- CI runs on push, queries GitHub API + ports bucket
+- Generates binary index, signs with Ed25519, uploads to `apl.pub/index`
 
-## Module Overview (apl-cli)
+**apl** (client):
+- User-facing CLI
+- Downloads index, resolves versions, downloads artifacts
+- Never builds from source - everything is prebuilt
 
-### Core (`src/core/`)
-
-| Module | Purpose |
-|--------|---------|
-| `index.rs` | Memory-mapped binary index with O(1) lookups |
-| `package.rs` | TOML package parsing and validation |
-| `resolver.rs` | Dependency resolution via topological sort |
-| `relinker.rs` | Mach-O binary patching for portability |
-| `builder.rs` | Source build orchestration |
-| `sysroot.rs` | APFS COW isolation for builds |
-| `version.rs` | Semantic version parsing |
-
-### Operations (`src/ops/`)
-
-| Module | Purpose |
-|--------|---------|
-| `install.rs` | Full installation pipeline |
-| `remove.rs` | Package removal and cleanup |
-| `switch.rs` | Version switching |
-| `flow.rs` | Resolve → Download → Extract pipeline |
-| `resolve.rs` | Project manifest dependency solver (semver) |
-
-### I/O (`src/io/`)
-
-| Module | Purpose |
-|--------|---------|
-| `download.rs` | HTTP streaming with concurrent chunks |
-| `extract.rs` | Archive extraction (tar, zip, zstd) |
-| `dmg.rs` | macOS disk image mounting |
-
-### Storage (`src/store/`)
-
-| Module | Purpose |
-|--------|---------|
-| `db.rs` | SQLite state management |
-| `actor.rs` | Async database operations |
-| `history.rs` | Version history tracking |
-
-### UI (`src/ui/`)
-
-| Module | Purpose |
-|--------|---------|
-| `output.rs` | High-level output API |
-| `actor.rs` | Message-passing UI thread |
-| `table.rs` | Progress table rendering |
-| `reporter.rs` | Trait for progress reporting |
-
----
-
-## Data Flow
-
-### Installation Pipeline
+## Crates
 
 ```
-1. Index Lookup
-   ~/.apl/cache/index (MMAP) → find("ripgrep") → VersionInfo
+apl-cli        CLI binary, UI, database
+  └─ apl-core    resolver, downloader, builder
+       └─ apl-schema  types, index format
 
-2. Download + Extract (Streaming)
-   HTTP Stream ─┬─→ Cache File
-                ├─→ SHA-256 Hasher
-                └─→ Decompressor → Tar/Zip Unpack
-
-3. Installation
-   Temp extraction → ~/.apl/store/ripgrep/14.1.1/
-
-4. Linking
-   ~/.apl/store/.../bin/rg → ~/.apl/bin/rg (symlink)
-
-5. Database Update
-   StateDb.install_package(name, version, sha256, files)
+apl-pkg        index generator (separate binary)
+  └─ apl-core
+       └─ apl-schema
 ```
 
-### UI Event Flow
+| Crate | Binary | Purpose |
+|-------|--------|---------|
+| apl-schema | - | `PackageName`, `Arch`, `Sha256Hash`, index serialization |
+| apl-core | apl-builder | resolver, discovery, download, extract, build |
+| apl-cli | apl | CLI commands, UI, SQLite state |
+| apl-pkg | apl-pkg | index generation, Ed25519 signing |
+
+## Index
+
+Binary format using Postcard + Zstd compression.
+
+- Load time: <1ms (memory-mapped)
+- Lookup: O(log n) binary search
+- Size: ~2KB for 100 packages
+
+## Install flow
 
 ```
-┌─────────────┐
-│ Install Cmd │──────┐
-│ Remove Cmd  │      │  Reporter trait
-│ Upgrade Cmd │      │
-└─────────────┘      ▼
-              ┌─────────────┐
-              │   Output    │  Sends UiEvent
-              └──────┬──────┘
-                     │ mpsc channel
-                     ▼
-              ┌─────────────┐
-              │  UI Actor   │  Single thread
-              └──────┬──────┘
-                     │
-                     ▼
-              ┌─────────────┐
-              │  Terminal   │  Sequential output
-              └─────────────┘
+1. Index lookup     index.find("ripgrep") -> version, url, hash
+2. Download         HTTP stream -> cache file + SHA-256 verification
+3. Extract          decompress -> unpack to temp dir
+4. Install          move to ~/.apl/store/ripgrep/14.1.1/
+5. Link             symlink bin/rg -> ~/.apl/bin/rg
+6. Record           SQLite: package, version, files
 ```
 
----
+Download and hash verification happen in parallel (no TOCTOU).
 
-### Algorithmic Registry
+## Build flow (ports)
 
-The package registry is now **algorithmic**, meaning it uses templates to dynamically discover versions rather than requiring manual updates for every release.
+For packages built from source (Python, Ruby, OpenSSL):
 
-- **Storage**: Templates are sharded in `registry/{prefix}/{name}.toml`.
-- **Discovery**: The `apl-pkg` tool uses the GitHub Tags API to find all historical versions matching a `tag_pattern`.
-- **Hydration**: For each discovered version, APL constructs download URLs and fetches integrity hashes (prioritizing vendor checksum files).
-
-### Hydration Pipeline
-To generate the binary index, APL runs a hydration pipeline that now supports two strategies:
-
-#### Strategy A: Vendor Binaries (Fast path)
-1. **GitHub Discovery**: Scan tags via API.
-2. **Checksum Fetching**: Fetch vendor-provided checksums (avoiding full download).
-3. **Fallback Hashing**: If checksums are missing, download once, hash, and cache.
-
-#### Strategy B: Source Hydration (The "Chain")
-When a package sets `build = true` (e.g., Ruby, OpenSSL), APL becomes a build system:
-1. **Dependency Resolution**: Recursively builds dependencies (e.g., Ruby -> OpenSSL -> ...).
-2. **CoW Build Environment**: Each build happens in a fresh APFS clonefile sysroot.
-3. **Dependency Mounting**: Dependencies are mounted into the sysroot at `/deps/{name}`.
-4. **Compilation**: The `script` runs (e.g., `./configure --with-openssl-dir=/deps/openssl`).
-5. **Artifact Storage**: The result is bundled (`tar.zst`), hashed (SHA256), and uploaded to the R2-backed **Artifact Store**.
-6. **Index Entry**: The package is added to the index pointing to the R2 URL (`apl.pub/cas/<hash>`).
-
-#### Strategy C: Ports Adapter (Metadata Proxy)
-For binaries hosted on arbitrary websites (e.g. Terraform on HashiCorp, Python.org), we use **Ports** as a standardized adapter layer:
-1.  **The Port**: An external script scrapes the vendor's website and publishes a normalized `index.json` to `apl.pub/ports/<name>/`.
-2.  **The Registry**: The TOML file simply points to `discovery = { ports = "terraform" }`.
-3.  **The Indexer**: Consumes the JSON from the Port as if it were a clean API, downloading and verifying assets defined therein.
-
-This decouples the core `apl-pkg` tool from the complexity of scraping thousands of different website layouts.
-
-This allows APL to distribute binaries for tools that don't provide them officially, while maintaining a pure, reproducible chain.
-
-### Binary Index
-
-The package index uses [Postcard](https://docs.rs/postcard) serialization with Zstd compression and memory mapping:
-
-- **Load time**: <1ms (no parsing, just mmap)
-- **Size**: ~2KB for 100 packages (pre-compression)
-- **Lookups**: O(log n) binary search via memory-mapped slices.
-
-### Streaming Extraction
-
-Downloads are extracted on-the-fly without writing intermediate files:
-
-```rust
-HTTP Response → AsyncRead → Decompressor → Tar Entries → Filesystem
-                    ↳ SHA-256 Hasher (parallel verification)
+```
+1. Create sysroot   APFS clonefile (copy-on-write)
+2. Mount deps       clone deps into sysroot/deps/
+3. Run script       sandboxed build (no network, no /usr/local)
+4. Extract output   move sysroot/usr/local -> output
+5. Upload           tar.zst -> R2
 ```
 
-### Mach-O Relinker
+Sandbox blocks:
+- Network access
+- `/usr/local`, `/opt/homebrew`
+- `~/.ssh`, `~/.aws`, `~/.gnupg`
 
-macOS binaries hardcode library paths. APL patches them for portability:
-
-```rust
-// Before: dyld will fail if moved
-@rpath/../lib/libfoo.dylib
-
-// After: works anywhere
-@executable_path/../lib/libfoo.dylib
-```
-
-Uses `install_name_tool` and `codesign -f -s -` for ad-hoc signing.
-
-### APFS Clonefile
-
-Source builds use macOS APFS copy-on-write for fast, isolated build roots:
-
-```rust
-// Near-instant directory copy
-clonefile(source, build_root);
-```
-
----
-
-## Project Context
-
-APL includes experimental support for project-local environments (similar to `nix-shell`):
-
-- **Manifest (`apl.toml`)**: Declares project dependency requirements (semver ranges).
-- **Lockfile (`apl.lock`)**: Pin exact versions and timestamps.
-- **Ephemeral Shell (`apl shell`)**: Creates a temporary `Sysroot`, mounts requested packages, and spawns a shell with strict `PATH`.
-
-### Asset Strings
-
-APL uses a heuristic `AssetPattern` matcher (`src/core/asset_pattern.rs`) to map loose release filenames (e.g. `foo-macos-arm64.zip`) to strict architecture/OS variants.
-
----
-
-## Storage Layout
+## Storage
 
 ```
 ~/.apl/
-├── bin/                    # Symlinks to active binaries
-│   ├── rg → ../store/ripgrep/14.1.1/rg
-│   └── fd → ../store/fd/10.2.0/fd
-├── store/                  # Installed packages
-│   ├── ripgrep/
-│   │   └── 14.1.1/
-│   │       ├── rg
-│   │       └── .apl-meta.json
-│   └── fd/
-│       └── 10.2.0/
-├── cache/                  # Downloaded archives
-├── logs/                   # Build logs
-├── tmp/                    # Temporary extraction
-├── index                   # Package index
-└── state.db                # SQLite database
+├── bin/           symlinks to active binaries
+├── store/         installed packages (versioned)
+│   └── ripgrep/
+│       └── 14.1.1/
+├── cache/         downloaded archives
+├── logs/          build logs
+├── index          package index
+└── state.db       SQLite database
 ```
 
----
+R2 bucket (`apl.pub`):
+```
+/index             binary package index
+/index.sig         Ed25519 signature
+/ports/<pkg>/      port artifacts and metadata
+```
 
-## Database Schema
+## Database
 
 ```sql
--- Installed packages
-packages (
-    name TEXT,
-    version TEXT,
-    sha256 TEXT,
-    active BOOLEAN,
-    installed_at DATETIME,
-    size_bytes INTEGER
-)
-
--- File ownership
-installed_files (
-    path TEXT,
-    package TEXT,
-    sha256 TEXT
-)
-
--- Version history
-history (
-    package TEXT,
-    action TEXT,
-    from_version TEXT,
-    to_version TEXT,
-    timestamp DATETIME
-)
+packages (name, version, sha256, active, installed_at, size_bytes)
+installed_files (path, package, sha256)
+history (package, action, from_version, to_version, timestamp)
 ```
 
----
+## UI
 
-## Performance Characteristics
+Message-passing actor on dedicated thread. Commands send `UiEvent` via mpsc channel, actor renders to terminal.
 
-| Operation | Time | Notes |
-|-----------|------|-------|
-| Index load | <1ms | Memory-mapped |
-| Package lookup | <0.1ms | O(log n) binary search |
-| Small package install | ~2s | 6MB binary |
-| Large package install | ~10s | 100MB+ |
-| Index update | <1s | 15KB download |
+```
+Command -> Output -> mpsc -> UI Actor -> Terminal
+```
 
----
-
-## Security Model
+## Security
 
 | Feature | Implementation |
 |---------|----------------|
-| Hash verification | SHA-256 |
-| Transport | HTTPS only with HSTS |
-| Index Integrity | Ed25519 Detached Signature (Strict verification) |
-| Verification timing | During download (no TOCTOU) |
-| Audit trail | SQLite history table |
-| Code signing | Ad-hoc re-signing after relinking |
+| Index integrity | Ed25519 signature |
+| Artifact integrity | SHA-256 |
+| Transport | HTTPS |
+| Verification | during download (parallel) |
+| Code signing | ad-hoc re-sign after relink |
 
-## Release Pipeline Architecture
+## Mach-O relinking
 
-To ensure the install script always sees the latest release immediately, we use a unified signal flow between the binary repository (`apl`) and the registry repository (`apl-packages`).
+macOS binaries have hardcoded library paths. After extraction, APL patches them:
 
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant Release as apl/release.yml
-    participant Registry as apl-packages/update-registry.yml
-    participant CDN as apl.pub (R2)
-    participant User as install.sh
-
-    Dev->>Release: Push tag v0.5.0
-    Release->>Release: Build Binaries
-    Release->>Release: Publish GitHub Release
-    
-    note over Release, Registry: Repository Dispatch Trigger
-    Release->>Registry: Dispatch event (release)
-    
-    Registry->>Registry: Run `apl-pkg index`
-    Registry->>Registry: Generate index
-    Registry->>Registry: Generate latest.json
-    
-    Registry->>CDN: Upload index
-    Registry->>CDN: Upload latest.json
-    
-    User->>CDN: GET /latest.json
-    User->>User: Download v0.5.0
 ```
+@rpath/../lib/libfoo.dylib -> @executable_path/../lib/libfoo.dylib
+```
+
+Uses `install_name_tool` + `codesign -f -s -` for ad-hoc signing.
+
+## CI
+
+All repos use GitHub Actions with pinned `macos-14` runners for reproducible builds.
+
+| Workflow | Trigger | Action |
+|----------|---------|--------|
+| apl-ports/update-ports | daily | build new port versions, upload to R2 |
+| apl-packages/update-registry | on push, dispatch | regenerate index, sign, upload |
+| apl/ci | on push | test, lint |
+| apl/release | on tag | build binaries, publish release |

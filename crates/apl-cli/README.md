@@ -5,7 +5,7 @@ The APL command-line interface.
 ## Install
 
 ```bash
-curl -fsSL https://apl.pub/install.sh | sh
+curl -fsSL https://apl.pub/install | sh
 ```
 
 ## Commands

@@ -2,216 +2,78 @@
 
 ## Setup
 
-### Prerequisites
-
-- Rust 2024 edition (install via [rustup](https://rustup.rs))
-- macOS 14.0 or later
+Requirements:
+- Rust (install via [rustup](https://rustup.rs))
+- macOS 13.0+
 - Git
-
-### Clone and Build
 
 ```bash
 git clone https://github.com/jpmacdonald/apl.git
 cd apl
-cargo build
+cargo build --workspace
+
+# Setup git hooks
+git config core.hooksPath .githooks
 ```
 
-### Run Tests
+## Development
 
 ```bash
-# Unit tests
-cargo test
-
-# Doc tests
-cargo test --doc
-
-# All tests
-cargo test --all
+cargo build --workspace              # build
+cargo test --workspace               # test
+cargo clippy --workspace -- -D warnings  # lint
+cargo fmt                            # format
 ```
 
----
-
-## Code Style
-
-### Formatting
-
-Use `cargo fmt` before committing:
-
+Debug logging:
 ```bash
-cargo fmt
+RUST_LOG=debug cargo run -p apl-cli -- install ripgrep
 ```
 
-### Linting
-
-Use `cargo clippy` for lints:
-
-```bash
-cargo clippy -- -D warnings
-```
-
-### Conventions
-
-- **Error handling**: Use `thiserror` for library errors, `anyhow` for applications.
-- **Async**: Use `tokio` runtime.
-- **Documentation**: Add doc comments for public APIs.
-
----
-
-## Code Coverage
-
-APL uses `cargo-llvm-cov` for coverage tracking.
-
-### Install
-
-```bash
-cargo install cargo-llvm-cov
-```
-
-### Generate Report
-
-```bash
-# HTML report (recommended)
-cargo llvm-cov --all-features --workspace --html
-open target/llvm-cov/html/index.html
-
-# Terminal summary
-cargo llvm-cov --all-features --workspace
-
-
-# LCOV format (for CI)
-cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-```
-
-### Coverage Goals
-
-- **Overall target**: >80%
-- **Core modules**: >85%
-- **Critical paths** (install, remove): 100%
-
----
-
-## Registry Maintenance
-
-APL uses an **Algorithmic Registry**. Instead of manually updating version strings, you contribute **Templates** that tell APL how to discover new versions.
-
-### Prerequisites
-
-Set a GitHub token for higher API rate limits (required for index generation):
-
-```bash
-export GITHUB_TOKEN=your_token_here
-```
-
-### Contributing a New Package
-
-1. Create a template in `registry/{prefix}/{name}.toml`.
-   - Example: `registry/ri/ripgrep.toml`
-2. Follow the [Package Format](package-format.md) guide to define:
-   - `[discovery]`: GitHub repo and tag pattern.
-   - `[assets]`: URL templates with `{{version}}` and `{{target}}`.
-   - `[checksums]`: Vendor checksum templates.
-3. Validate your template:
-   ```bash
-   cargo run --release --bin apl-pkg -- check
-   ```
-4. Generate a local index to test:
-   ```bash
-   cargo run --release --bin apl-pkg -- index
-   ```
-
-### Updating the Index
-
-The index is automatically updated every 6 hours by GitHub Actions. You don't need to manually update versions unless the template logic changes.
-
----
-
-## Project Structure
+## Project structure
 
 ```
-apl/
-├── src/
-│   ├── main.rs          # CLI entry point
-│   ├── lib.rs           # Library root
-│   ├── cmd/             # Command implementations
-│   ├── core/            # Core logic (index, resolver, etc.)
-│   ├── io/              # I/O operations (download, extract)
-│   ├── ops/             # High-level operations
-│   ├── store/           # Database and storage
-│   ├── ui/              # Terminal UI
-│   ├── registry/        # GitHub API client
-│   └── bin/             # Additional binaries (apl-pkg)
-├── packages/            # Package definitions
-├── tests/               # Integration tests
-├── docs/                # Documentation
-└── .github/workflows/   # CI/CD
+crates/
+├── apl-schema/    types, index format
+├── apl-core/      resolver, downloader, builder
+├── apl-cli/       CLI (the `apl` binary)
+└── apl-pkg/       index generator
 ```
 
----
+## Adding a package
 
-## Pull Request Process
+1. Create `packages/<first-two-letters>/<name>.toml`
+2. Follow the format in [Package Format](package-format.md)
+3. Validate: `cargo run -p apl-pkg -- check`
+4. Submit PR
 
-1. **Fork** the repository
-2. **Create a branch** for your feature: `git checkout -b feature/my-feature`
-3. **Make changes** with tests
-4. **Run checks**:
-   ```bash
-   cargo fmt
-   cargo clippy -- -D warnings
-   cargo test
-   ```
-5. **Commit** with a descriptive message
-6. **Push** and open a PR
+## Adding a CLI command
 
-### PR Guidelines
-
-- Keep changes focused and atomic
-- Add tests for new functionality
-- Update documentation if needed
-- Ensure CI passes
-
----
-
-## Adding New Commands
-
-1. Create `src/cmd/<command>.rs`
-2. Add the command enum variant to `src/main.rs`
-3. Wire up the handler in the `match` statement
+1. Create `crates/apl-cli/src/cmd/<command>.rs`
+2. Add variant to the clap enum in `main.rs`
+3. Wire up the handler
 4. Add tests
-5. Update the user guide
+5. Update docs/user-guide.md
 
----
+## Code style
 
-## Debugging
+- `thiserror` for library errors, `anyhow` for binaries
+- `tokio` for async
+- Doc comments on public APIs
+- No fluff in comments
 
-### Enable Tracing
+## Pull requests
 
-```bash
-RUST_LOG=debug cargo run -- install ripgrep
-```
+1. Fork and create a branch
+2. Make changes with tests
+3. Run `cargo fmt && cargo clippy -- -D warnings && cargo test`
+4. Push and open PR
 
-Levels: `error`, `warn`, `info`, `debug`, `trace`
+Keep PRs focused. CI must pass.
 
-### Build Logs
-
-Source build logs are saved to `~/.apl/logs/`:
-
-```bash
-cat ~/.apl/logs/<package>-<version>.log
-```
-
----
-
-## Release Process
+## Release process
 
 1. Update version in `Cargo.toml`
-2. Update CHANGELOG
-3. Create a git tag: `git tag v0.x.x`
-4. Push: `git push --tags`
-5. GitHub Actions builds and publishes releases
-
----
-
-## Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/jpmacdonald/apl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/jpmacdonald/apl/discussions)
+2. Tag: `git tag v0.x.x`
+3. Push: `git push --tags`
+4. GitHub Actions builds and publishes

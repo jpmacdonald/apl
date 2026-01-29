@@ -1,14 +1,14 @@
 # Getting Started
 
-Fast, minimal package manager for macOS CLI tools.
-
-## Installation
+## Install
 
 ```bash
-curl -fsSL https://apl.dev/install.sh | sh
+curl -fsSL https://apl.pub/install | sh
 ```
 
-### Build from Source
+This downloads the `apl` binary and adds `~/.apl/bin` to your PATH.
+
+### Build from source
 
 ```bash
 git clone https://github.com/jpmacdonald/apl.git
@@ -17,72 +17,64 @@ cargo build --release
 cp target/release/apl ~/.local/bin/
 ```
 
-## Configuration
+## Setup
 
-Add the binary path `~/.apl/bin` to your shell profile.
+Add `~/.apl/bin` to your PATH if the installer didn't do it automatically.
 
-### Zsh
-`~/.zshrc`:
+**Zsh** (`~/.zshrc`):
 ```bash
 export PATH="$HOME/.apl/bin:$PATH"
 ```
 
-### Bash
-`~/.bashrc`:
+**Bash** (`~/.bashrc`):
 ```bash
 export PATH="$HOME/.apl/bin:$PATH"
 ```
 
-### Fish
-`~/.config/fish/config.fish`:
+**Fish** (`~/.config/fish/config.fish`):
 ```fish
 fish_add_path ~/.apl/bin
 ```
 
-## Usage
-
-Update the index and install a package:
+## First use
 
 ```bash
-apl update
-apl install rg
-rg --version
+apl update           # fetch package index
+apl install ripgrep  # install a package
+rg --version         # verify it works
 ```
 
-## Shell Completions
+## Shell completions
 
-Generate and source completions for your shell.
-
-### Zsh
+**Zsh:**
 ```bash
 apl completions zsh > ~/.zfunc/_apl
 ```
 
-### Bash
+**Bash:**
 ```bash
 apl completions bash > /etc/bash_completion.d/apl
 ```
 
-### Fish
+**Fish:**
 ```bash
 apl completions fish > ~/.config/fish/completions/apl.fish
 ```
 
-## What's Next?
+## Directory layout
 
-- [User Guide](user-guide.md) - Complete command reference
-- [Package Format](package-format.md) - Create your own packages
-- [Contributing](contributing.md) - Help improve APL
-
-## Directory Structure
-
-APL stores all data in `~/.apl/`:
+APL stores everything in `~/.apl/`:
 
 ```
 ~/.apl/
-├── bin/          # Symlinks to installed binaries
-├── store/        # Installed packages (versioned)
-├── cache/        # Downloaded archives
-├── index         # Package index
-└── state.db      # Installation database
+├── bin/       symlinks to installed binaries
+├── store/     installed packages (versioned)
+├── cache/     downloaded archives
+├── index      package index (binary format)
+└── state.db   SQLite database
 ```
+
+## Next steps
+
+- [User Guide](user-guide.md) - all commands
+- [Package Format](package-format.md) - add packages to the registry
