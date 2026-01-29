@@ -153,6 +153,7 @@ impl IndexEntry {
 }
 
 /// Package index (binary format)
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PackageIndex {
     /// Index format version (Bumped to 6 for Merkle root support)
