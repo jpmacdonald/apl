@@ -45,10 +45,7 @@ pub async fn fetch_releases(
     let resp = resp.error_for_status()?;
 
     let entries: Vec<Artifact> = resp.json().await?;
-    println!(
-        "    {} port entries for {package_name}",
-        entries.len()
-    );
+    println!("    {} port entries for {package_name}", entries.len());
 
     // Group by version
     let mut by_version: HashMap<String, Vec<Artifact>> = HashMap::new();

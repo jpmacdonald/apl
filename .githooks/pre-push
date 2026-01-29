@@ -1,0 +1,14 @@
+#!/bin/sh
+# Pre-push hook: run fmt and clippy before pushing
+
+set -e
+
+echo "  running pre-push checks"
+
+echo "  cargo fmt --check"
+cargo fmt --check
+
+echo "  cargo clippy"
+cargo clippy --workspace --all-targets -- -D warnings
+
+echo "  checks passed"

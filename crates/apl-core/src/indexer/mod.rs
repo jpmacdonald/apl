@@ -319,10 +319,7 @@ pub async fn generate_index_from_registry(
             );
         }
     }
-    println!(
-        "  {} repositories updated",
-        master_release_cache.len()
-    );
+    println!("  {} repositories updated", master_release_cache.len());
 
     // Fetch ports metadata
     if !ports_repos.is_empty() {

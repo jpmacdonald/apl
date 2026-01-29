@@ -214,9 +214,7 @@ pub async fn fetch_batch_releases(
                                 );
                             }
                             None => {
-                                eprintln!(
-                                    "    repo missing from response: {key} (alias: {alias})"
-                                );
+                                eprintln!("    repo missing from response: {key} (alias: {alias})");
                             }
                         }
                     }
