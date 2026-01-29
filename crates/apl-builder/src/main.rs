@@ -86,11 +86,11 @@ async fn main() -> Result<()> {
     // Create output directory
     fs::create_dir_all(&args.output_dir).await?;
 
-    // Initialize R2 operator. In dry-run mode the store is optional since
-    // no uploads or remote reads are performed.
-    let mut builder = S3::default();
-
-    if !args.dry_run {
+    // Initialize R2 operator only when not in dry-run mode.
+    let op: Option<Operator> = if args.dry_run {
+        None
+    } else {
+        let mut builder = S3::default();
         builder.bucket(
             &std::env::var("APL_ARTIFACT_STORE_BUCKET")
                 .context("APL_ARTIFACT_STORE_BUCKET must be set")?,
@@ -107,11 +107,9 @@ async fn main() -> Result<()> {
             &std::env::var("APL_ARTIFACT_STORE_SECRET_KEY")
                 .context("APL_ARTIFACT_STORE_SECRET_KEY must be set")?,
         );
-    }
-
-    builder.region("auto");
-
-    let op = Operator::new(builder)?.finish();
+        builder.region("auto");
+        Some(Operator::new(builder)?.finish())
+    };
 
     // 1. Discover and load all port manifests
     let pattern = args.ports_dir.join("*").join("*.toml");
@@ -200,7 +198,7 @@ async fn main() -> Result<()> {
             println!();
             println!("  processing {port_name}");
 
-            if let Err(e) = process_port(&args, &op, manifest, &index, &target_archs).await {
+            if let Err(e) = process_port(&args, op.as_ref(), manifest, &index, &target_archs).await {
                 eprintln!("    error: {port_name}: {e:#}");
                 failed_ports.push(port_name.to_string());
             }
@@ -215,7 +213,7 @@ async fn main() -> Result<()> {
 /// isolated per-port via the `?` operator.
 async fn process_port(
     args: &Args,
-    op: &Operator,
+    op: Option<&Operator>,
     manifest: &PortManifest,
     index: &apl_schema::PackageIndex,
     target_archs: &[Arch],
@@ -242,21 +240,29 @@ async fn process_port(
         }
     };
 
-    // Fetch existing index for incremental updates
+    // Fetch existing index for incremental updates (skip in dry-run mode)
     let r2_path = format!("ports/{port_name}/index.json");
     let cache_path = format!("ports/{port_name}/cache.json");
 
-    let existing_artifacts = if let Ok(arts) = fetch_existing_index(op, &r2_path).await {
-        println!("    loaded {} existing artifacts", arts.len());
-        arts
+    let existing_artifacts = if let Some(operator) = op {
+        if let Ok(arts) = fetch_existing_index(operator, &r2_path).await {
+            println!("    loaded {} existing artifacts", arts.len());
+            arts
+        } else {
+            println!("    no existing index, starting fresh");
+            Vec::new()
+        }
     } else {
-        println!("    no existing index, starting fresh");
+        println!("    dry-run: skipping R2 fetch");
         Vec::new()
     };
 
-    // Load strategy cache
-    let mut cache: apl_core::strategies::StrategyCache =
-        fetch_cache(op, &cache_path).await.unwrap_or_default();
+    // Load strategy cache (skip in dry-run mode)
+    let mut cache: apl_core::strategies::StrategyCache = if let Some(operator) = op {
+        fetch_cache(operator, &cache_path).await.unwrap_or_default()
+    } else {
+        apl_core::strategies::StrategyCache::default()
+    };
 
     // Build known versions set
     let known_versions: std::collections::HashSet<String> = existing_artifacts
@@ -413,7 +419,7 @@ async fn process_port(
     fs::write(&local_cache_path, &cache_json).await?;
     println!("    wrote {}", local_path.display());
 
-    if args.dry_run {
+    if args.dry_run || op.is_none() {
         println!(
             "    dry run: would upload {} ({} bytes)",
             r2_path,
@@ -422,8 +428,9 @@ async fn process_port(
         return Ok(());
     }
 
-    op.write(&r2_path, index_json).await?;
-    op.write(&cache_path, cache_json).await?;
+    let operator = op.expect("operator should be Some when not in dry-run");
+    operator.write(&r2_path, index_json).await?;
+    operator.write(&cache_path, cache_json).await?;
     println!("    uploaded {r2_path}");
 
     Ok(())
